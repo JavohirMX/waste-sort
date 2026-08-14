@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import UIKit
 import UltralyticsYOLO
@@ -13,7 +14,10 @@ struct LiveCameraView: View {
 
     var body: some View {
         ZStack {
-            LiveYOLOCamera(settings: settings.runtime) { result, tracked in
+            LiveYOLOCamera(
+                settings: settings.runtime,
+                preferredCameraID: settings.preferredCameraID
+            ) { result, tracked in
                 if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                     fps = measured
                 }
@@ -118,10 +122,11 @@ private final class FrameRateMonitor {
 /// YOLOCamera wrapper that loads `best` as segment, sets thresholds, and hides developer chrome.
 private struct LiveYOLOCamera: UIViewRepresentable {
     var settings: RuntimeSettings
+    var preferredCameraID: String
     var onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(settings: settings, onDetection: onDetection)
+        Coordinator(settings: settings, preferredCameraID: preferredCameraID, onDetection: onDetection)
     }
 
     func makeUIView(context: Context) -> YOLOView {
@@ -136,9 +141,12 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         hideDeveloperChrome(view)
         let coordinator = context.coordinator
         coordinator.yoloView = view
+        coordinator.preferredCameraID = preferredCameraID
+        coordinator.startObservingCameraChanges()
         view.onDetection = { result in
             coordinator.handle(result)
         }
+        coordinator.schedulePreferredCameraApply(retries: 20)
         return view
     }
 
@@ -153,6 +161,15 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         }
         uiView.showOverlays = false
         hideDeveloperChrome(uiView)
+
+        if coordinator.preferredCameraID != preferredCameraID {
+            coordinator.preferredCameraID = preferredCameraID
+            coordinator.applyPreferredCamera()
+        }
+    }
+
+    static func dismantleUIView(_ uiView: YOLOView, coordinator: Coordinator) {
+        coordinator.stopObservingCameraChanges()
     }
 
     private func applyThresholds(_ view: YOLOView, settings: RuntimeSettings) {
@@ -193,11 +210,19 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     final class Coordinator {
         var onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?
         var settings: RuntimeSettings
+        var preferredCameraID: String
         weak var yoloView: YOLOView?
         let tracker = DetectionTracker()
+        private var cameraObservers: [NSObjectProtocol] = []
+        private var applyWorkItem: DispatchWorkItem?
 
-        init(settings: RuntimeSettings, onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?) {
+        init(
+            settings: RuntimeSettings,
+            preferredCameraID: String,
+            onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?
+        ) {
             self.settings = settings
+            self.preferredCameraID = preferredCameraID
             self.onDetection = onDetection
         }
 
@@ -222,6 +247,69 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             DispatchQueue.main.async {
                 self.onDetection?(result, tracked)
             }
+        }
+
+        func startObservingCameraChanges() {
+            stopObservingCameraChanges()
+            // Warm discovery so connect notifications are delivered.
+            _ = CameraDeviceCatalog.availableOptions()
+
+            let center = NotificationCenter.default
+            cameraObservers = [
+                center.addObserver(
+                    forName: AVCaptureDevice.wasConnectedNotification,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] _ in
+                    self?.applyPreferredCamera()
+                },
+                center.addObserver(
+                    forName: AVCaptureDevice.wasDisconnectedNotification,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] _ in
+                    self?.applyPreferredCamera()
+                },
+            ]
+        }
+
+        func stopObservingCameraChanges() {
+            applyWorkItem?.cancel()
+            applyWorkItem = nil
+            for observer in cameraObservers {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            cameraObservers.removeAll()
+        }
+
+        func schedulePreferredCameraApply(retries: Int) {
+            applyWorkItem?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                if self.applyPreferredCamera() {
+                    return
+                }
+                if retries > 0 {
+                    self.schedulePreferredCameraApply(retries: retries - 1)
+                }
+            }
+            applyWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+        }
+
+        @discardableResult
+        func applyPreferredCamera() -> Bool {
+            guard let view = yoloView,
+                  let device = CameraDeviceCatalog.resolveDevice(preferenceID: preferredCameraID)
+            else {
+                return false
+            }
+
+            if YOLOViewCameraSwitcher.currentDeviceUniqueID(in: view) == device.uniqueID {
+                return true
+            }
+
+            return YOLOViewCameraSwitcher.switchTo(device, in: view)
         }
     }
 }

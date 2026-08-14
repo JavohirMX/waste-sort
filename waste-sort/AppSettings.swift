@@ -27,6 +27,7 @@ struct RuntimeSettings: Equatable {
     var emaAlpha: Double
     var boxInflate: Double
     var maxSpeed: Double
+    var preferredCameraID: String
 }
 
 @MainActor
@@ -60,6 +61,10 @@ final class AppSettings: ObservableObject {
     @Published var maxSpeed: Double {
         didSet { persist(maxSpeed, key: Keys.maxSpeed) }
     }
+    /// `CameraPreference.autoID` or an `AVCaptureDevice.uniqueID`.
+    @Published var preferredCameraID: String {
+        didSet { persist(preferredCameraID, key: Keys.preferredCameraID) }
+    }
 
     var runtime: RuntimeSettings {
         RuntimeSettings(
@@ -71,7 +76,8 @@ final class AppSettings: ObservableObject {
             trackerIou: trackerIou,
             emaAlpha: emaAlpha,
             boxInflate: boxInflate,
-            maxSpeed: maxSpeed
+            maxSpeed: maxSpeed,
+            preferredCameraID: preferredCameraID
         )
     }
 
@@ -89,6 +95,7 @@ final class AppSettings: ObservableObject {
         static let boxInflate = "settings.boxInflate"
         /// v2 picks up lower association speed without requiring a manual reset.
         static let maxSpeed = "settings.maxSpeed.v2"
+        static let preferredCameraID = "settings.preferredCameraID"
     }
 
     private init(defaults: UserDefaults = .standard) {
@@ -102,6 +109,11 @@ final class AppSettings: ObservableObject {
         emaAlpha = Self.loadDouble(defaults, Keys.emaAlpha, WasteSortConfig.defaultEmaAlpha)
         boxInflate = Self.loadDouble(defaults, Keys.boxInflate, WasteSortConfig.defaultBoxInflate)
         maxSpeed = Self.loadDouble(defaults, Keys.maxSpeed, WasteSortConfig.defaultMaxSpeed)
+        preferredCameraID = Self.loadString(
+            defaults,
+            Keys.preferredCameraID,
+            CameraPreference.autoID
+        )
     }
 
     func resetToDefaults() {
@@ -114,6 +126,7 @@ final class AppSettings: ObservableObject {
         emaAlpha = WasteSortConfig.defaultEmaAlpha
         boxInflate = WasteSortConfig.defaultBoxInflate
         maxSpeed = WasteSortConfig.defaultMaxSpeed
+        preferredCameraID = CameraPreference.autoID
     }
 
     private func persist(_ value: Double, key: String) {
@@ -121,6 +134,10 @@ final class AppSettings: ObservableObject {
     }
 
     private func persist(_ value: Int, key: String) {
+        defaults.set(value, forKey: key)
+    }
+
+    private func persist(_ value: String, key: String) {
         defaults.set(value, forKey: key)
     }
 
@@ -132,5 +149,9 @@ final class AppSettings: ObservableObject {
     private static func loadInt(_ defaults: UserDefaults, _ key: String, _ fallback: Int) -> Int {
         guard defaults.object(forKey: key) != nil else { return fallback }
         return defaults.integer(forKey: key)
+    }
+
+    private static func loadString(_ defaults: UserDefaults, _ key: String, _ fallback: String) -> String {
+        defaults.string(forKey: key) ?? fallback
     }
 }

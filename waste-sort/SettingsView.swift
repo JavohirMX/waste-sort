@@ -1,11 +1,34 @@
 import SwiftUI
+import AVFoundation
 
 struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
+    @State private var cameraOptions: [CameraOption] = CameraDeviceCatalog.availableOptions()
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Picker("Camera", selection: $settings.preferredCameraID) {
+                        Text("Auto (prefer USB)").tag(CameraPreference.autoID)
+                        ForEach(cameraOptions) { option in
+                            Text("\(option.name) · \(option.subtitle)").tag(option.id)
+                        }
+                    }
+                    .onChange(of: settings.preferredCameraID) { _, newValue in
+                        if newValue != CameraPreference.autoID,
+                           !cameraOptions.contains(where: { $0.id == newValue })
+                        {
+                            settings.preferredCameraID = CameraPreference.autoID
+                        }
+                    }
+                } header: {
+                    Text("Camera")
+                        .foregroundStyle(BinGuide.residual.color)
+                } footer: {
+                    Text("Auto uses a connected USB-C webcam when available, otherwise the iPad back camera. Plug in a UVC webcam and reopen Settings if it does not appear.")
+                }
+
                 Section {
                     SettingsSliderRow(
                         title: "Confidence",
@@ -102,7 +125,27 @@ struct SettingsView: View {
             .toolbarBackground(BinGuide.residual.color.opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .onAppear { refreshCameras() }
+            .onReceive(
+                NotificationCenter.default.publisher(for: AVCaptureDevice.wasConnectedNotification)
+            ) { _ in refreshCameras() }
+            .onReceive(
+                NotificationCenter.default.publisher(for: AVCaptureDevice.wasDisconnectedNotification)
+            ) { _ in
+                refreshCameras()
+                if settings.preferredCameraID != CameraPreference.autoID,
+                   !cameraOptions.contains(where: { $0.id == settings.preferredCameraID })
+                {
+                    settings.preferredCameraID = CameraPreference.autoID
+                }
+            }
         }
+    }
+
+    private func refreshCameras() {
+        // Warm discovery so connect/disconnect notifications keep firing.
+        _ = CameraDeviceCatalog.availableOptions()
+        cameraOptions = CameraDeviceCatalog.availableOptions()
     }
 
     private func percent(_ value: Double) -> String {
