@@ -398,9 +398,10 @@
 				DEVELOPMENT_TEAM = MBBD9BRZ67;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Waste Sort uses the camera to identify waste items and suggest a bin.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Waste Sort saves camera recordings to your photo library.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Waste Sort uses your photos to identify waste items and suggest a bin.";
+				INFOPLIST_KEY_CFBundleDisplayName = iSort;
+				INFOPLIST_KEY_NSCameraUsageDescription = "iSort uses the camera to identify waste items and suggest a bin.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "iSort saves camera recordings to your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "iSort uses your photos to identify waste items and suggest a bin.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -433,9 +434,10 @@
 				DEVELOPMENT_TEAM = MBBD9BRZ67;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Waste Sort uses the camera to identify waste items and suggest a bin.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Waste Sort saves camera recordings to your photo library.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Waste Sort uses your photos to identify waste items and suggest a bin.";
+				INFOPLIST_KEY_CFBundleDisplayName = iSort;
+				INFOPLIST_KEY_NSCameraUsageDescription = "iSort uses the camera to identify waste items and suggest a bin.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "iSort saves camera recordings to your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "iSort uses your photos to identify waste items and suggest a bin.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

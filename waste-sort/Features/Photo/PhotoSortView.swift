@@ -51,7 +51,7 @@ struct PhotoSortView: View {
                 .padding(20)
             }
             .background(Theme.photoBackground)
-            .navigationTitle("Waste Sort")
+            .navigationTitle("iSort")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
