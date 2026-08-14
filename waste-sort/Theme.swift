@@ -2,7 +2,6 @@ import SwiftUI
 
 enum Theme {
     static let photoBackground = Color(red: 246 / 255, green: 247 / 255, blue: 242 / 255)
-    static let barMaxWidth: CGFloat = 720
     static let barHeight: CGFloat = 56
     static let boxCornerRadius: CGFloat = 8
     static let boxStrokeWidth: CGFloat = 3

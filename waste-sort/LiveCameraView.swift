@@ -44,19 +44,18 @@ struct LiveCameraView: View {
             .allowsHitTesting(false)
 
             VStack(spacing: 0) {
-                HStack(alignment: .top) {
+                CategoryBar(counts: counts)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 12)
+
+                Spacer(minLength: 0)
+
+                HStack {
                     Spacer(minLength: 0)
-                    CategoryBar(counts: counts)
-                        .frame(maxWidth: Theme.barMaxWidth)
-                    Spacer(minLength: 0)
-                }
-                .overlay(alignment: .topTrailing) {
                     fpsBadge
                 }
                 .padding(.horizontal, Theme.hudInset)
-                .padding(.top, 12)
-
-                Spacer(minLength: 0)
+                .padding(.bottom, Theme.hudInset)
             }
         }
         .sheet(isPresented: $showSettings) {
@@ -82,7 +81,6 @@ struct LiveCameraView: View {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 showSettings = true
             }
-            .padding(.top, 4)
     }
 }
 

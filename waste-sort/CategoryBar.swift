@@ -18,12 +18,15 @@ struct CategoryBar: View {
                     }
             }
         }
+        .frame(maxWidth: .infinity)
         .frame(height: Theme.barHeight)
-        .frame(maxWidth: Theme.barMaxWidth)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
+            Color.clear
+                .glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                )
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
