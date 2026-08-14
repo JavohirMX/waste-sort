@@ -4,44 +4,68 @@ import UltralyticsYOLO
 
 struct PhotoSortView: View {
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var pickerItem: PhotosPickerItem?
     @State private var model: YOLO?
     @State private var isLoadingModel = true
     @State private var isInferring = false
     @State private var sourceImage: UIImage?
-    @State private var annotatedImage: UIImage?
     @State private var detections: [Box] = []
     @State private var errorMessage: String?
+
+    private var photoTracks: [TrackedDetection] {
+        detections.enumerated().map { index, box in
+            TrackedDetection(
+                id: index + 1,
+                classKey: BinGuide.normalizedKey(box.cls),
+                className: box.cls,
+                conf: box.conf,
+                displayXywhn: box.xywhn
+            )
+        }
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    pickerButton
-
+                Group {
                     if isLoadingModel {
                         ProgressView("Loading model")
                             .frame(maxWidth: .infinity)
                             .padding(.top, 40)
                     } else if let errorMessage {
                         Text(errorMessage)
-                            .font(.system(.body, design: .rounded))
+                            .font(.system(.body, design: .default))
                             .foregroundStyle(.red)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else if isInferring {
                         ProgressView("Sorting")
                             .frame(maxWidth: .infinity)
                             .padding(.top, 40)
-                    } else if annotatedImage != nil || sourceImage != nil {
-                        results
+                    } else if sourceImage != nil {
+                        resultsLayout
                     } else {
                         emptyState
                     }
                 }
                 .padding(20)
             }
-            .background(Color(red: 246 / 255, green: 247 / 255, blue: 242 / 255))
+            .background(Theme.photoBackground)
             .navigationTitle("Waste Sort")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
+                        Label("Choose photo", systemImage: "photo.on.rectangle")
+                            .font(.system(.body, design: .default).weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(BinGuide.organic.color, in: Capsule())
+                    }
+                    .disabled(isLoadingModel || isInferring)
+                    .accessibilityHint("Opens the photo library to sort a waste image")
+                }
+            }
             .task { loadModel() }
             .onChange(of: pickerItem) { _, newItem in
                 Task { await importPhoto(newItem) }
@@ -49,10 +73,29 @@ struct PhotoSortView: View {
         }
     }
 
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            pickerButton
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Point the camera, or pick a photo.")
+                    .font(.system(.title3, design: .default).weight(.semibold))
+                Text("Items are sorted into Organic, Residual, or Inorganic.")
+                    .font(.system(.body, design: .default))
+                    .foregroundStyle(.secondary)
+            }
+
+            CategoryBar(counts: [:])
+                .opacity(0.85)
+                .padding(.top, 8)
+        }
+        .padding(.top, 8)
+    }
+
     private var pickerButton: some View {
         PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
             Text("Choose photo")
-                .font(.system(.headline, design: .rounded))
+                .font(.system(.headline, design: .default))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .foregroundStyle(.white)
@@ -63,38 +106,69 @@ struct PhotoSortView: View {
         .accessibilityHint("Opens the photo library to sort a waste image")
     }
 
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Point the camera, or pick a photo.")
-                .font(.system(.title3, design: .rounded).weight(.semibold))
-            Text("Items are sorted into organic, residual, or clean inorganic.")
-                .font(.system(.body, design: .rounded))
-                .foregroundStyle(.secondary)
+    @ViewBuilder
+    private var resultsLayout: some View {
+        if horizontalSizeClass == .regular {
+            HStack(alignment: .top, spacing: 20) {
+                annotatedImage
+                    .frame(maxWidth: .infinity)
+                resultsList
+                    .frame(maxWidth: 420)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 16) {
+                annotatedImage
+                resultsList
+            }
         }
-        .padding(.top, 24)
     }
 
-    private var results: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if let annotatedImage {
-                Image(uiImage: annotatedImage)
-                    .resizable()
-                    .scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            } else if let sourceImage {
-                Image(uiImage: sourceImage)
-                    .resizable()
-                    .scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+    private var annotatedImage: some View {
+        Group {
+            if let sourceImage {
+                Color.clear
+                    .aspectRatio(sourceImage.size, contentMode: .fit)
+                    .overlay {
+                        Image(uiImage: sourceImage)
+                            .resizable()
+                            .scaledToFit()
+                    }
+                    .overlay {
+                        GeometryReader { geo in
+                            DetectionBoxOverlay(
+                                tracks: photoTracks,
+                                imageSize: sourceImage.size,
+                                viewSize: geo.size,
+                                useAspectFill: false
+                            )
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
+        }
+    }
 
+    private var resultsList: some View {
+        VStack(alignment: .leading, spacing: 12) {
             Text(detections.isEmpty ? "No items found" : "\(detections.count) item\(detections.count == 1 ? "" : "s")")
-                .font(.system(.title3, design: .rounded).weight(.semibold))
+                .font(.system(.title3, design: .default).weight(.semibold))
+
+            CategoryBar(counts: photoCounts)
+                .padding(.bottom, 4)
 
             ForEach(Array(detections.enumerated()), id: \.offset) { _, box in
                 DetectionRow(className: box.cls, confidence: box.conf)
             }
         }
+    }
+
+    private var photoCounts: [String: Int] {
+        var counts: [String: Int] = [:]
+        for box in detections {
+            let key = BinGuide.info(for: box.cls).id
+            counts[key, default: 0] += 1
+        }
+        return counts
     }
 
     private func loadModel() {
@@ -146,7 +220,6 @@ struct PhotoSortView: View {
         sourceImage = image
         isInferring = true
         detections = []
-        annotatedImage = nil
 
         applyThresholds(model)
         let minConf = Float(settings.confidence)
@@ -155,7 +228,6 @@ struct PhotoSortView: View {
             model(image)
         }.value
 
-        annotatedImage = result.annotatedImage ?? image
         detections = result.boxes.filter { $0.conf >= minConf }
         isInferring = false
     }

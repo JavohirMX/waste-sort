@@ -9,11 +9,11 @@ enum WasteSortConfig {
     static let defaultMaxItems = 100
 
     static let defaultConfirmHits = 2
-    static let defaultMaxMisses = 8
+    static let defaultMaxMisses = 3
     static let defaultTrackerIou = 0.3
     static let defaultEmaAlpha = 0.4
     static let defaultBoxInflate = 0.08
-    static let defaultMaxSpeed = 2.0
+    static let defaultMaxSpeed = 0.8
 }
 
 /// Snapshot of tunable inference and tracking values, passed into Live camera updates.
@@ -82,11 +82,13 @@ final class AppSettings: ObservableObject {
         static let iou = "settings.iou"
         static let maxItems = "settings.maxItems"
         static let confirmHits = "settings.confirmHits"
-        static let maxMisses = "settings.maxMisses"
+        /// v2 picks up shorter ghost lifetime without requiring a manual reset.
+        static let maxMisses = "settings.maxMisses.v2"
         static let trackerIou = "settings.trackerIou"
         static let emaAlpha = "settings.emaAlpha"
         static let boxInflate = "settings.boxInflate"
-        static let maxSpeed = "settings.maxSpeed"
+        /// v2 picks up lower association speed without requiring a manual reset.
+        static let maxSpeed = "settings.maxSpeed.v2"
     }
 
     private init(defaults: UserDefaults = .standard) {

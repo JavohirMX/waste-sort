@@ -7,33 +7,46 @@ struct DetectionRow: View {
     private var bin: BinInfo { BinGuide.info(for: className) }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(bin.color)
-                .frame(width: 4)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(bin.title)
-                        .font(.system(.headline, design: .rounded))
-                    Spacer()
-                    Text(confidence, format: .percent.precision(.fractionLength(0)))
-                        .font(.system(.subheadline, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(bin.color)
+                        .frame(width: 36, height: 36)
+                    Image(systemName: bin.symbolName)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
                 }
 
-                Text(bin.bin)
-                    .font(.system(.subheadline, design: .rounded))
-                    .foregroundStyle(bin.color)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(bin.displayName)
+                            .font(.system(.headline, design: .default).weight(.semibold))
+                            .tracking(0.4)
+                        Spacer()
+                        Text(confidence, format: .percent.precision(.fractionLength(0)))
+                            .font(.system(.subheadline, design: .default).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
 
-                Text(bin.instructions)
-                    .font(.system(.footnote, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text(bin.bin)
+                        .font(.system(.subheadline, design: .default))
+                        .foregroundStyle(bin.id == BinGuide.residual.id ? Color.primary.opacity(0.7) : bin.color)
+                }
             }
+
+            Text(bin.instructions)
+                .font(.system(.footnote, design: .default))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 8)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+        )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(bin.title), \(bin.bin), \(Int(confidence * 100)) percent")
+        .accessibilityLabel("\(bin.displayName), \(bin.bin), \(Int(confidence * 100)) percent")
     }
 }

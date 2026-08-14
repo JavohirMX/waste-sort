@@ -20,15 +20,18 @@ struct TrackedDetection: Identifiable, Equatable {
     let displayXywhn: CGRect
 }
 
-/// Associates per-frame detections across time with EMA smoothing and constant-velocity coasting.
+/// Associates per-frame detections across time with EMA smoothing.
+/// Unmatched tracks briefly freeze in place (no velocity coast on display) then drop.
 final class DetectionTracker {
     var iouThreshold: CGFloat = 0.3
     var confirmHits: Int = 2
-    var maxMisses: Int = 8
+    var maxMisses: Int = 3
     var emaAlpha: CGFloat = 0.4
     var boxInflate: CGFloat = 0.08
-    /// Max center speed in normalized image widths/heights per second.
-    var maxSpeed: CGFloat = 2.0
+    /// Max center speed in normalized image widths/heights per second (association only).
+    var maxSpeed: CGFloat = 0.8
+    /// Velocity multiplier applied on each unmatched frame.
+    var missVelocityDecay: CGFloat = 0.25
 
     private struct Track {
         let id: Int
@@ -55,15 +58,18 @@ final class DetectionTracker {
         nextID = 1
     }
 
-    /// Updates tracks from the latest detections and returns confirmed (matched or coasting) tracks.
+    /// Updates tracks from the latest detections and returns confirmed (matched or frozen coast) tracks.
     func update(_ detections: [RawDetection], timestamp: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()) -> [TrackedDetection] {
         let filtered = detections.filter { BinGuide.info(for: $0.className).id != "unknown" }
 
         for i in tracks.indices {
             let dt = max(timestamp - tracks[i].t, 1e-3)
-            let c = center(of: tracks[i].displayXywhn)
+            // Predict from last matched box for association only — not for display coast.
+            let c = center(of: tracks[i].xywhn)
             let s = size(of: tracks[i].xywhn)
-            tracks[i].predXywhn = rect(center: CGPoint(x: c.x + tracks[i].vx * dt, y: c.y + tracks[i].vy * dt), size: s)
+            tracks[i].predXywhn = clampNormalized(
+                rect(center: CGPoint(x: c.x + tracks[i].vx * dt, y: c.y + tracks[i].vy * dt), size: s)
+            )
             tracks[i].matched = false
         }
 
@@ -95,7 +101,7 @@ final class DetectionTracker {
             tracks[bestI].vx = vx
             tracks[bestI].vy = vy
             tracks[bestI].xywhn = det.xywhn
-            tracks[bestI].displayXywhn = ema(tracks[bestI].predXywhn, det.xywhn)
+            tracks[bestI].displayXywhn = ema(tracks[bestI].displayXywhn, det.xywhn)
             tracks[bestI].conf = det.conf
             tracks[bestI].className = det.className
             tracks[bestI].classKey = det.classKey
@@ -140,7 +146,11 @@ final class DetectionTracker {
             }
             track.misses += 1
             if track.confirmed, track.misses <= maxMisses {
-                track.displayXywhn = track.predXywhn
+                // Freeze last matched display — do not slide with velocity.
+                track.vx *= missVelocityDecay
+                track.vy *= missVelocityDecay
+                if abs(track.vx) < 1e-4 { track.vx = 0 }
+                if abs(track.vy) < 1e-4 { track.vy = 0 }
                 track.t = timestamp
                 kept.append(track)
                 confirmed.append(emit(track))
@@ -184,6 +194,15 @@ final class DetectionTracker {
         guard speed > maxSpeed, speed > 1e-6 else { return (vx, vy) }
         let scale = maxSpeed / speed
         return (vx * scale, vy * scale)
+    }
+
+    /// Keeps association search windows inside normalized image bounds.
+    private func clampNormalized(_ rect: CGRect) -> CGRect {
+        let width = min(max(rect.width, 0), 1)
+        let height = min(max(rect.height, 0), 1)
+        let x = min(max(rect.origin.x, 0), 1 - width)
+        let y = min(max(rect.origin.y, 0), 1 - height)
+        return CGRect(x: x, y: y, width: width, height: height)
     }
 
     private func center(of rect: CGRect) -> CGPoint {

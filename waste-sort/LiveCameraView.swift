@@ -12,7 +12,7 @@ struct LiveCameraView: View {
     @State private var showSettings = false
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
             LiveYOLOCamera(settings: settings.runtime) { result, tracked in
                 if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                     fps = measured
@@ -22,7 +22,9 @@ struct LiveCameraView: View {
 
                 var nextCounts: [String: Int] = [:]
                 for track in tracked {
-                    nextCounts[track.classKey, default: 0] += 1
+                    let binID = BinGuide.info(for: track.classKey).id
+                    guard binID != BinGuide.unknown.id else { continue }
+                    nextCounts[binID, default: 0] += 1
                 }
                 if nextCounts != counts {
                     counts = nextCounts
@@ -31,41 +33,31 @@ struct LiveCameraView: View {
             .ignoresSafeArea()
 
             GeometryReader { geo in
-                DetectionOverlay(
+                DetectionBoxOverlay(
                     tracks: tracks,
                     imageSize: imageSize,
-                    viewSize: geo.size
+                    viewSize: geo.size,
+                    useAspectFill: true
                 )
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
 
-            VStack(spacing: 12) {
-                HStack {
-                    Spacer()
-                    Text("\(fps) FPS")
-                        .font(.system(.caption, design: .rounded).weight(.semibold).monospacedDigit())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.black.opacity(0.5), in: Capsule())
-                        .accessibilityLabel("\(fps) frames per second")
-                        .accessibilityAction(named: "Open settings") {
-                            showSettings = true
-                        }
-                        .onLongPressGesture {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            showSettings = true
-                        }
+            VStack(spacing: 0) {
+                HStack(alignment: .top) {
+                    Spacer(minLength: 0)
+                    CategoryBar(counts: counts)
+                        .frame(maxWidth: Theme.barMaxWidth)
+                    Spacer(minLength: 0)
                 }
+                .overlay(alignment: .topTrailing) {
+                    fpsBadge
+                }
+                .padding(.horizontal, Theme.hudInset)
                 .padding(.top, 12)
 
-                Spacer()
-
-                BinLegend(counts: counts)
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -74,88 +66,24 @@ struct LiveCameraView: View {
                 .presentationDragIndicator(.visible)
         }
     }
-}
 
-/// Draws smoothed track boxes using the same aspect-fill mapping as Ultralytics `YOLOView`.
-private struct DetectionOverlay: View {
-    let tracks: [TrackedDetection]
-    let imageSize: CGSize
-    let viewSize: CGSize
-
-    var body: some View {
-        Canvas { context, size in
-            guard imageSize.width > 0, imageSize.height > 0, size.width > 0, size.height > 0 else {
-                return
+    private var fpsBadge: some View {
+        Text("\(fps) FPS")
+            .font(.system(.caption2, design: .default).weight(.semibold).monospacedDigit())
+            .foregroundStyle(.white.opacity(0.7))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(.black.opacity(0.35), in: Capsule())
+            .accessibilityLabel("\(fps) frames per second")
+            .accessibilityAction(named: "Open settings") {
+                showSettings = true
             }
-            for track in tracks {
-                let rect = aspectFillDisplayRect(
-                    for: track.displayXywhn,
-                    imageSize: imageSize,
-                    viewSize: size
-                )
-                guard rect.width > 1, rect.height > 1 else { continue }
-
-                let bin = BinGuide.info(for: track.classKey)
-                let path = Path(roundedRect: rect, cornerRadius: 4)
-
-                context.fill(path, with: .color(bin.color.opacity(0.22)))
-                context.stroke(path, with: .color(bin.color), lineWidth: 3)
-
-                let label = "\(bin.title) \(Int(track.conf * 100))%"
-                let text = Text(label)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                let resolved = context.resolve(text)
-                let textSize = resolved.measure(in: CGSize(width: 220, height: 40))
-                let padX: CGFloat = 4
-                let padY: CGFloat = 2
-                let labelSize = CGSize(
-                    width: textSize.width + padX * 2,
-                    height: textSize.height + padY * 2
-                )
-                let aboveY = rect.minY - labelSize.height - 4
-                let preferredY = aboveY >= 0 ? aboveY : rect.minY + 4
-                let labelRect = CGRect(
-                    x: min(max(0, rect.minX), max(0, size.width - labelSize.width)),
-                    y: min(max(0, preferredY), max(0, size.height - labelSize.height)),
-                    width: labelSize.width,
-                    height: labelSize.height
-                )
-                context.fill(
-                    Path(roundedRect: labelRect, cornerRadius: 4),
-                    with: .color(bin.color.opacity(0.92))
-                )
-                context.draw(
-                    resolved,
-                    at: CGPoint(x: labelRect.minX + padX, y: labelRect.minY + padY),
-                    anchor: .topLeading
-                )
+            .onLongPressGesture {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                showSettings = true
             }
-        }
+            .padding(.top, 4)
     }
-}
-
-/// Matches Ultralytics YOLOView's aspect-fill overlay mapping for normalized boxes.
-private func aspectFillDisplayRect(
-    for normalizedRect: CGRect,
-    imageSize: CGSize,
-    viewSize: CGSize
-) -> CGRect {
-    guard imageSize.width > 0, imageSize.height > 0, viewSize.width > 0, viewSize.height > 0 else {
-        return .zero
-    }
-    let scale = max(viewSize.width / imageSize.width, viewSize.height / imageSize.height)
-    let scaledImageSize = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
-    let offset = CGPoint(
-        x: (scaledImageSize.width - viewSize.width) / 2,
-        y: (scaledImageSize.height - viewSize.height) / 2
-    )
-    return CGRect(
-        x: normalizedRect.minX * imageSize.width * scale - offset.x,
-        y: normalizedRect.minY * imageSize.height * scale - offset.y,
-        width: normalizedRect.width * imageSize.width * scale,
-        height: normalizedRect.height * imageSize.height * scale
-    )
 }
 
 /// Smoothed pipeline FPS from callback timing; prefers the model's reported rate when present.
@@ -186,40 +114,6 @@ private final class FrameRateMonitor {
         guard rounded != fps else { return nil }
         fps = rounded
         return rounded
-    }
-}
-
-private struct BinLegend: View {
-    let counts: [String: Int]
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(BinGuide.all) { bin in
-                let count = counts[bin.id] ?? 0
-                VStack(spacing: 4) {
-                    Text("\(count)")
-                        .font(.system(.title2, design: .rounded).weight(.semibold).monospacedDigit())
-                    Text(bin.title)
-                        .font(.system(.caption2, design: .rounded).weight(.medium))
-                        .multilineTextAlignment(.center)
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(2)
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(bin.color.opacity(count > 0 ? 0.92 : 0.55))
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(legendLabel)
-    }
-
-    private var legendLabel: String {
-        BinGuide.all
-            .map { "\($0.title) \(counts[$0.id] ?? 0)" }
-            .joined(separator: ", ")
     }
 }
 

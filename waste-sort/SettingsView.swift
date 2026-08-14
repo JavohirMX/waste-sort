@@ -31,6 +31,7 @@ struct SettingsView: View {
                     )
                 } header: {
                     Text("Detection")
+                        .foregroundStyle(BinGuide.organic.color)
                 } footer: {
                     Text("These affect live camera and photo sorting.")
                 }
@@ -44,7 +45,7 @@ struct SettingsView: View {
                     )
                     SettingsIntSliderRow(
                         title: "Keep after miss",
-                        help: "How many frames a box stays after the model loses it. Higher = boxes linger more.",
+                        help: "How many frames a box stays after the model loses it. Boxes freeze in place (no sliding). Higher = boxes linger more.",
                         value: $settings.maxMisses,
                         range: 1...20
                     )
@@ -82,6 +83,7 @@ struct SettingsView: View {
                     )
                 } header: {
                     Text("Live tracking")
+                        .foregroundStyle(BinGuide.cleanInorganic.color)
                 } footer: {
                     Text("These only affect the camera overlay.")
                 }
@@ -90,13 +92,16 @@ struct SettingsView: View {
                     Button("Reset to defaults", role: .destructive) {
                         settings.resetToDefaults()
                     }
-                    .font(.system(.body, design: .rounded))
+                    .font(.system(.body, design: .default))
                 }
             }
-            .font(.system(.body, design: .rounded))
+            .font(.system(.body, design: .default))
             .tint(BinGuide.organic.color)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(BinGuide.residual.color.opacity(0.92), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
         }
     }
 
@@ -128,7 +133,7 @@ private struct SettingsSliderRow: View {
             }
             Slider(value: $value, in: range, step: step)
             Text(help)
-                .font(.system(.footnote, design: .rounded))
+                .font(.system(.footnote, design: .default))
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)

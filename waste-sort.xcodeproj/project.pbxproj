@@ -39,6 +39,11 @@
 			path = "waste-sort";
 			sourceTree = "<group>";
 		};
+		A1B2C3D4302BF09000TEST01 /* waste-sortTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "waste-sortTests";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,6 +76,7 @@
 			isa = PBXGroup;
 			children = (
 				09650891302BF08E00842337 /* waste-sort */,
+				A1B2C3D4302BF09000TEST01 /* waste-sortTests */,
 				09650890302BF08E00842337 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -123,6 +129,9 @@
 			);
 			dependencies = (
 				0965089E302BF08F00842337 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A1B2C3D4302BF09000TEST01 /* waste-sortTests */,
 			);
 			name = "waste-sortTests";
 			packageProductDependencies = (
