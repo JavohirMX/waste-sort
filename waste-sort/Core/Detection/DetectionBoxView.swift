@@ -2,6 +2,17 @@ import SwiftUI
 
 /// Shared aspect-fill mapping used by Ultralytics YOLOView overlays.
 enum DetectionGeometry {
+    /// 180° flip in normalized image space so boxes track a rotated preview
+    /// without rotating badge/symbol views.
+    static func flipNormalized180(_ rect: CGRect) -> CGRect {
+        CGRect(
+            x: 1 - rect.maxX,
+            y: 1 - rect.maxY,
+            width: rect.width,
+            height: rect.height
+        )
+    }
+
     static func aspectFillDisplayRect(
         for normalizedRect: CGRect,
         imageSize: CGSize,
@@ -54,6 +65,8 @@ struct DetectionBoxOverlay: View {
     let imageSize: CGSize
     let viewSize: CGSize
     var useAspectFill: Bool = true
+    /// When the live preview is rotated 180°, remap box coords without rotating symbols.
+    var flipNormalized180: Bool = false
 
     var body: some View {
         ZStack {
@@ -71,15 +84,18 @@ struct DetectionBoxOverlay: View {
     }
 
     private func mappedRect(for track: TrackedDetection) -> CGRect {
+        let normalized = flipNormalized180
+            ? DetectionGeometry.flipNormalized180(track.displayXywhn)
+            : track.displayXywhn
         if useAspectFill {
             return DetectionGeometry.aspectFillDisplayRect(
-                for: track.displayXywhn,
+                for: normalized,
                 imageSize: imageSize,
                 viewSize: viewSize
             )
         }
         return DetectionGeometry.aspectFitDisplayRect(
-            for: track.displayXywhn,
+            for: normalized,
             imageSize: imageSize,
             viewSize: viewSize
         )

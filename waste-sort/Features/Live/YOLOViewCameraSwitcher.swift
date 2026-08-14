@@ -62,12 +62,16 @@ enum YOLOViewCameraSwitcher {
     }
 
     static func currentDeviceUniqueID(in view: YOLOView) -> String? {
-        guard let session = findPreviewLayer(in: view.layer)?.session else { return nil }
+        guard let session = captureSession(in: view) else { return nil }
         return session.inputs
             .compactMap { $0 as? AVCaptureDeviceInput }
             .first { $0.device.hasMediaType(.video) }?
             .device
             .uniqueID
+    }
+
+    static func captureSession(in view: YOLOView) -> AVCaptureSession? {
+        findPreviewLayer(in: view.layer)?.session
     }
 
     private static func findPreviewLayer(in layer: CALayer) -> AVCaptureVideoPreviewLayer? {

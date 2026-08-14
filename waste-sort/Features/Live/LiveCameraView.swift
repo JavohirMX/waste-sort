@@ -5,6 +5,7 @@ import UltralyticsYOLO
 
 struct LiveCameraView: View {
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var recording: RecordingController
     @State private var counts: [String: Int] = [:]
     @State private var fps = 0
     @State private var tracks: [TrackedDetection] = []
@@ -14,9 +15,12 @@ struct LiveCameraView: View {
 
     var body: some View {
         ZStack {
+            // Rotate only the camera pixels; boxes stay upright and are remapped below.
             LiveYOLOCamera(
                 settings: settings.runtime,
-                preferredCameraID: settings.preferredCameraID
+                preferredCameraID: settings.preferredCameraID,
+                selectedModelName: settings.selectedModelName,
+                recording: recording
             ) { result, tracked in
                 if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                     fps = measured
@@ -34,6 +38,7 @@ struct LiveCameraView: View {
                     counts = nextCounts
                 }
             }
+            .rotationEffect(.degrees(180))
             .ignoresSafeArea()
 
             GeometryReader { geo in
@@ -41,7 +46,8 @@ struct LiveCameraView: View {
                     tracks: tracks,
                     imageSize: imageSize,
                     viewSize: geo.size,
-                    useAspectFill: true
+                    useAspectFill: true,
+                    flipNormalized180: true
                 )
             }
             .ignoresSafeArea()
@@ -65,6 +71,7 @@ struct LiveCameraView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(settings)
+                .environmentObject(recording)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -119,20 +126,28 @@ private final class FrameRateMonitor {
     }
 }
 
-/// YOLOCamera wrapper that loads `best` as segment, sets thresholds, and hides developer chrome.
+/// YOLOCamera wrapper that loads the selected segment model, sets thresholds, and hides developer chrome.
 private struct LiveYOLOCamera: UIViewRepresentable {
     var settings: RuntimeSettings
     var preferredCameraID: String
+    var selectedModelName: String
+    var recording: RecordingController
     var onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(settings: settings, preferredCameraID: preferredCameraID, onDetection: onDetection)
+        Coordinator(
+            settings: settings,
+            preferredCameraID: preferredCameraID,
+            selectedModelName: selectedModelName,
+            recording: recording,
+            onDetection: onDetection
+        )
     }
 
     func makeUIView(context: Context) -> YOLOView {
         let view = YOLOView(
             frame: .zero,
-            modelPathOrName: WasteSortConfig.modelName,
+            modelPathOrName: selectedModelName,
             task: .segment
         )
         applyThresholds(view, settings: settings)
@@ -142,6 +157,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.yoloView = view
         coordinator.preferredCameraID = preferredCameraID
+        coordinator.selectedModelName = selectedModelName
         coordinator.startObservingCameraChanges()
         view.onDetection = { result in
             coordinator.handle(result)
@@ -153,6 +169,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     func updateUIView(_ uiView: YOLOView, context: Context) {
         context.coordinator.onDetection = onDetection
         context.coordinator.yoloView = uiView
+        context.coordinator.recording = recording
         applyThresholds(uiView, settings: settings)
         applyTracking(context.coordinator, settings: settings)
         let coordinator = context.coordinator
@@ -166,10 +183,22 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             coordinator.preferredCameraID = preferredCameraID
             coordinator.applyPreferredCamera()
         }
+
+        if coordinator.selectedModelName != selectedModelName {
+            coordinator.selectedModelName = selectedModelName
+            coordinator.reloadModel(named: selectedModelName)
+        }
+        // Do not register the capture session here: updateUIView runs on every
+        // SwiftUI refresh (including each detection frame). Publishing from
+        // RecordingController during that path caused a 100% CPU update loop.
     }
 
     static func dismantleUIView(_ uiView: YOLOView, coordinator: Coordinator) {
         coordinator.stopObservingCameraChanges()
+        // Clear after the current update cycle so we don't publish mid-teardown.
+        DispatchQueue.main.async {
+            coordinator.recording.register(session: nil)
+        }
     }
 
     private func applyThresholds(_ view: YOLOView, settings: RuntimeSettings) {
@@ -211,18 +240,25 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         var onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?
         var settings: RuntimeSettings
         var preferredCameraID: String
+        var selectedModelName: String
+        var recording: RecordingController
         weak var yoloView: YOLOView?
         let tracker = DetectionTracker()
         private var cameraObservers: [NSObjectProtocol] = []
         private var applyWorkItem: DispatchWorkItem?
+        private var isReloadingModel = false
 
         init(
             settings: RuntimeSettings,
             preferredCameraID: String,
+            selectedModelName: String,
+            recording: RecordingController,
             onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?
         ) {
             self.settings = settings
             self.preferredCameraID = preferredCameraID
+            self.selectedModelName = selectedModelName
+            self.recording = recording
             self.onDetection = onDetection
         }
 
@@ -251,7 +287,6 @@ private struct LiveYOLOCamera: UIViewRepresentable {
 
         func startObservingCameraChanges() {
             stopObservingCameraChanges()
-            // Warm discovery so connect notifications are delivered.
             _ = CameraDeviceCatalog.availableOptions()
 
             let center = NotificationCenter.default
@@ -286,7 +321,9 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             applyWorkItem?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
+                self.registerCaptureSessionIfNeeded()
                 if self.applyPreferredCamera() {
+                    self.registerCaptureSessionIfNeeded()
                     return
                 }
                 if retries > 0 {
@@ -306,10 +343,42 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             }
 
             if YOLOViewCameraSwitcher.currentDeviceUniqueID(in: view) == device.uniqueID {
+                registerCaptureSessionIfNeeded()
                 return true
             }
 
-            return YOLOViewCameraSwitcher.switchTo(device, in: view)
+            let ok = YOLOViewCameraSwitcher.switchTo(device, in: view)
+            if ok {
+                registerCaptureSessionIfNeeded()
+            }
+            return ok
+        }
+
+        func registerCaptureSessionIfNeeded() {
+            guard let view = yoloView else { return }
+            // Defer so we never publish ObservableObject changes mid-view-update.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let view = self.yoloView else { return }
+                self.recording.register(from: view)
+            }
+        }
+
+        func reloadModel(named name: String) {
+            guard let view = yoloView, !isReloadingModel else { return }
+            isReloadingModel = true
+            view.setModel(modelPathOrName: name, task: .segment) { [weak self] result in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.isReloadingModel = false
+                    if case .success = result {
+                        view.setConfidenceThreshold(self.settings.confidence)
+                        view.setIouThreshold(self.settings.iou)
+                        view.setNumItemsThreshold(self.settings.maxItems)
+                        self.applyPreferredCamera()
+                        self.registerCaptureSessionIfNeeded()
+                    }
+                }
+            }
         }
     }
 }

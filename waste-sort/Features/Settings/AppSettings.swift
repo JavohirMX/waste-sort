@@ -2,8 +2,6 @@ import Combine
 import Foundation
 
 enum WasteSortConfig {
-    static let modelName = "best"
-
     static let defaultConfidence = 0.6
     static let defaultIou = 0.7
     static let defaultMaxItems = 100
@@ -14,6 +12,7 @@ enum WasteSortConfig {
     static let defaultEmaAlpha = 0.4
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8
+    static let defaultModelName = WasteSortModel.bestv31.resourceName
 }
 
 /// Snapshot of tunable inference and tracking values, passed into Live camera updates.
@@ -28,6 +27,7 @@ struct RuntimeSettings: Equatable {
     var boxInflate: Double
     var maxSpeed: Double
     var preferredCameraID: String
+    var selectedModelName: String
 }
 
 @MainActor
@@ -65,6 +65,14 @@ final class AppSettings: ObservableObject {
     @Published var preferredCameraID: String {
         didSet { persist(preferredCameraID, key: Keys.preferredCameraID) }
     }
+    /// Bundle resource name: `best`, `bestv3.2`, or `bestv3.3`.
+    @Published var selectedModelName: String {
+        didSet { persist(selectedModelName, key: Keys.selectedModelName) }
+    }
+
+    var selectedModel: WasteSortModel {
+        WasteSortModel.from(resourceName: selectedModelName)
+    }
 
     var runtime: RuntimeSettings {
         RuntimeSettings(
@@ -77,7 +85,8 @@ final class AppSettings: ObservableObject {
             emaAlpha: emaAlpha,
             boxInflate: boxInflate,
             maxSpeed: maxSpeed,
-            preferredCameraID: preferredCameraID
+            preferredCameraID: preferredCameraID,
+            selectedModelName: selectedModelName
         )
     }
 
@@ -96,6 +105,7 @@ final class AppSettings: ObservableObject {
         /// v2 picks up lower association speed without requiring a manual reset.
         static let maxSpeed = "settings.maxSpeed.v2"
         static let preferredCameraID = "settings.preferredCameraID"
+        static let selectedModelName = "settings.selectedModelName"
     }
 
     private init(defaults: UserDefaults = .standard) {
@@ -114,6 +124,11 @@ final class AppSettings: ObservableObject {
             Keys.preferredCameraID,
             CameraPreference.autoID
         )
+        selectedModelName = Self.loadString(
+            defaults,
+            Keys.selectedModelName,
+            WasteSortConfig.defaultModelName
+        )
     }
 
     func resetToDefaults() {
@@ -127,6 +142,7 @@ final class AppSettings: ObservableObject {
         boxInflate = WasteSortConfig.defaultBoxInflate
         maxSpeed = WasteSortConfig.defaultMaxSpeed
         preferredCameraID = CameraPreference.autoID
+        selectedModelName = WasteSortConfig.defaultModelName
     }
 
     private func persist(_ value: Double, key: String) {

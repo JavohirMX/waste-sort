@@ -70,6 +70,9 @@ struct PhotoSortView: View {
             .onChange(of: pickerItem) { _, newItem in
                 Task { await importPhoto(newItem) }
             }
+            .onChange(of: settings.selectedModelName) { _, _ in
+                reloadModel()
+            }
         }
     }
 
@@ -176,10 +179,20 @@ struct PhotoSortView: View {
             isLoadingModel = false
             return
         }
+        beginModelLoad(named: settings.selectedModelName)
+    }
 
+    private func reloadModel() {
+        model = nil
+        isLoadingModel = true
+        errorMessage = nil
+        beginModelLoad(named: settings.selectedModelName)
+    }
+
+    private func beginModelLoad(named name: String) {
         // YOLO's async loader captures `[weak self]`. Keep the instance in
         // `@State` immediately so the completion can fire.
-        let yolo = YOLO(WasteSortConfig.modelName, task: .segment) { result in
+        let yolo = YOLO(name, task: .segment) { result in
             Task { @MainActor in
                 switch result {
                 case .success(let loaded):

@@ -3,6 +3,7 @@ import UIKit
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var recording: RecordingController
 
     var body: some View {
         TabView {
@@ -27,6 +28,9 @@ struct ContentView: View {
         .onDisappear { setIdleTimerDisabled(false) }
         .onChange(of: scenePhase) { _, phase in
             setIdleTimerDisabled(phase == .active)
+            if phase != .active {
+                recording.flushAndSave()
+            }
         }
     }
 
@@ -47,4 +51,5 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .environmentObject(AppSettings.shared)
+        .environmentObject(RecordingController.shared)
 }

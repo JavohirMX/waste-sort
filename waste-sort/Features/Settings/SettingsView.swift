@@ -1,13 +1,27 @@
-import SwiftUI
 import AVFoundation
+import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var recording: RecordingController
     @State private var cameraOptions: [CameraOption] = CameraDeviceCatalog.availableOptions()
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Picker("Model", selection: $settings.selectedModelName) {
+                        ForEach(WasteSortModel.allCases) { model in
+                            Text(model.displayName).tag(model.resourceName)
+                        }
+                    }
+                } header: {
+                    Text("Model")
+                        .foregroundStyle(BinGuide.organic.color)
+                } footer: {
+                    Text("Changes reload Live and Photo sorting with the selected CoreML weights.")
+                }
+
                 Section {
                     Picker("Camera", selection: $settings.preferredCameraID) {
                         Text("Auto (prefer USB)").tag(CameraPreference.autoID)
@@ -27,6 +41,42 @@ struct SettingsView: View {
                         .foregroundStyle(BinGuide.residual.color)
                 } footer: {
                     Text("Auto uses a connected USB-C webcam when available, otherwise the iPad back camera. Plug in a UVC webcam and reopen Settings if it does not appear.")
+                }
+
+                Section {
+                    if recording.canStop {
+                        Button("Stop recording", role: .destructive) {
+                            recording.stopRecording()
+                        }
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(recording.isRecording ? Color.red : Color.secondary)
+                                .frame(width: 8, height: 8)
+                            Text(recording.isRecording ? "Recording camera feed…" : "Starting…")
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.system(.footnote, design: .default))
+                    } else {
+                        Button("Start recording") {
+                            recording.startRecording()
+                        }
+                        .disabled(!recording.canStart)
+                    }
+
+                    if let status = recording.statusMessage {
+                        Text(status)
+                            .font(.system(.footnote, design: .default))
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Recording")
+                        .foregroundStyle(Color.red.opacity(0.85))
+                } footer: {
+                    Text(
+                        recording.hasLiveSession
+                            ? "Records the camera feed only (no overlays). Saves to Photos when you stop, or if the app is backgrounded or closed."
+                            : "Open the Live tab first so the camera session is available."
+                    )
                 }
 
                 Section {
@@ -208,4 +258,5 @@ private struct SettingsIntSliderRow: View {
 #Preview {
     SettingsView()
         .environmentObject(AppSettings.shared)
+        .environmentObject(RecordingController.shared)
 }
