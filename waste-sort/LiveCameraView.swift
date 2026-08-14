@@ -1,16 +1,19 @@
 import SwiftUI
+import UIKit
 import UltralyticsYOLO
 
 struct LiveCameraView: View {
+    @EnvironmentObject private var settings: AppSettings
     @State private var counts: [String: Int] = [:]
     @State private var fps = 0
     @State private var tracks: [TrackedDetection] = []
     @State private var imageSize: CGSize = .zero
     @State private var fpsMonitor = FrameRateMonitor()
+    @State private var showSettings = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            LiveYOLOCamera { result, tracked in
+            LiveYOLOCamera(settings: settings.runtime) { result, tracked in
                 if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                     fps = measured
                 }
@@ -47,6 +50,13 @@ struct LiveCameraView: View {
                         .padding(.vertical, 6)
                         .background(.black.opacity(0.5), in: Capsule())
                         .accessibilityLabel("\(fps) frames per second")
+                        .accessibilityAction(named: "Open settings") {
+                            showSettings = true
+                        }
+                        .onLongPressGesture {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            showSettings = true
+                        }
                 }
                 .padding(.top, 12)
 
@@ -56,6 +66,12 @@ struct LiveCameraView: View {
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+                .environmentObject(settings)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
     }
 }
@@ -207,12 +223,13 @@ private struct BinLegend: View {
     }
 }
 
-/// YOLOCamera wrapper that loads `best` as segment, sets confidence, and hides developer chrome.
+/// YOLOCamera wrapper that loads `best` as segment, sets thresholds, and hides developer chrome.
 private struct LiveYOLOCamera: UIViewRepresentable {
+    var settings: RuntimeSettings
     var onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onDetection: onDetection)
+        Coordinator(settings: settings, onDetection: onDetection)
     }
 
     func makeUIView(context: Context) -> YOLOView {
@@ -221,7 +238,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             modelPathOrName: WasteSortConfig.modelName,
             task: .segment
         )
-        applyThresholds(view)
+        applyThresholds(view, settings: settings)
+        applyTracking(context.coordinator, settings: settings)
         view.showOverlays = false
         hideDeveloperChrome(view)
         let coordinator = context.coordinator
@@ -235,7 +253,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     func updateUIView(_ uiView: YOLOView, context: Context) {
         context.coordinator.onDetection = onDetection
         context.coordinator.yoloView = uiView
-        applyThresholds(uiView)
+        applyThresholds(uiView, settings: settings)
+        applyTracking(context.coordinator, settings: settings)
         let coordinator = context.coordinator
         uiView.onDetection = { result in
             coordinator.handle(result)
@@ -244,8 +263,20 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         hideDeveloperChrome(uiView)
     }
 
-    private func applyThresholds(_ view: YOLOView) {
-        view.setConfidenceThreshold(WasteSortConfig.confidence)
+    private func applyThresholds(_ view: YOLOView, settings: RuntimeSettings) {
+        view.setConfidenceThreshold(settings.confidence)
+        view.setIouThreshold(settings.iou)
+        view.setNumItemsThreshold(settings.maxItems)
+    }
+
+    private func applyTracking(_ coordinator: Coordinator, settings: RuntimeSettings) {
+        coordinator.settings = settings
+        coordinator.tracker.iouThreshold = CGFloat(settings.trackerIou)
+        coordinator.tracker.confirmHits = settings.confirmHits
+        coordinator.tracker.maxMisses = settings.maxMisses
+        coordinator.tracker.emaAlpha = CGFloat(settings.emaAlpha)
+        coordinator.tracker.boxInflate = CGFloat(settings.boxInflate)
+        coordinator.tracker.maxSpeed = CGFloat(settings.maxSpeed)
     }
 
     private func hideDeveloperChrome(_ view: YOLOView) {
@@ -269,20 +300,22 @@ private struct LiveYOLOCamera: UIViewRepresentable {
 
     final class Coordinator {
         var onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?
+        var settings: RuntimeSettings
         weak var yoloView: YOLOView?
         let tracker = DetectionTracker()
-        private var didApplyThreshold = false
 
-        init(onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?) {
+        init(settings: RuntimeSettings, onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?) {
+            self.settings = settings
             self.onDetection = onDetection
         }
 
         func handle(_ result: YOLOResult) {
-            if !didApplyThreshold, let view = yoloView {
-                view.setConfidenceThreshold(WasteSortConfig.confidence)
-                didApplyThreshold = true
+            if let view = yoloView {
+                view.setConfidenceThreshold(settings.confidence)
+                view.setIouThreshold(settings.iou)
+                view.setNumItemsThreshold(settings.maxItems)
             }
-            let minConf = Float(WasteSortConfig.confidence)
+            let minConf = Float(settings.confidence)
             let raw: [RawDetection] = result.boxes.compactMap { box in
                 guard box.conf >= minConf else { return nil }
                 let key = BinGuide.normalizedKey(box.cls)

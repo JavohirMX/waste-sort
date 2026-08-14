@@ -1,10 +1,5 @@
 import SwiftUI
 
-enum WasteSortConfig {
-    static let modelName = "best"
-    static let confidence = 0.6
-}
-
 struct BinInfo: Identifiable, Hashable {
     let id: String
     let title: String

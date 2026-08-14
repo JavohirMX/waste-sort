@@ -3,6 +3,7 @@ import SwiftUI
 import UltralyticsYOLO
 
 struct PhotoSortView: View {
+    @EnvironmentObject private var settings: AppSettings
     @State private var pickerItem: PhotosPickerItem?
     @State private var model: YOLO?
     @State private var isLoadingModel = true
@@ -108,7 +109,7 @@ struct PhotoSortView: View {
             Task { @MainActor in
                 switch result {
                 case .success(let loaded):
-                    loaded.setConfidenceThreshold(WasteSortConfig.confidence)
+                    applyThresholds(loaded)
                     isLoadingModel = false
                 case .failure(let error):
                     model = nil
@@ -147,13 +148,21 @@ struct PhotoSortView: View {
         detections = []
         annotatedImage = nil
 
+        applyThresholds(model)
+        let minConf = Float(settings.confidence)
+
         let result = await Task.detached(priority: .userInitiated) {
             model(image)
         }.value
 
         annotatedImage = result.annotatedImage ?? image
-        let minConf = Float(WasteSortConfig.confidence)
         detections = result.boxes.filter { $0.conf >= minConf }
         isInferring = false
+    }
+
+    private func applyThresholds(_ model: YOLO) {
+        model.setConfidenceThreshold(settings.confidence)
+        model.setIouThreshold(settings.iou)
+        model.setNumItemsThreshold(settings.maxItems)
     }
 }
