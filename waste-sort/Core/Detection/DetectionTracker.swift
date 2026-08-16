@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 /// Lightweight detection used as tracker input (normalized image coordinates).
-struct RawDetection: Equatable {
+struct RawDetection: Equatable, Sendable {
     let classKey: String
     let className: String
     let conf: Float
@@ -11,7 +11,7 @@ struct RawDetection: Equatable {
 }
 
 /// Confirmed track ready for overlay drawing and counting.
-struct TrackedDetection: Identifiable, Equatable {
+struct TrackedDetection: Identifiable, Equatable, Sendable {
     let id: Int
     let classKey: String
     let className: String

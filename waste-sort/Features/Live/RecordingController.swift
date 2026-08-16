@@ -13,7 +13,7 @@ enum RecordingPhase: Equatable {
     case saving
 }
 
-/// Records the live camera feed (no UI overlays) and saves to Photos.
+/// Records the live camera feed (no UI overlays) and an overlay-burned twin, plus a CSV log.
 @MainActor
 final class RecordingController: NSObject, ObservableObject {
     static let shared = RecordingController()
@@ -29,6 +29,16 @@ final class RecordingController: NSObject, ObservableObject {
 
     var canStop: Bool { phase == .starting || phase == .recording }
 
+    /// YOLO should copy camera frames while a session is starting, rolling, or stopping.
+    var shouldCaptureOriginalFrames: Bool {
+        switch phase {
+        case .starting, .recording, .stopping:
+            return true
+        case .idle, .saving:
+            return false
+        }
+    }
+
     private weak var captureSession: AVCaptureSession?
     private let movieOutput = AVCaptureMovieFileOutput()
     private let sessionQueue = DispatchQueue(label: "waste-sort.recording.session")
@@ -40,7 +50,18 @@ final class RecordingController: NSObject, ObservableObject {
     private var sessionObservers: [NSObjectProtocol] = []
     private var lifecycleObservers: [NSObjectProtocol] = []
 
+    private let logStore = DetectionLogStore.shared
+    private var annotatedWriter: AnnotatedVideoWriter?
+    private var sessionId: String?
+    private var sessionStartedAt: Date?
+    private var filePrefix: String?
+    private var loggedTrackIDs = Set<Int>()
+    private var annotatedPending = false
+    private var logSavedToFiles = false
+    private var annotatedSavedToFiles = false
+
     private let activeFileKey = "recording.activeFilePath"
+    private let activeAnnotatedFileKey = "recording.activeAnnotatedFilePath"
 
     private var recordingsDirectory: URL {
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -62,6 +83,8 @@ final class RecordingController: NSObject, ObservableObject {
             },
         ]
 
+        _ = logStore.recoverLeftoverSessions()
+        recoverLeftoverAnnotatedRecordings()
         recoverLeftoverRecordings()
     }
 
@@ -84,6 +107,45 @@ final class RecordingController: NSObject, ObservableObject {
         register(session: YOLOViewCameraSwitcher.captureSession(in: view))
     }
 
+    func ingestLiveFrame(
+        tracks: [TrackedDetection],
+        originalImage: UIImage?,
+        fps: Int,
+        settings: RuntimeSettings
+    ) {
+        guard isRecording, let sessionId, let sessionStartedAt else { return }
+
+        let now = Date()
+        for track in tracks where loggedTrackIDs.insert(track.id).inserted {
+            let bin = BinGuide.info(for: track.classKey)
+            logStore.append(
+                DetectionLogEvent(
+                    timestamp: now,
+                    sessionId: sessionId,
+                    sessionStartedAt: sessionStartedAt,
+                    trackId: track.id,
+                    classKey: track.classKey,
+                    className: track.className,
+                    bin: bin.id,
+                    confidence: Double(track.conf),
+                    model: settings.selectedModelName,
+                    confidenceThreshold: settings.confidence,
+                    iouThreshold: settings.iou,
+                    cameraId: settings.preferredCameraID,
+                    boxX: Double(track.displayXywhn.origin.x),
+                    boxY: Double(track.displayXywhn.origin.y),
+                    boxW: Double(track.displayXywhn.width),
+                    boxH: Double(track.displayXywhn.height),
+                    fps: fps
+                )
+            )
+        }
+
+        if let originalImage {
+            annotatedWriter?.append(image: originalImage, tracks: tracks, timestamp: now)
+        }
+    }
+
     func startRecording() {
         guard canStart else { return }
         guard let session = captureSession else {
@@ -93,6 +155,8 @@ final class RecordingController: NSObject, ObservableObject {
 
         stopRequested = false
         saveWasInterrupted = false
+        logSavedToFiles = false
+        annotatedSavedToFiles = false
         phase = .starting
         statusMessage = "Starting…"
 
@@ -186,12 +250,81 @@ final class RecordingController: NSObject, ObservableObject {
     }
 
     private func failStart(_ message: String) {
+        abortDetectionSession()
         phase = .idle
         outputURL = nil
         UserDefaults.standard.removeObject(forKey: activeFileKey)
         statusMessage = stopRequested ? "Recording cancelled." : message
         stopRequested = false
         endBackgroundTask()
+    }
+
+    private func beginDetectionSession() {
+        let startedAt = Date()
+        let id = UUID().uuidString
+        let prefix = SessionFileNamer.prefix(for: startedAt)
+        sessionId = id
+        sessionStartedAt = startedAt
+        filePrefix = prefix
+        loggedTrackIDs.removeAll()
+        logSavedToFiles = false
+        annotatedSavedToFiles = false
+        logStore.startSession(id: id, startedAt: startedAt, filePrefix: prefix)
+
+        let annotatedURL = recordingsDirectory.appendingPathComponent("\(prefix)-annotated.mov")
+        try? FileManager.default.removeItem(at: annotatedURL)
+        annotatedWriter = AnnotatedVideoWriter(outputURL: annotatedURL)
+        UserDefaults.standard.set(annotatedURL.path, forKey: activeAnnotatedFileKey)
+    }
+
+    private func abortDetectionSession() {
+        annotatedWriter?.cancel()
+        annotatedWriter = nil
+        annotatedPending = false
+        logStore.discardSession()
+        clearSessionIdentifiers()
+        UserDefaults.standard.removeObject(forKey: activeAnnotatedFileKey)
+    }
+
+    private func finishDetectionArtifactsThenSave() {
+        annotatedPending = true
+        let writer = annotatedWriter
+        annotatedWriter = nil
+        let prefix = filePrefix
+        let csvURL = logStore.finishSession()
+        logSavedToFiles = csvURL != nil
+        clearSessionIdentifiers()
+
+        Task { @MainActor in
+            let finished = await writer?.finish()
+            if let finished, let prefix {
+                copyAnnotatedToDocuments(finished, prefix: prefix)
+                if usableRecordingURL(finished) != nil {
+                    enqueueSaves([finished])
+                }
+            }
+            UserDefaults.standard.removeObject(forKey: self.activeAnnotatedFileKey)
+            annotatedPending = false
+            processSaveQueue()
+        }
+    }
+
+    private func copyAnnotatedToDocuments(_ tempURL: URL, prefix: String) {
+        let destination = logStore.documentsDirectory.appendingPathComponent("\(prefix)-annotated.mov")
+        try? FileManager.default.removeItem(at: destination)
+        do {
+            try FileManager.default.copyItem(at: tempURL, to: destination)
+            annotatedSavedToFiles = true
+        } catch {
+            annotatedSavedToFiles = false
+        }
+    }
+
+    private func clearSessionIdentifiers() {
+        sessionId = nil
+        sessionStartedAt = nil
+        filePrefix = nil
+        loggedTrackIDs.removeAll()
     }
 
     private func observeCaptureSession(_ session: AVCaptureSession?) {
@@ -285,7 +418,36 @@ final class RecordingController: NSObject, ObservableObject {
         enqueueSaves(files)
     }
 
+    private func recoverLeftoverAnnotatedRecordings() {
+        let files = leftoverAnnotatedFiles()
+        guard !files.isEmpty else {
+            UserDefaults.standard.removeObject(forKey: activeAnnotatedFileKey)
+            return
+        }
+        for url in files {
+            let prefix = url.deletingPathExtension().lastPathComponent.replacingOccurrences(
+                of: "-annotated",
+                with: ""
+            )
+            copyAnnotatedToDocuments(url, prefix: prefix)
+        }
+        saveWasInterrupted = true
+        enqueueSaves(files)
+    }
+
     private func leftoverRecordingFiles() -> [URL] {
+        leftoverMovies { url in
+            !url.lastPathComponent.lowercased().contains("annotated")
+        }
+    }
+
+    private func leftoverAnnotatedFiles() -> [URL] {
+        leftoverMovies { url in
+            url.lastPathComponent.lowercased().contains("annotated")
+        }
+    }
+
+    private func leftoverMovies(matching: (URL) -> Bool) -> [URL] {
         let fm = FileManager.default
         let listed = (try? fm.contentsOfDirectory(
             at: recordingsDirectory,
@@ -293,14 +455,20 @@ final class RecordingController: NSObject, ObservableObject {
             options: [.skipsHiddenFiles]
         )) ?? []
 
-        var urls = listed.filter { $0.pathExtension.lowercased() == "mov" }
+        var urls = listed.filter {
+            $0.pathExtension.lowercased() == "mov" && matching($0)
+        }
 
-        if let path = UserDefaults.standard.string(forKey: activeFileKey) {
-            let persisted = URL(fileURLWithPath: path)
-            if fm.fileExists(atPath: persisted.path),
-               !urls.contains(where: { $0.path == persisted.path })
-            {
-                urls.append(persisted)
+        let persistedKeys = [activeFileKey, activeAnnotatedFileKey]
+        for key in persistedKeys {
+            if let path = UserDefaults.standard.string(forKey: key) {
+                let persisted = URL(fileURLWithPath: path)
+                if matching(persisted),
+                   fm.fileExists(atPath: persisted.path),
+                   !urls.contains(where: { $0.path == persisted.path })
+                {
+                    urls.append(persisted)
+                }
             }
         }
 
@@ -335,8 +503,11 @@ final class RecordingController: NSObject, ObservableObject {
     private func processSaveQueue() {
         guard phase != .recording, phase != .starting else { return }
         guard !pendingSaveURLs.isEmpty else {
-            if phase == .saving {
+            if annotatedPending { return }
+            if phase == .saving || phase == .stopping {
                 phase = .idle
+                statusMessage = completionStatusMessage()
+                saveWasInterrupted = false
             }
             endBackgroundTask()
             return
@@ -347,6 +518,17 @@ final class RecordingController: NSObject, ObservableObject {
         let url = pendingSaveURLs.removeFirst()
         statusMessage = "Saving…"
         saveToPhotos(url: url)
+    }
+
+    private func completionStatusMessage() -> String {
+        if logSavedToFiles || annotatedSavedToFiles {
+            return saveWasInterrupted
+                ? "Saved interrupted recording to Photos · log saved to Files"
+                : "Saved to Photos · log saved to Files"
+        }
+        return saveWasInterrupted
+            ? "Saved interrupted recording to Photos"
+            : "Saved to Photos"
     }
 
     private func saveToPhotos(url: URL) {
@@ -375,11 +557,8 @@ final class RecordingController: NSObject, ObservableObject {
                         if url.path == UserDefaults.standard.string(forKey: self.activeFileKey) {
                             UserDefaults.standard.removeObject(forKey: self.activeFileKey)
                         }
-                        if self.pendingSaveURLs.isEmpty {
-                            self.statusMessage = self.saveWasInterrupted
-                                ? "Saved interrupted recording to Photos"
-                                : "Saved to Photos"
-                            self.saveWasInterrupted = false
+                        if url.path == UserDefaults.standard.string(forKey: self.activeAnnotatedFileKey) {
+                            UserDefaults.standard.removeObject(forKey: self.activeAnnotatedFileKey)
                         }
                     } else {
                         let detail = error?.localizedDescription ?? "Unknown error"
@@ -414,6 +593,7 @@ extension RecordingController: AVCaptureFileOutputRecordingDelegate {
         Task { @MainActor in
             outputURL = fileURL
             UserDefaults.standard.set(fileURL.path, forKey: activeFileKey)
+            beginDetectionSession()
 
             if stopRequested {
                 phase = .stopping
@@ -439,11 +619,13 @@ extension RecordingController: AVCaptureFileOutputRecordingDelegate {
             outputURL = nil
 
             if let usable = usableRecordingURL(outputFileURL) {
+                finishDetectionArtifactsThenSave()
                 enqueueSaves([usable])
                 return
             }
 
             try? FileManager.default.removeItem(at: outputFileURL)
+            abortDetectionSession()
             if stopRequested {
                 statusMessage = "Recording cancelled."
             } else if let error {

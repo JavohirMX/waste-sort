@@ -195,6 +195,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
 
     static func dismantleUIView(_ uiView: YOLOView, coordinator: Coordinator) {
         coordinator.stopObservingCameraChanges()
+        YOLOViewPredictorAccess.setCapturesOriginalImage(false, in: uiView)
+        coordinator.capturingOriginals = false
         // Clear after the current update cycle so we don't publish mid-teardown.
         DispatchQueue.main.async {
             coordinator.recording.register(session: nil)
@@ -247,6 +249,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         private var cameraObservers: [NSObjectProtocol] = []
         private var applyWorkItem: DispatchWorkItem?
         private var isReloadingModel = false
+        var capturingOriginals = false
 
         init(
             settings: RuntimeSettings,
@@ -267,6 +270,11 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                 view.setConfidenceThreshold(settings.confidence)
                 view.setIouThreshold(settings.iou)
                 view.setNumItemsThreshold(settings.maxItems)
+                let shouldCapture = recording.shouldCaptureOriginalFrames
+                if capturingOriginals != shouldCapture {
+                    capturingOriginals = shouldCapture
+                    YOLOViewPredictorAccess.setCapturesOriginalImage(shouldCapture, in: view)
+                }
             }
             let minConf = Float(settings.confidence)
             let raw: [RawDetection] = result.boxes.compactMap { box in
@@ -280,6 +288,15 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                 )
             }
             let tracked = tracker.update(raw)
+            if recording.isRecording {
+                let fps = result.fps.flatMap { $0.isFinite ? Int($0.rounded()) : nil } ?? 0
+                recording.ingestLiveFrame(
+                    tracks: tracked,
+                    originalImage: result.originalImage,
+                    fps: fps,
+                    settings: settings
+                )
+            }
             DispatchQueue.main.async {
                 self.onDetection?(result, tracked)
             }
@@ -374,6 +391,9 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                         view.setConfidenceThreshold(self.settings.confidence)
                         view.setIouThreshold(self.settings.iou)
                         view.setNumItemsThreshold(self.settings.maxItems)
+                        if self.capturingOriginals {
+                            YOLOViewPredictorAccess.setCapturesOriginalImage(true, in: view)
+                        }
                         self.applyPreferredCamera()
                         self.registerCaptureSessionIfNeeded()
                     }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Shared aspect-fill mapping used by Ultralytics YOLOView overlays.
-enum DetectionGeometry {
+nonisolated enum DetectionGeometry {
     /// 180° flip in normalized image space so boxes track a rotated preview
     /// without rotating badge/symbol views.
     static func flipNormalized180(_ rect: CGRect) -> CGRect {

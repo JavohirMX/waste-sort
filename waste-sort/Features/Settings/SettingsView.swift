@@ -74,7 +74,7 @@ struct SettingsView: View {
                 } footer: {
                     Text(
                         recording.hasLiveSession
-                            ? "Records the camera feed only (no overlays). Saves to Photos when you stop, or if the app is backgrounded or closed."
+                            ? "Saves a raw clip to Photos, an overlay clip (boxes, labels, timestamps) to Photos and Files, and a detection CSV to Files (On My iPad/iPhone → iSort). Records the camera feed only for the raw clip. Saves if you stop, or if the app is backgrounded or closed."
                             : "Open the Live tab first so the camera session is available."
                     )
                 }
