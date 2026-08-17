@@ -56,6 +56,8 @@ final class RecordingController: NSObject, ObservableObject {
     private var sessionStartedAt: Date?
     private var filePrefix: String?
     private var loggedTrackIDs = Set<Int>()
+    private var sessionRotation: LivePreviewRotation = WasteSortConfig.defaultLiveRotation
+    private var sessionMirror = WasteSortConfig.defaultLiveMirror
     private var annotatedPending = false
     private var logSavedToFiles = false
     private var annotatedSavedToFiles = false
@@ -157,6 +159,8 @@ final class RecordingController: NSObject, ObservableObject {
         saveWasInterrupted = false
         logSavedToFiles = false
         annotatedSavedToFiles = false
+        sessionRotation = AppSettings.shared.liveRotation
+        sessionMirror = AppSettings.shared.liveMirror
         phase = .starting
         statusMessage = "Starting…"
 
@@ -273,7 +277,11 @@ final class RecordingController: NSObject, ObservableObject {
 
         let annotatedURL = recordingsDirectory.appendingPathComponent("\(prefix)-annotated.mov")
         try? FileManager.default.removeItem(at: annotatedURL)
-        annotatedWriter = AnnotatedVideoWriter(outputURL: annotatedURL)
+        annotatedWriter = AnnotatedVideoWriter(
+            outputURL: annotatedURL,
+            rotation: sessionRotation,
+            mirror: sessionMirror
+        )
         UserDefaults.standard.set(annotatedURL.path, forKey: activeAnnotatedFileKey)
     }
 
@@ -371,7 +379,7 @@ final class RecordingController: NSObject, ObservableObject {
         recordingsDirectory.appendingPathComponent("waste-sort-\(UUID().uuidString).mov")
     }
 
-    /// Rotates the recorded stream 180° to match the Live preview (absolute, not cumulative).
+    /// Rotates and optionally mirrors the recorded stream to match the Live preview snapshot.
     private func applyFeedRotation(to connection: AVCaptureConnection, session: AVCaptureSession) {
         let baseAngle: CGFloat
         if let dataOut = session.outputs.compactMap({ $0 as? AVCaptureVideoDataOutput }).first,
@@ -382,29 +390,46 @@ final class RecordingController: NSObject, ObservableObject {
             baseAngle = 0
         }
 
-        let flipped = (baseAngle + 180).truncatingRemainder(dividingBy: 360)
-        if connection.isVideoRotationAngleSupported(flipped) {
-            connection.videoRotationAngle = flipped
-            return
+        var target = (baseAngle + CGFloat(sessionRotation.rawValue)).truncatingRemainder(dividingBy: 360)
+        if target < 0 { target += 360 }
+        if connection.isVideoRotationAngleSupported(target) {
+            connection.videoRotationAngle = target
+        } else {
+            applyLegacyOrientation(to: connection, session: session)
         }
 
+        guard connection.isVideoMirroringSupported else { return }
+        connection.automaticallyAdjustsVideoMirroring = false
+        let isFront = session.inputs
+            .compactMap { $0 as? AVCaptureDeviceInput }
+            .first { $0.device.hasMediaType(.video) }?
+            .device.position == .front
+        connection.isVideoMirrored = (isFront == true) != sessionMirror
+    }
+
+    private func applyLegacyOrientation(to connection: AVCaptureConnection, session: AVCaptureSession) {
         let baseOrientation = session.outputs
             .compactMap { $0 as? AVCaptureVideoDataOutput }
             .first?
             .connection(with: .video)?
             .videoOrientation ?? .portrait
 
+        let flipped180: AVCaptureVideoOrientation
         switch baseOrientation {
-        case .portrait:
-            connection.videoOrientation = .portraitUpsideDown
-        case .portraitUpsideDown:
-            connection.videoOrientation = .portrait
-        case .landscapeRight:
-            connection.videoOrientation = .landscapeLeft
-        case .landscapeLeft:
-            connection.videoOrientation = .landscapeRight
-        @unknown default:
-            break
+        case .portrait: flipped180 = .portraitUpsideDown
+        case .portraitUpsideDown: flipped180 = .portrait
+        case .landscapeRight: flipped180 = .landscapeLeft
+        case .landscapeLeft: flipped180 = .landscapeRight
+        @unknown default: flipped180 = baseOrientation
+        }
+
+        switch sessionRotation {
+        case .zero:
+            connection.videoOrientation = baseOrientation
+        case .oneEighty:
+            connection.videoOrientation = flipped180
+        case .ninety, .twoSeventy:
+            connection.videoOrientation = flipped180
         }
     }
 

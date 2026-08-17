@@ -6,14 +6,22 @@ import UIKit
 nonisolated final class AnnotatedVideoWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "waste-sort.annotated-writer")
     private let outputURL: URL
+    private let rotation: LivePreviewRotation
+    private let mirror: Bool
     private var writer: AVAssetWriter?
     private var input: AVAssetWriterInput?
     private var adaptor: AVAssetWriterInputPixelBufferAdaptor?
     private var startHostTime: CFAbsoluteTime?
     private var isFinished = false
 
-    init(outputURL: URL) {
+    init(
+        outputURL: URL,
+        rotation: LivePreviewRotation = .oneEighty,
+        mirror: Bool = false
+    ) {
         self.outputURL = outputURL
+        self.rotation = rotation
+        self.mirror = mirror
     }
 
     func append(image: UIImage, tracks: [TrackedDetection], timestamp: Date) {
@@ -54,7 +62,9 @@ nonisolated final class AnnotatedVideoWriter: @unchecked Sendable {
         let composed = DetectionOverlayCompositor.render(
             image: image,
             tracks: tracks,
-            timestamp: timestamp
+            timestamp: timestamp,
+            rotation: rotation,
+            mirror: mirror
         )
         guard let buffer = Self.makePixelBuffer(from: composed) else { return }
 

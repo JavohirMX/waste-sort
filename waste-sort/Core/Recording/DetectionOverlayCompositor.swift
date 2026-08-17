@@ -6,26 +6,32 @@ nonisolated enum DetectionOverlayCompositor {
     static func render(
         image: UIImage,
         tracks: [TrackedDetection],
-        timestamp: Date
+        timestamp: Date,
+        rotation: LivePreviewRotation = .oneEighty,
+        mirror: Bool = false
     ) -> UIImage {
         let source = image.normalizedCGImage() ?? image
-        let rotated = source.rotated180()
-        let size = rotated.size
-        guard size.width > 1, size.height > 1 else { return rotated }
+        let transformed = source.transformed(rotation: rotation, mirror: mirror)
+        let size = transformed.size
+        guard size.width > 1, size.height > 1 else { return transformed }
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         return renderer.image { _ in
-            rotated.draw(in: CGRect(origin: .zero, size: size))
+            transformed.draw(in: CGRect(origin: .zero, size: size))
 
             let stroke = max(3, size.width * 0.0035)
             let fontSize = max(16, size.width * 0.02)
             let corner = max(6, size.width * 0.008)
 
             for track in tracks {
-                let normalized = DetectionGeometry.flipNormalized180(track.displayXywhn)
+                var normalized = track.displayXywhn
+                if mirror {
+                    normalized = DetectionGeometry.mirrorNormalized(normalized)
+                }
+                normalized = DetectionGeometry.rotateNormalized(normalized, by: rotation)
                 let rect = CGRect(
                     x: normalized.minX * size.width,
                     y: normalized.minY * size.height,
@@ -180,6 +186,51 @@ nonisolated private extension UIImage {
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         return renderer.image { _ in
             draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    func transformed(rotation: LivePreviewRotation, mirror: Bool) -> UIImage {
+        var image = self
+        if mirror {
+            image = image.mirroredHorizontally()
+        }
+        return image.rotated(by: rotation)
+    }
+
+    func mirroredHorizontally() -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { ctx in
+            ctx.cgContext.translateBy(x: size.width, y: 0)
+            ctx.cgContext.scaleBy(x: -1, y: 1)
+            draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    func rotated(by rotation: LivePreviewRotation) -> UIImage {
+        switch rotation {
+        case .zero:
+            return self
+        case .oneEighty:
+            return rotated180()
+        case .ninety, .twoSeventy:
+            let newSize = CGSize(width: size.height, height: size.width)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = true
+            let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
+            return renderer.image { ctx in
+                if rotation == .ninety {
+                    ctx.cgContext.translateBy(x: newSize.width, y: 0)
+                    ctx.cgContext.rotate(by: .pi / 2)
+                } else {
+                    ctx.cgContext.translateBy(x: 0, y: newSize.height)
+                    ctx.cgContext.rotate(by: -.pi / 2)
+                }
+                draw(in: CGRect(origin: .zero, size: size))
+            }
         }
     }
 

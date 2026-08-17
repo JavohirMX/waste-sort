@@ -4,6 +4,7 @@ import UltralyticsYOLO
 
 struct PhotoSortView: View {
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var pickerItem: PhotosPickerItem?
     @State private var model: YOLO?
@@ -51,8 +52,11 @@ struct PhotoSortView: View {
                 .padding(20)
             }
             .background(Theme.photoBackground)
-            .navigationTitle("iSort")
+            .navigationTitle("Sort photo")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Done") { dismiss() }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
                         Label("Choose photo", systemImage: "photo.on.rectangle")
@@ -142,7 +146,8 @@ struct PhotoSortView: View {
                                 tracks: photoTracks,
                                 imageSize: sourceImage.size,
                                 viewSize: geo.size,
-                                useAspectFill: false
+                                useAspectFill: false,
+                                showConfidence: settings.showConfidence
                             )
                         }
                     }

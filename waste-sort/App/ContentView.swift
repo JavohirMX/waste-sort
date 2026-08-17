@@ -6,45 +6,19 @@ struct ContentView: View {
     @EnvironmentObject private var recording: RecordingController
 
     var body: some View {
-        TabView {
-            LiveCameraView()
-                .tabItem {
-                    Label("Live", systemImage: "camera.fill")
+        LiveCameraView()
+            .onAppear { setIdleTimerDisabled(true) }
+            .onDisappear { setIdleTimerDisabled(false) }
+            .onChange(of: scenePhase) { _, phase in
+                setIdleTimerDisabled(phase == .active)
+                if phase != .active {
+                    recording.flushAndSave()
                 }
-
-            PhotoSortView()
-                .tabItem {
-                    Label("Photo", systemImage: "photo.on.rectangle")
-                }
-        }
-        .tint(BinGuide.organic.color)
-        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
-        .toolbarBackground(.visible, for: .tabBar)
-        .toolbarColorScheme(.dark, for: .tabBar)
-        .onAppear {
-            setIdleTimerDisabled(true)
-            styleTabBar()
-        }
-        .onDisappear { setIdleTimerDisabled(false) }
-        .onChange(of: scenePhase) { _, phase in
-            setIdleTimerDisabled(phase == .active)
-            if phase != .active {
-                recording.flushAndSave()
             }
-        }
     }
 
     private func setIdleTimerDisabled(_ disabled: Bool) {
         UIApplication.shared.isIdleTimerDisabled = disabled
-    }
-
-    private func styleTabBar() {
-        let appearance = UITabBarAppearance()
-        appearance.configureWithDefaultBackground()
-        appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
-        appearance.backgroundColor = UIColor.black.withAlphaComponent(0.35)
-        UITabBar.appearance().standardAppearance = appearance
-        UITabBar.appearance().scrollEdgeAppearance = appearance
     }
 }
 

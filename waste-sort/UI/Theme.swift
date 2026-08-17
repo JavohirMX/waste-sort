@@ -8,6 +8,8 @@ enum Theme {
     static let boxFillOpacity: Double = 0.22
     static let badgeSize: CGFloat = 28
     static let hudInset: CGFloat = 24
+    /// Extra gap below the status bar so the category labels clear the clock.
+    static let categoryBarTopGap: CGFloat = 20
     static let segmentDetectedOpacity: Double = 0.95
     static let segmentIdleOpacity: Double = 0.42
     static let animationDuration: Double = 0.2

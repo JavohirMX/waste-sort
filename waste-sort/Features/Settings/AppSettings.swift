@@ -13,6 +13,9 @@ enum WasteSortConfig {
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8
     static let defaultModelName = WasteSortModel.bestv31.resourceName
+    static let defaultLiveRotation = LivePreviewRotation.oneEighty
+    static let defaultLiveMirror = false
+    static let defaultShowConfidence = false
 }
 
 /// Snapshot of tunable inference and tracking values, passed into Live camera updates.
@@ -28,6 +31,8 @@ struct RuntimeSettings: Equatable {
     var maxSpeed: Double
     var preferredCameraID: String
     var selectedModelName: String
+    var liveRotation: LivePreviewRotation
+    var liveMirror: Bool
 }
 
 @MainActor
@@ -69,6 +74,15 @@ final class AppSettings: ObservableObject {
     @Published var selectedModelName: String {
         didSet { persist(selectedModelName, key: Keys.selectedModelName) }
     }
+    @Published var liveRotation: LivePreviewRotation {
+        didSet { persist(liveRotation.rawValue, key: Keys.liveRotation) }
+    }
+    @Published var liveMirror: Bool {
+        didSet { persist(liveMirror, key: Keys.liveMirror) }
+    }
+    @Published var showConfidence: Bool {
+        didSet { persist(showConfidence, key: Keys.showConfidence) }
+    }
 
     var selectedModel: WasteSortModel {
         WasteSortModel.from(resourceName: selectedModelName)
@@ -86,7 +100,9 @@ final class AppSettings: ObservableObject {
             boxInflate: boxInflate,
             maxSpeed: maxSpeed,
             preferredCameraID: preferredCameraID,
-            selectedModelName: selectedModelName
+            selectedModelName: selectedModelName,
+            liveRotation: liveRotation,
+            liveMirror: liveMirror
         )
     }
 
@@ -106,6 +122,9 @@ final class AppSettings: ObservableObject {
         static let maxSpeed = "settings.maxSpeed.v2"
         static let preferredCameraID = "settings.preferredCameraID"
         static let selectedModelName = "settings.selectedModelName"
+        static let liveRotation = "settings.liveRotation"
+        static let liveMirror = "settings.liveMirror"
+        static let showConfidence = "settings.showConfidence"
     }
 
     private init(defaults: UserDefaults = .standard) {
@@ -129,6 +148,11 @@ final class AppSettings: ObservableObject {
             Keys.selectedModelName,
             WasteSortConfig.defaultModelName
         )
+        liveRotation = LivePreviewRotation.from(
+            degrees: Self.loadInt(defaults, Keys.liveRotation, WasteSortConfig.defaultLiveRotation.rawValue)
+        )
+        liveMirror = Self.loadBool(defaults, Keys.liveMirror, WasteSortConfig.defaultLiveMirror)
+        showConfidence = Self.loadBool(defaults, Keys.showConfidence, WasteSortConfig.defaultShowConfidence)
     }
 
     func resetToDefaults() {
@@ -143,6 +167,9 @@ final class AppSettings: ObservableObject {
         maxSpeed = WasteSortConfig.defaultMaxSpeed
         preferredCameraID = CameraPreference.autoID
         selectedModelName = WasteSortConfig.defaultModelName
+        liveRotation = WasteSortConfig.defaultLiveRotation
+        liveMirror = WasteSortConfig.defaultLiveMirror
+        showConfidence = WasteSortConfig.defaultShowConfidence
     }
 
     private func persist(_ value: Double, key: String) {
@@ -154,6 +181,10 @@ final class AppSettings: ObservableObject {
     }
 
     private func persist(_ value: String, key: String) {
+        defaults.set(value, forKey: key)
+    }
+
+    private func persist(_ value: Bool, key: String) {
         defaults.set(value, forKey: key)
     }
 
@@ -169,5 +200,10 @@ final class AppSettings: ObservableObject {
 
     private static func loadString(_ defaults: UserDefaults, _ key: String, _ fallback: String) -> String {
         defaults.string(forKey: key) ?? fallback
+    }
+
+    private static func loadBool(_ defaults: UserDefaults, _ key: String, _ fallback: Bool) -> Bool {
+        guard defaults.object(forKey: key) != nil else { return fallback }
+        return defaults.bool(forKey: key)
     }
 }

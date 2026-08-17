@@ -15,48 +15,57 @@ struct LiveCameraView: View {
 
     var body: some View {
         ZStack {
-            // Rotate only the camera pixels; boxes stay upright and are remapped below.
-            LiveYOLOCamera(
-                settings: settings.runtime,
-                preferredCameraID: settings.preferredCameraID,
-                selectedModelName: settings.selectedModelName,
-                recording: recording
-            ) { result, tracked in
-                if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
-                    fps = measured
-                }
-                imageSize = result.orig_shape
-                tracks = tracked
-
-                var nextCounts: [String: Int] = [:]
-                for track in tracked {
-                    let binID = BinGuide.info(for: track.classKey).id
-                    guard binID != BinGuide.unknown.id else { continue }
-                    nextCounts[binID, default: 0] += 1
-                }
-                if nextCounts != counts {
-                    counts = nextCounts
-                }
-            }
-            .rotationEffect(.degrees(180))
-            .ignoresSafeArea()
-
             GeometryReader { geo in
-                DetectionBoxOverlay(
-                    tracks: tracks,
-                    imageSize: imageSize,
-                    viewSize: geo.size,
-                    useAspectFill: true,
-                    flipNormalized180: true
+                let coverScale = DetectionGeometry.coverScale(
+                    for: settings.liveRotation,
+                    viewSize: geo.size
                 )
+                ZStack {
+                    // Rotate/mirror only the camera pixels; boxes stay upright and are remapped below.
+                    LiveYOLOCamera(
+                        settings: settings.runtime,
+                        preferredCameraID: settings.preferredCameraID,
+                        selectedModelName: settings.selectedModelName,
+                        recording: recording
+                    ) { result, tracked in
+                        if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
+                            fps = measured
+                        }
+                        imageSize = result.orig_shape
+                        tracks = tracked
+
+                        var nextCounts: [String: Int] = [:]
+                        for track in tracked {
+                            let binID = BinGuide.info(for: track.classKey).id
+                            guard binID != BinGuide.unknown.id else { continue }
+                            nextCounts[binID, default: 0] += 1
+                        }
+                        if nextCounts != counts {
+                            counts = nextCounts
+                        }
+                    }
+                    .scaleEffect(x: settings.liveMirror ? -1 : 1, y: 1)
+                    .rotationEffect(.degrees(settings.liveRotation.degrees))
+                    .scaleEffect(coverScale)
+
+                    DetectionBoxOverlay(
+                        tracks: tracks,
+                        imageSize: imageSize,
+                        viewSize: geo.size,
+                        useAspectFill: true,
+                        rotation: settings.liveRotation,
+                        mirror: settings.liveMirror,
+                        showConfidence: settings.showConfidence
+                    )
+                    .allowsHitTesting(false)
+                }
             }
             .ignoresSafeArea()
-            .allowsHitTesting(false)
 
             VStack(spacing: 0) {
                 CategoryBar(counts: counts)
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 12)
+                    .padding(.top, Theme.categoryBarTopGap)
 
                 Spacer(minLength: 0)
 

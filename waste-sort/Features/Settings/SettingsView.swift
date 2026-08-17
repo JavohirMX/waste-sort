@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var recording: RecordingController
     @State private var cameraOptions: [CameraOption] = CameraDeviceCatalog.availableOptions()
+    @State private var showPhotoSort = false
 
     var body: some View {
         NavigationStack {
@@ -36,11 +37,30 @@ struct SettingsView: View {
                             settings.preferredCameraID = CameraPreference.autoID
                         }
                     }
+
+                    Picker("Rotation", selection: $settings.liveRotation) {
+                        ForEach(LivePreviewRotation.allCases) { rotation in
+                            Text(rotation.displayName).tag(rotation)
+                        }
+                    }
+
+                    Toggle("Mirror", isOn: $settings.liveMirror)
                 } header: {
                     Text("Camera")
                         .foregroundStyle(BinGuide.residual.color)
                 } footer: {
-                    Text("Auto uses a connected USB-C webcam when available, otherwise the iPad back camera. Plug in a UVC webcam and reopen Settings if it does not appear.")
+                    Text("Auto uses a connected USB-C webcam when available, otherwise the iPad back camera. Rotation and mirror apply to Live preview and to recordings started after you change them.")
+                }
+
+                Section {
+                    Button("Sort a photo") {
+                        showPhotoSort = true
+                    }
+                } header: {
+                    Text("Photo")
+                        .foregroundStyle(BinGuide.cleanInorganic.color)
+                } footer: {
+                    Text("Pick a still image from your library and sort items without the live camera.")
                 }
 
                 Section {
@@ -75,7 +95,7 @@ struct SettingsView: View {
                     Text(
                         recording.hasLiveSession
                             ? "Saves a raw clip to Photos, an overlay clip (boxes, labels, timestamps) to Photos and Files, and a detection CSV to Files (On My iPad/iPhone → iSort). Records the camera feed only for the raw clip. Saves if you stop, or if the app is backgrounded or closed."
-                            : "Open the Live tab first so the camera session is available."
+                            : "The live camera must be running before you can start a recording."
                     )
                 }
 
@@ -102,11 +122,12 @@ struct SettingsView: View {
                         value: $settings.maxItems,
                         range: 1...100
                     )
+                    Toggle("Show confidence", isOn: $settings.showConfidence)
                 } header: {
                     Text("Detection")
                         .foregroundStyle(BinGuide.organic.color)
                 } footer: {
-                    Text("These affect live camera and photo sorting.")
+                    Text("These affect live camera and photo sorting. Confidence labels appear on each box as a percent.")
                 }
 
                 Section {
@@ -188,6 +209,12 @@ struct SettingsView: View {
                 {
                     settings.preferredCameraID = CameraPreference.autoID
                 }
+            }
+            .sheet(isPresented: $showPhotoSort) {
+                PhotoSortView()
+                    .environmentObject(settings)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             }
         }
     }
