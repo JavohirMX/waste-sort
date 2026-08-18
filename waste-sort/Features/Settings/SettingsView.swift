@@ -278,7 +278,7 @@ struct SettingsView: View {
             Text("Zones")
                 .foregroundStyle(BinGuide.cleanInorganic.color)
         } footer: {
-            Text("Draw a zone over each real bin. An item is recorded when it stays inside a zone for the dwell frames above and then disappears — carrying it across a zone does not count.")
+            Text("Draw a zone over each real bin. Zones are hidden on the live feed except while editing. An item is recorded only if it was first seen outside the zones, then stayed inside one for the dwell frames above and disappeared there — carrying it across a bin, or an item the model first spots already inside, does not count.")
         }
         .confirmationDialog(
             "Reset zones to defaults?",

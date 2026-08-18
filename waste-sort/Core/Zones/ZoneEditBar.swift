@@ -12,7 +12,7 @@ struct ZoneEditBar: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 10) {
-                Text("Drag the corners onto each bin")
+                Text("Drag a zone to move it, its corners to reshape")
                     .font(.system(.footnote, design: .default).weight(.medium))
                     .foregroundStyle(.white.opacity(0.85))
 

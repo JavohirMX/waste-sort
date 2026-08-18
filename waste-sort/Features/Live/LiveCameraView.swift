@@ -16,6 +16,8 @@ struct LiveCameraView: View {
     @State private var showSettings = false
     @State private var selectedZoneID: UUID?
     @State private var flashedZoneIDs: Set<UUID> = []
+    @State private var freshDepositID: UUID?
+    @State private var showHistory = false
 
     var body: some View {
         ZStack {
@@ -67,7 +69,9 @@ struct LiveCameraView: View {
                         isEditing: zoneStore.isEditingZones,
                         selectedZoneID: selectedZoneID,
                         flashedZoneIDs: flashedZoneIDs,
-                        onMoveCorner: moveCorner
+                        onMoveCorner: moveCorner,
+                        onMoveZone: moveZone,
+                        onSelectZone: { selectedZoneID = $0 }
                     )
 
                     DetectionBoxOverlay(
@@ -103,16 +107,32 @@ struct LiveCameraView: View {
 
                 Spacer(minLength: 0)
 
-                HStack {
+                HStack(alignment: .bottom) {
+                    if !zoneStore.isEditingZones, let last = history.events.first {
+                        LastDepositChip(
+                            record: last,
+                            isFresh: freshDepositID == last.id,
+                            onTap: { showHistory = true }
+                        )
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                        .id(last.id)
+                    }
                     Spacer(minLength: 0)
                     fpsBadge
                 }
+                .animation(.spring(response: 0.35, dampingFraction: 0.7), value: history.events.first?.id)
+                .animation(.easeOut(duration: Theme.animationDuration), value: freshDepositID)
                 .padding(.horizontal, Theme.hudInset)
                 .padding(.bottom, Theme.hudInset)
             }
         }
         .onChange(of: zoneStore.isEditingZones) { _, editing in
             selectedZoneID = editing ? zoneStore.zones.first?.id : nil
+        }
+        .sheet(isPresented: $showHistory) {
+            HistoryView()
+                .environmentObject(history)
+                .environmentObject(zoneStore)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -133,16 +153,26 @@ struct LiveCameraView: View {
         zoneStore.update(zone)
     }
 
-    /// Briefly highlights the zones that just took a deposit.
+    private func moveZone(zoneID: UUID, corners: [CGPoint]) {
+        guard var zone = zoneStore.zones.first(where: { $0.id == zoneID }) else { return }
+        zone.corners = corners
+        zoneStore.update(zone)
+    }
+
+    /// Flashes the receiving zone outline and pops the last-deposit chip.
     private func flash(_ deposits: [ZoneDeposit]) {
-        let ids = Set(deposits.map(\.zoneID))
+        let zoneIDs = Set(deposits.map(\.zoneID))
+        let latest = history.events.first?.id
         withAnimation(.easeOut(duration: Theme.animationDuration)) {
-            flashedZoneIDs.formUnion(ids)
+            flashedZoneIDs.formUnion(zoneIDs)
+            freshDepositID = latest
         }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         Task {
-            try? await Task.sleep(for: .milliseconds(600))
+            try? await Task.sleep(for: .milliseconds(900))
             withAnimation(.easeOut(duration: Theme.animationDuration)) {
-                flashedZoneIDs.subtract(ids)
+                flashedZoneIDs.subtract(zoneIDs)
+                if freshDepositID == latest { freshDepositID = nil }
             }
         }
     }
