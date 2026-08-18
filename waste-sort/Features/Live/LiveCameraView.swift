@@ -100,16 +100,8 @@ struct LiveCameraView: View {
             .allowsHitTesting(zoneStore.isEditingZones)
 
             VStack(spacing: 0) {
-                if zoneStore.isEditingZones {
-                    ZoneEditBar(
-                        zones: zoneStore.zones,
-                        selectedZoneID: $selectedZoneID,
-                        onReset: { zoneStore.resetToDefaults() },
-                        onDone: { zoneStore.isEditingZones = false }
-                    )
-                    .padding(.top, Theme.categoryBarTopGap)
-                    .padding(.horizontal, Theme.hudInset)
-                } else {
+                // The top stays clear while calibrating so nothing covers a zone.
+                if !zoneStore.isEditingZones {
                     CategoryBar(counts: counts)
                         .frame(maxWidth: .infinity)
                         .padding(.top, Theme.categoryBarTopGap)
@@ -117,23 +109,42 @@ struct LiveCameraView: View {
 
                 Spacer(minLength: 0)
 
-                HStack(alignment: .bottom) {
-                    if !zoneStore.isEditingZones, let last = history.events.first {
-                        LastDepositChip(
-                            record: last,
-                            isFresh: freshDepositID == last.id,
-                            onTap: { showHistory = true }
-                        )
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                        .id(last.id)
+                if zoneStore.isEditingZones {
+                    ZoneEditBar(
+                        zones: zoneStore.zones,
+                        selectedZoneID: $selectedZoneID,
+                        onReset: {
+                            zoneStore.resetToDefaults(
+                                rotation: settings.liveRotation,
+                                mirror: settings.liveMirror
+                            )
+                        },
+                        onDone: { zoneStore.isEditingZones = false }
+                    )
+                    .padding(.horizontal, Theme.hudInset)
+                    .padding(.bottom, Theme.hudInset)
+                } else {
+                    HStack(alignment: .bottom) {
+                        if let last = history.events.first {
+                            LastDepositChip(
+                                record: last,
+                                isFresh: freshDepositID == last.id,
+                                onTap: { showHistory = true }
+                            )
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                            .id(last.id)
+                        }
+                        Spacer(minLength: 0)
+                        fpsBadge
                     }
-                    Spacer(minLength: 0)
-                    fpsBadge
+                    .animation(
+                        .spring(response: 0.35, dampingFraction: 0.7),
+                        value: history.events.first?.id
+                    )
+                    .animation(.easeOut(duration: Theme.animationDuration), value: freshDepositID)
+                    .padding(.horizontal, Theme.hudInset)
+                    .padding(.bottom, Theme.hudInset)
                 }
-                .animation(.spring(response: 0.35, dampingFraction: 0.7), value: history.events.first?.id)
-                .animation(.easeOut(duration: Theme.animationDuration), value: freshDepositID)
-                .padding(.horizontal, Theme.hudInset)
-                .padding(.bottom, Theme.hudInset)
             }
         }
         .onChange(of: zoneStore.isEditingZones) { _, editing in

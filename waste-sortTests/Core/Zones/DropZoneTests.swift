@@ -78,4 +78,40 @@ struct DropZoneTests {
             #expect(!others.contains { $0.contains(zone.centroid) })
         }
     }
+
+    @Test(
+        "defaults read left-to-right on screen under every preview transform",
+        arguments: LivePreviewRotation.allCases
+    )
+    func defaultsFollowScreenOrder(rotation: LivePreviewRotation) {
+        for mirror in [false, true] {
+            let zones = DropZone.defaults(rotation: rotation, mirror: mirror)
+            // Map each centroid forward through the preview transform to get where it
+            // actually lands on screen, then read the row off in that order.
+            let onScreen = zones.map { zone -> (binID: String, x: CGFloat, y: CGFloat) in
+                var point = zone.centroid
+                if mirror { point = DetectionGeometry.mirrorNormalized(point) }
+                point = DetectionGeometry.rotateNormalized(point, by: rotation)
+                return (zone.binID, point.x, point.y)
+            }
+            let order = onScreen.sorted { $0.x < $1.x }.map(\.binID)
+            #expect(order == BinGuide.all.map(\.id))
+            // …and the row sits in the lower half of the screen, not the upper.
+            #expect(onScreen.allSatisfy { $0.y > 0.5 })
+        }
+    }
+
+    @Test("the default 180° preview is what reversed the row before")
+    func defaultsUnderOneEightyAreMirroredInImageSpace() {
+        let upright = DropZone.defaults(rotation: .zero, mirror: false)
+        let flipped = DropZone.defaults(rotation: .oneEighty, mirror: false)
+        // Same categories in the same list order…
+        #expect(upright.map(\.binID) == flipped.map(\.binID))
+        // …but stored mirrored in image space, which is what cancels the rotation.
+        let uprightX = upright.map(\.centroid.x)
+        let flippedX = flipped.map(\.centroid.x)
+        for (a, b) in zip(uprightX, flippedX) {
+            #expect(abs((1 - a) - b) < 1e-9)
+        }
+    }
 }

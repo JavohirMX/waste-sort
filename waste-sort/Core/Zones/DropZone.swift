@@ -64,8 +64,18 @@ nonisolated struct DropZone: Codable, Identifiable, Equatable, Sendable {
         ]
     }
 
-    /// One zone per waste category, tiled left-to-right across the lower half of the frame.
-    static func defaults() -> [DropZone] {
+    /// One zone per waste category, tiled left-to-right across the lower half of the
+    /// preview *as the operator sees it*.
+    ///
+    /// Corners are stored in image space, but the preview is rotated (180° by default),
+    /// so laying the row out directly in image space puts the categories on screen in
+    /// reverse — out of step with the category bar, which is plain HUD and never rotates.
+    /// The row is therefore built in screen space and mapped back through the inverse of
+    /// the preview transform.
+    static func defaults(
+        rotation: LivePreviewRotation = .zero,
+        mirror: Bool = false
+    ) -> [DropZone] {
         let bins = BinGuide.all
         guard !bins.isEmpty else { return [] }
         let gutter: CGFloat = 0.04
@@ -73,11 +83,25 @@ nonisolated struct DropZone: Codable, Identifiable, Equatable, Sendable {
         let width = (1 - gutter * (total + 1)) / total
         return bins.enumerated().map { index, bin in
             let x = gutter + (width + gutter) * CGFloat(index)
+            let onScreen = rect(CGRect(x: x, y: 0.42, width: width, height: 0.5))
             return DropZone(
                 name: bin.displayName.capitalized,
                 binID: bin.id,
-                corners: rect(CGRect(x: x, y: 0.42, width: width, height: 0.5))
+                corners: onScreen.map { imageSpace($0, rotation: rotation, mirror: mirror) }
             )
         }
+    }
+
+    /// Inverse of the preview transform, which applies mirror then rotation.
+    static func imageSpace(
+        _ point: CGPoint,
+        rotation: LivePreviewRotation,
+        mirror: Bool
+    ) -> CGPoint {
+        let unrotated = DetectionGeometry.rotateNormalized(
+            point,
+            by: DetectionGeometry.inverse(rotation)
+        )
+        return mirror ? DetectionGeometry.mirrorNormalized(unrotated) : unrotated
     }
 }

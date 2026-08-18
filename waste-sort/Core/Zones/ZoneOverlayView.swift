@@ -123,6 +123,10 @@ struct ZoneOverlayView: View {
         // whose corners sit outside the cropped preview could not be reached at all.
         // Hit testing as a whole is gated by `allowsHitTesting(isEditing)` above.
         .contentShape(outline)
+        // Tap picks which zone is being edited. The drag needs 4pt of movement, so a
+        // stationary touch resolves as a tap; simultaneous rather than a plain
+        // onTapGesture so neither gesture can claim priority over the other.
+        .simultaneousGesture(TapGesture().onEnded { onSelectZone?(zone.id) })
         .gesture(moveGesture(for: zone))
     }
 

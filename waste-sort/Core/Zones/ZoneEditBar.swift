@@ -10,25 +10,8 @@ struct ZoneEditBar: View {
     @State private var showResetConfirm = false
 
     var body: some View {
+        // Chips above the controls so Done sits closest to the bottom edge.
         VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                Text("Drag a zone to move it, its corners to reshape")
-                    .font(.system(.footnote, design: .default).weight(.medium))
-                    .foregroundStyle(.white.opacity(0.85))
-
-                Spacer(minLength: 0)
-
-                Button("Reset") { showResetConfirm = true }
-                    .font(.system(.footnote, design: .default).weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.85))
-
-                Button("Done", action: onDone)
-                    .font(.system(.footnote, design: .default).weight(.bold))
-                    .buttonStyle(.borderedProminent)
-                    .tint(BinGuide.organic.color)
-                    .controlSize(.small)
-            }
-
             if zones.count > 1 {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -46,6 +29,26 @@ struct ZoneEditBar: View {
                         }
                     }
                 }
+            }
+
+            HStack(spacing: 10) {
+                Text("Tap a zone to select · drag to move · corners to reshape")
+                    .font(.system(.footnote, design: .default).weight(.medium))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                Spacer(minLength: 0)
+
+                Button("Reset") { showResetConfirm = true }
+                    .font(.system(.footnote, design: .default).weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+
+                Button("Done", action: onDone)
+                    .font(.system(.footnote, design: .default).weight(.bold))
+                    .buttonStyle(.borderedProminent)
+                    .tint(BinGuide.organic.color)
+                    .controlSize(.small)
             }
         }
         .padding(.horizontal, 14)

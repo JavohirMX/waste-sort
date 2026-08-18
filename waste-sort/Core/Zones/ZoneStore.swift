@@ -31,7 +31,16 @@ final class ZoneStore: ObservableObject {
         static let dwellFrames = "zones.dwellFrames.v1"
     }
 
-    init(defaults: UserDefaults = .standard) {
+    /// `rotation`/`mirror` only shape the first-run layout, so the starting row reads
+    /// left-to-right on screen. Calibrated zones are never re-transformed afterwards —
+    /// they are pinned to physical bins, not to the preview orientation.
+    /// `nil` means "whatever the live preview is currently set to" — resolved in the
+    /// body because default argument expressions are evaluated outside the main actor.
+    init(
+        defaults: UserDefaults = .standard,
+        rotation: LivePreviewRotation? = nil,
+        mirror: Bool? = nil
+    ) {
         self.defaults = defaults
 
         if let data = defaults.data(forKey: Keys.zones),
@@ -39,7 +48,10 @@ final class ZoneStore: ObservableObject {
         {
             zones = decoded
         } else {
-            zones = DropZone.defaults()
+            zones = DropZone.defaults(
+                rotation: rotation ?? AppSettings.shared.liveRotation,
+                mirror: mirror ?? AppSettings.shared.liveMirror
+            )
         }
 
         if defaults.object(forKey: Keys.dwellFrames) != nil {
@@ -75,8 +87,14 @@ final class ZoneStore: ObservableObject {
         )
     }
 
-    func resetToDefaults() {
-        zones = DropZone.defaults()
+    func resetToDefaults(
+        rotation: LivePreviewRotation? = nil,
+        mirror: Bool? = nil
+    ) {
+        zones = DropZone.defaults(
+            rotation: rotation ?? AppSettings.shared.liveRotation,
+            mirror: mirror ?? AppSettings.shared.liveMirror
+        )
         dwellFrames = ZoneConfig.defaultDwellFrames
     }
 

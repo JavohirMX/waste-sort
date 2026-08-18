@@ -285,7 +285,12 @@ struct SettingsView: View {
             isPresented: $showZoneResetConfirm,
             titleVisibility: .visible
         ) {
-            Button("Reset zones", role: .destructive) { zoneStore.resetToDefaults() }
+            Button("Reset zones", role: .destructive) {
+                zoneStore.resetToDefaults(
+                    rotation: settings.liveRotation,
+                    mirror: settings.liveMirror
+                )
+            }
             Button("Cancel", role: .cancel) {}
         }
     }
