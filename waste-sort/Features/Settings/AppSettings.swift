@@ -9,6 +9,8 @@ enum WasteSortConfig {
     static let defaultConfirmHits = 2
     static let defaultMaxMisses = 3
     static let defaultTrackerIou = 0.3
+    static let defaultCrossClassIou = 0.35
+    static let defaultClassSwitchHits = 8
     static let defaultEmaAlpha = 0.4
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8

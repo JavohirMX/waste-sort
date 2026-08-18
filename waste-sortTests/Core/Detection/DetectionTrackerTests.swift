@@ -61,13 +61,262 @@ struct DetectionTrackerTests {
         #expect(tracker.update([], timestamp: t0 + 0.10).count == 1)
         #expect(tracker.update([], timestamp: t0 + 0.15).isEmpty)
     }
+
+    @Test func classFlickerKeepsIdAndStableClass() {
+        let tracker = stickyTracker()
+        tracker.confirmHits = 2
+        let t0: CFAbsoluteTime = 10
+        let box = (x: CGFloat(0.4), y: CGFloat(0.4))
+
+        #expect(
+            tracker.update(
+                [detection(x: box.x, y: box.y, classKey: "organic")],
+                timestamp: t0
+            ).isEmpty
+        )
+
+        var id: Int?
+        for i in 1..<3 {
+            let emitted = tracker.update(
+                [detection(x: box.x, y: box.y, classKey: "organic")],
+                timestamp: t0 + CFAbsoluteTime(i) * 0.05
+            )
+            #expect(emitted.count == 1)
+            #expect(emitted[0].classKey == "organic")
+            if let id {
+                #expect(emitted[0].id == id)
+            } else {
+                id = emitted[0].id
+            }
+        }
+
+        let flickered = tracker.update(
+            [detection(x: box.x, y: box.y, classKey: "residual")],
+            timestamp: t0 + 0.20
+        )
+        #expect(flickered.count == 1)
+        #expect(flickered[0].id == id)
+        #expect(flickered[0].classKey == "organic")
+    }
+
+    @Test func sustainedClassChangeSwitchesLabel() {
+        let tracker = stickyTracker()
+        tracker.confirmHits = 1
+        let t0: CFAbsoluteTime = 20
+        let box = (x: CGFloat(0.4), y: CGFloat(0.4))
+
+        let confirmed = tracker.update(
+            [detection(x: box.x, y: box.y, classKey: "organic")],
+            timestamp: t0
+        )
+        #expect(confirmed.count == 1)
+        let id = confirmed[0].id
+        #expect(confirmed[0].classKey == "organic")
+
+        var last: [TrackedDetection] = []
+        for i in 1...tracker.classSwitchHits {
+            last = tracker.update(
+                [detection(x: box.x, y: box.y, classKey: "residual")],
+                timestamp: t0 + CFAbsoluteTime(i) * 0.05
+            )
+            #expect(last.count == 1)
+            #expect(last[0].id == id)
+        }
+        #expect(last[0].classKey == "residual")
+    }
+
+    @Test func pendingStreakResetsWhenStableClassReturns() {
+        let tracker = stickyTracker()
+        tracker.confirmHits = 2
+        let t0: CFAbsoluteTime = 30
+        let box = (x: CGFloat(0.4), y: CGFloat(0.4))
+
+        #expect(
+            tracker.update(
+                [detection(x: box.x, y: box.y, classKey: "organic")],
+                timestamp: t0
+            ).isEmpty
+        )
+        let confirmed = tracker.update(
+            [detection(x: box.x, y: box.y, classKey: "organic")],
+            timestamp: t0 + 0.05
+        )
+        #expect(confirmed.count == 1)
+        let id = confirmed[0].id
+        #expect(confirmed[0].classKey == "organic")
+
+        let sequence: [(CFAbsoluteTime, String)] = [
+            (t0 + 0.10, "residual"),
+            (t0 + 0.15, "residual"),
+            (t0 + 0.20, "organic"),
+            (t0 + 0.25, "residual"),
+        ]
+        for (timestamp, classKey) in sequence {
+            let emitted = tracker.update(
+                [detection(x: box.x, y: box.y, classKey: classKey)],
+                timestamp: timestamp
+            )
+            #expect(emitted.count == 1)
+            #expect(emitted[0].id == id)
+            #expect(emitted[0].classKey == "organic")
+        }
+    }
+
+    @Test func crossClassMatchDoesNotCountAsMiss() {
+        let tracker = stickyTracker()
+        tracker.confirmHits = 1
+        tracker.maxMisses = 1
+        let t0: CFAbsoluteTime = 40
+
+        let confirmed = tracker.update(
+            [detection(x: 0.4, y: 0.4, classKey: "organic")],
+            timestamp: t0
+        )
+        #expect(confirmed.count == 1)
+        let id = confirmed[0].id
+
+        let rematched = tracker.update(
+            [detection(x: 0.4, y: 0.4, classKey: "residual")],
+            timestamp: t0 + 0.05
+        )
+        #expect(rematched.count == 1)
+        #expect(rematched[0].id == id)
+        #expect(rematched[0].classKey == "organic")
+
+        let afterOneEmpty = tracker.update([], timestamp: t0 + 0.10)
+        #expect(afterOneEmpty.count == 1)
+        #expect(afterOneEmpty[0].id == id)
+    }
+
+    @Test func overlappingDifferentClassesStaySeparate() {
+        let tracker = stickyTracker()
+        tracker.confirmHits = 1
+        let t0: CFAbsoluteTime = 50
+
+        let pair = [
+            detection(x: 0.30, y: 0.40, size: 0.20, classKey: "organic"),
+            detection(x: 0.42, y: 0.40, size: 0.20, classKey: "residual"),
+        ]
+        var ids: Set<Int> = []
+        for i in 0..<2 {
+            let emitted = tracker.update(pair, timestamp: t0 + CFAbsoluteTime(i) * 0.05)
+            #expect(emitted.count == 2)
+            let keys = Set(emitted.map(\.classKey))
+            #expect(keys == ["organic", "residual"])
+            ids.formUnion(emitted.map(\.id))
+        }
+        #expect(ids.count == 2)
+    }
+
+    @Test func sameFrameDualClassKeepsOneResidualTrack() {
+        let tracker = stickyTracker()
+        tracker.confirmHits = 1
+        let t0: CFAbsoluteTime = 70
+        let box = (x: CGFloat(0.4), y: CGFloat(0.4))
+
+        let confirmed = tracker.update(
+            [detection(x: box.x, y: box.y, classKey: "residual")],
+            timestamp: t0
+        )
+        #expect(confirmed.count == 1)
+        let id = confirmed[0].id
+
+        let dual = tracker.update(
+            [
+                detection(x: box.x, y: box.y, classKey: "residual", conf: 0.9),
+                detection(x: box.x, y: box.y, classKey: "clean_inorganic", conf: 0.8),
+            ],
+            timestamp: t0 + 0.05
+        )
+        #expect(dual.count == 1)
+        #expect(dual[0].id == id)
+        #expect(dual[0].classKey == "residual")
+    }
+
+    @Test func shiftedClassSwapKeepsSameTrack() {
+        let tracker = stickyTracker()
+        tracker.confirmHits = 1
+        tracker.crossClassIouThreshold = 0.35
+        let t0: CFAbsoluteTime = 80
+
+        let confirmed = tracker.update(
+            [detection(x: 0.40, y: 0.40, size: 0.12, classKey: "residual")],
+            timestamp: t0
+        )
+        #expect(confirmed.count == 1)
+        let id = confirmed[0].id
+
+        // Same-size boxes ~0.37 IoU (inside 0.35, well under a 0.5 gate).
+        let shifted = tracker.update(
+            [detection(x: 0.455, y: 0.40, size: 0.12, classKey: "organic")],
+            timestamp: t0 + 0.05
+        )
+        #expect(shifted.count == 1)
+        #expect(shifted[0].id == id)
+        #expect(shifted[0].classKey == "residual")
+    }
+
+    @Test func firstFrameDualClassSpawnsSingleTrack() {
+        let tracker = stickyTracker()
+        tracker.confirmHits = 1
+        let emitted = tracker.update(
+            [
+                detection(x: 0.4, y: 0.4, classKey: "clean_inorganic", conf: 0.7),
+                detection(x: 0.4, y: 0.4, classKey: "residual", conf: 0.92),
+            ],
+            timestamp: 90
+        )
+        #expect(emitted.count == 1)
+        #expect(emitted[0].classKey == "residual")
+    }
+
+    @Test func lowIouClassChangeSpawnsNewTrack() {
+        let tracker = stickyTracker()
+        tracker.confirmHits = 1
+        let t0: CFAbsoluteTime = 60
+
+        let organic = tracker.update(
+            [detection(x: 0.25, y: 0.40, classKey: "organic")],
+            timestamp: t0
+        )
+        #expect(organic.count == 1)
+        let organicID = organic[0].id
+
+        let both = tracker.update(
+            [detection(x: 0.75, y: 0.40, classKey: "residual")],
+            timestamp: t0 + 0.05
+        )
+        #expect(both.count == 2)
+        let residual = both.first { $0.classKey == "residual" }
+        let frozenOrganic = both.first { $0.id == organicID }
+        #expect(residual != nil)
+        #expect(frozenOrganic != nil)
+        #expect(residual?.id != organicID)
+        #expect(frozenOrganic?.classKey == "organic")
+    }
 }
 
-private func detection(x: CGFloat, y: CGFloat, size: CGFloat = 0.12) -> RawDetection {
+private func stickyTracker() -> DetectionTracker {
+    let tracker = DetectionTracker()
+    tracker.emaAlpha = 1.0
+    tracker.boxInflate = 0
+    tracker.iouThreshold = 0.3
+    tracker.crossClassIouThreshold = 0.5
+    tracker.classSwitchHits = 3
+    return tracker
+}
+
+private func detection(
+    x: CGFloat,
+    y: CGFloat,
+    size: CGFloat = 0.12,
+    classKey: String = "residual",
+    conf: Float = 0.9
+) -> RawDetection {
     RawDetection(
-        classKey: "residual",
-        className: "residual",
-        conf: 0.9,
+        classKey: classKey,
+        className: classKey,
+        conf: conf,
         xywhn: CGRect(x: x - size * 0.5, y: y - size * 0.5, width: size, height: size)
     )
 }

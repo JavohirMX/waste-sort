@@ -88,7 +88,7 @@ File Sharing is on. Recorded overlay clips and CSV logs show up in the Files app
 
 ## Using iSort
 
-**Live.** Point the camera at waste. The top bar lights the bins currently in frame. Boxes follow items after they are confirmed across a couple of frames; if the model briefly loses an item, the box freezes in place instead of sliding.
+**Live.** Point the camera at waste. The top bar lights the bins currently in frame. Boxes follow items after they are confirmed across a couple of frames; if the model briefly loses an item, the box freezes in place instead of sliding. The bin label stays with the item unless the model disagrees for several frames in a row.
 
 **Settings.** Long-press the FPS badge.
 
