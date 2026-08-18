@@ -149,7 +149,27 @@ nonisolated final class ZoneDepositDetector {
         var seenThisFrame = Set<ObjectIdentifier>()
         var occupied = Set<UUID>()
 
-        for track in tracks {
+        // Coasting boxes are dropped outright. The tracker keeps emitting a frozen box for
+        // `maxMisses` frames after the model stops finding something, which matters here for
+        // a reason that is easy to miss: on a class change the tracker cannot associate the
+        // new label with the old track, so it coasts the old one *while* the new one is
+        // already live. Both are in this array at once. Treating the frozen box as a sighting
+        // keeps the old object out of the missing state, so the new track cannot adopt it —
+        // it becomes a fresh object born inside the zone, ineligible forever, while the old
+        // one later dies still armed and fires a throw that never happened.
+        //
+        // A frozen box is not evidence: the model saw nothing. Ignoring it makes the object
+        // go missing the moment the model actually loses it, which is when the reacquisition
+        // window should start anyway.
+        let live = tracks.filter { !$0.isCoasting }
+        // Continuing ids are claimed before any adoption is attempted. Track order within a
+        // frame is arbitrary, so without this a new track could adopt an object whose own
+        // live track simply had not been processed yet — merging two things that are both
+        // on screen. After this pass, anything still unclaimed is genuinely unaccounted for.
+        let (continuing, fresh) = live.partitioned(by: { byTrackID[$0.id] != nil })
+
+
+        for track in continuing + fresh {
             let sighting = Sighting(
                 center: CGPoint(x: track.displayXywhn.midX, y: track.displayXywhn.midY),
                 box: track.displayXywhn,
@@ -157,7 +177,12 @@ nonisolated final class ZoneDepositDetector {
                 className: track.className,
                 conf: track.conf
             )
-            let object = resolveObject(for: track, sighting: sighting, now: timestamp)
+            let object = resolveObject(
+                for: track,
+                sighting: sighting,
+                now: timestamp,
+                claimed: seenThisFrame
+            )
             seenThisFrame.insert(ObjectIdentifier(object))
             object.missingSince = nil
             object.note(sighting)
@@ -180,12 +205,9 @@ nonisolated final class ZoneDepositDetector {
                 object.zoneBinID = zone.binID
                 object.dwell = 0
             }
-            // A coasting box is the tracker holding the last known position, not the model
-            // still seeing the object. Counting those frames would let an item reach the
-            // dwell threshold purely by vanishing, which is the opposite of its purpose.
-            if !track.isCoasting {
-                object.dwell += 1
-            }
+            // Every frame that reaches here is one the model actually saw, so dwell only
+            // ever counts real evidence.
+            object.dwell += 1
         }
 
         // Anything not seen this frame starts, or continues, its reacquisition window.
@@ -233,7 +255,8 @@ nonisolated final class ZoneDepositDetector {
     private func resolveObject(
         for track: TrackedDetection,
         sighting: Sighting,
-        now: CFAbsoluteTime
+        now: CFAbsoluteTime,
+        claimed: Set<ObjectIdentifier>
     ) -> TrackedObject {
         if let known = byTrackID[track.id] {
             return known
@@ -242,10 +265,13 @@ nonisolated final class ZoneDepositDetector {
         var best: TrackedObject?
         var bestDistance = CGFloat.greatestFiniteMagnitude
         for candidate in objects {
-            // Only an object that is currently missing can be reclaimed. Two objects visible
-            // at once are two objects, however similar they look.
-            guard let missingSince = candidate.missingSince else { continue }
-            let elapsed = now - missingSince
+            // Two objects visible at once are two objects, however similar they look — so
+            // anything already claimed this frame is off limits. `missingSince` is nil for
+            // an object the model lost only moments ago, on this very frame, which is
+            // exactly the case a relabel produces when the tracker confirms the new id
+            // immediately: elapsed is zero, and it is still the same thing.
+            guard !claimed.contains(ObjectIdentifier(candidate)) else { continue }
+            let elapsed = candidate.missingSince.map { now - $0 } ?? 0
             guard elapsed <= reacquireGrace else { continue }
             // Deliberately class-blind. The model relabelling a cup mid-carry is one of the
             // things this layer exists to absorb.
@@ -266,10 +292,10 @@ nonisolated final class ZoneDepositDetector {
             return best
         }
 
-        let fresh = TrackedObject(trackID: track.id, sighting: sighting)
-        objects.append(fresh)
-        byTrackID[track.id] = fresh
-        return fresh
+        let created = TrackedObject(trackID: track.id, sighting: sighting)
+        objects.append(created)
+        byTrackID[track.id] = created
+        return created
     }
 
     private func deposit(from object: TrackedObject) -> [ZoneDeposit] {
@@ -296,5 +322,17 @@ nonisolated final class ZoneDepositDetector {
                 classesSeen: object.classWeights.count
             ),
         ]
+    }
+}
+
+private extension Array {
+    /// Splits into the elements matching the predicate and the rest, preserving order.
+    func partitioned(by matches: (Element) -> Bool) -> (matching: [Element], rest: [Element]) {
+        var a: [Element] = []
+        var b: [Element] = []
+        for element in self {
+            if matches(element) { a.append(element) } else { b.append(element) }
+        }
+        return (a, b)
     }
 }
