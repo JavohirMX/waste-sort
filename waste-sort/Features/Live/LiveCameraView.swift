@@ -18,6 +18,7 @@ struct LiveCameraView: View {
     @State private var flashedZoneIDs: Set<UUID> = []
     @State private var occupiedZoneIDs: Set<UUID> = []
     @State private var armedZoneIDs: Set<UUID> = []
+    @State private var settlingZoneIDs: Set<UUID> = []
     @State private var freshDepositID: UUID?
     @State private var showHistory = false
 
@@ -36,7 +37,8 @@ struct LiveCameraView: View {
                         selectedModelName: settings.selectedModelName,
                         recording: recording,
                         zones: zoneStore.zones,
-                        dwellFrames: zoneStore.dwellFrames
+                        dwellFrames: zoneStore.dwellFrames,
+                        reacquireGrace: zoneStore.reacquireGrace
                     ) { result, tracked, zoneFrame in
                         if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                             fps = measured
@@ -48,6 +50,9 @@ struct LiveCameraView: View {
                         }
                         if armedZoneIDs != zoneFrame.armedZoneIDs {
                             armedZoneIDs = zoneFrame.armedZoneIDs
+                        }
+                        if settlingZoneIDs != zoneFrame.settlingZoneIDs {
+                            settlingZoneIDs = zoneFrame.settlingZoneIDs
                         }
                         if !zoneFrame.deposits.isEmpty {
                             history.append(zoneFrame.deposits)
@@ -79,6 +84,7 @@ struct LiveCameraView: View {
                         flashedZoneIDs: flashedZoneIDs,
                         occupiedZoneIDs: occupiedZoneIDs,
                         armedZoneIDs: armedZoneIDs,
+                        settlingZoneIDs: settlingZoneIDs,
                         onMoveCorner: moveCorner,
                         onMoveZone: moveZone,
                         onSelectZone: { selectedZoneID = $0 }
@@ -255,6 +261,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     var recording: RecordingController
     var zones: [DropZone]
     var dwellFrames: Int
+    var reacquireGrace: Double
     var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult) -> Void)?
 
     func makeCoordinator() -> Coordinator {
@@ -265,6 +272,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             recording: recording,
             zones: zones,
             dwellFrames: dwellFrames,
+            reacquireGrace: reacquireGrace,
             onDetection: onDetection
         )
     }
@@ -349,6 +357,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     private func applyZones(_ coordinator: Coordinator) {
         coordinator.zones = zones
         coordinator.depositDetector.requiredDwellFrames = dwellFrames
+        coordinator.depositDetector.reacquireGrace = reacquireGrace
     }
 
     private func hideDeveloperChrome(_ view: YOLOView) {
@@ -392,6 +401,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             recording: RecordingController,
             zones: [DropZone],
             dwellFrames: Int,
+            reacquireGrace: Double,
             onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult) -> Void)?
         ) {
             self.settings = settings
@@ -401,6 +411,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             self.zones = zones
             self.onDetection = onDetection
             depositDetector.requiredDwellFrames = dwellFrames
+            depositDetector.reacquireGrace = reacquireGrace
         }
 
         func handle(_ result: YOLOResult) {

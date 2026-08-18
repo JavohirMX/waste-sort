@@ -265,6 +265,18 @@ struct SettingsView: View {
                 range: ZoneConfig.dwellRange
             )
 
+            SettingsSliderRow(
+                title: "Reacquire window",
+                help: "How long an item that vanishes is given to reappear before it is judged. The model blinks and relabels constantly; anything that comes back inside this window is the same item continuing, not a throw. Also the delay between a real throw and it showing up in History.",
+                valueText: String(format: "%.1fs", zoneStore.reacquireGrace),
+                value: Binding(
+                    get: { zoneStore.reacquireGrace },
+                    set: { zoneStore.reacquireGrace = $0 }
+                ),
+                range: ZoneConfig.reacquireGraceRange,
+                step: 0.1
+            )
+
             Button("Edit zones on camera") {
                 zoneStore.isEditingZones = true
                 dismiss()
@@ -278,7 +290,7 @@ struct SettingsView: View {
             Text("Zones")
                 .foregroundStyle(BinGuide.cleanInorganic.color)
         } footer: {
-            Text("Draw a zone over each real bin. On the live feed a zone is invisible until something is in it: dashed while an item is inside, tighter dashes once it has dwelt long enough to count, then filled for a moment when it is recorded. An item is recorded only if it was first seen outside the zones, then stayed inside one for the dwell frames above and disappeared there — carrying it across a bin, or an item the model first spots already inside, does not count.")
+            Text("Draw a zone over each real bin. On the live feed a zone is invisible until something is in it: dashed while an item is inside, tighter dashes once it has dwelt long enough, filled faintly while a vanished item waits out the reacquire window, then filled solid for a moment when it is recorded.\n\nAn item is recorded only if it was seen outside the zones at some point, stayed inside one for the dwell frames above, and then stayed gone for the reacquire window. Tracking survives dropouts and relabelling, so an item that blinks and comes back inside the zone still counts — unlike one that was never tracked and simply appeared there, which is read as waste already in the bin.")
         }
         .confirmationDialog(
             "Reset zones to defaults?",

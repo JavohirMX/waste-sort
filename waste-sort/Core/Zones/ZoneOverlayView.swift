@@ -21,6 +21,9 @@ struct ZoneOverlayView: View {
     var occupiedZoneIDs: Set<UUID> = []
     /// Occupied zones whose item has met the dwell requirement.
     var armedZoneIDs: Set<UUID> = []
+    /// Zones whose item has vanished and is inside its reacquisition window — the deposit
+    /// is pending, waiting to see whether the model finds it again.
+    var settlingZoneIDs: Set<UUID> = []
     var onMoveCorner: ((UUID, Int, CGPoint) -> Void)?
     var onMoveZone: ((UUID, [CGPoint]) -> Void)?
     var onSelectZone: ((UUID) -> Void)?
@@ -49,7 +52,9 @@ struct ZoneOverlayView: View {
     private var visibleZones: [DropZone] {
         guard !isEditing else { return zones }
         return zones.filter {
-            flashedZoneIDs.contains($0.id) || occupiedZoneIDs.contains($0.id)
+            flashedZoneIDs.contains($0.id)
+                || occupiedZoneIDs.contains($0.id)
+                || settlingZoneIDs.contains($0.id)
         }
     }
 
@@ -64,8 +69,9 @@ struct ZoneOverlayView: View {
         var dash: [CGFloat]
     }
 
-    /// Three states the operator needs to tell apart at a glance: being calibrated,
-    /// holding an item right now, and having just recorded one.
+    /// Four states the operator needs to tell apart at a glance: being calibrated, holding
+    /// an item right now, waiting out the reacquisition window after one vanished, and
+    /// having just recorded one.
     private func style(for zone: DropZone) -> ZoneStyle {
         if flashedZoneIDs.contains(zone.id) {
             // Deposited: solid and filled.
@@ -83,6 +89,16 @@ struct ZoneOverlayView: View {
                 stroke: active ? 1 : 0.45,
                 lineWidth: Theme.zoneStrokeWidth,
                 dash: Theme.zoneEditDash
+            )
+        }
+        if settlingZoneIDs.contains(zone.id) {
+            // The item is gone but not yet judged. A faint fill says "counting this",
+            // without the commitment of the deposit flash it may never earn.
+            return ZoneStyle(
+                fill: Theme.zoneFillOpacity,
+                stroke: 0.9,
+                lineWidth: Theme.zoneStrokeWidth,
+                dash: Theme.zoneArmedDash
             )
         }
         // Occupied: dashed outline only. Tighter dashes once the dwell is met, so

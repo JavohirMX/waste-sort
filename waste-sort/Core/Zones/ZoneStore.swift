@@ -5,6 +5,10 @@ import Foundation
 enum ZoneConfig {
     static let defaultDwellFrames = 3
     static let dwellRange = 1...15
+    /// Long enough to cover the dropouts seen in practice, short enough that a real throw
+    /// still lands in the log while the person is standing there.
+    static let defaultReacquireGrace = 1.4
+    static let reacquireGraceRange = 0.0...3.0
 }
 
 /// Persisted drop zones plus the transient state the live editor needs.
@@ -16,9 +20,14 @@ final class ZoneStore: ObservableObject {
         didSet { persistZones() }
     }
 
-    /// How many consecutive in-zone frames arm a track.
+    /// How many detected in-zone frames arm an object.
     @Published var dwellFrames: Int {
         didSet { defaults.set(dwellFrames, forKey: Keys.dwellFrames) }
+    }
+
+    /// Seconds a vanished object is given to reappear before it is judged.
+    @Published var reacquireGrace: Double {
+        didSet { defaults.set(reacquireGrace, forKey: Keys.reacquireGrace) }
     }
 
     /// Drives the inline calibration mode on the Live tab.
@@ -29,6 +38,7 @@ final class ZoneStore: ObservableObject {
     private enum Keys {
         static let zones = "zones.dropZones.v1"
         static let dwellFrames = "zones.dwellFrames.v1"
+        static let reacquireGrace = "zones.reacquireGrace.v1"
     }
 
     /// `rotation`/`mirror` only shape the first-run layout, so the starting row reads
@@ -58,6 +68,12 @@ final class ZoneStore: ObservableObject {
             dwellFrames = defaults.integer(forKey: Keys.dwellFrames)
         } else {
             dwellFrames = ZoneConfig.defaultDwellFrames
+        }
+
+        if defaults.object(forKey: Keys.reacquireGrace) != nil {
+            reacquireGrace = defaults.double(forKey: Keys.reacquireGrace)
+        } else {
+            reacquireGrace = ZoneConfig.defaultReacquireGrace
         }
     }
 
@@ -96,6 +112,7 @@ final class ZoneStore: ObservableObject {
             mirror: mirror ?? AppSettings.shared.liveMirror
         )
         dwellFrames = ZoneConfig.defaultDwellFrames
+        reacquireGrace = ZoneConfig.defaultReacquireGrace
     }
 
     private func persistZones() {
