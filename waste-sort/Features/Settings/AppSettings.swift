@@ -9,6 +9,8 @@ enum WasteSortConfig {
     static let defaultConfirmHits = 2
     static let defaultMaxMisses = 3
     static let defaultTrackerIou = 0.3
+    static let defaultCrossClassIou = 0.35
+    static let defaultClassSwitchHits = 8
     static let defaultEmaAlpha = 0.4
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8
@@ -16,6 +18,13 @@ enum WasteSortConfig {
     static let defaultLiveRotation = LivePreviewRotation.oneEighty
     static let defaultLiveMirror = false
     static let defaultShowConfidence = false
+    static let defaultCTAStyle = CTAStyle.off
+    static let defaultBrightness = 0.0
+    static let defaultContrast = 1.0
+    static let defaultSaturation = 1.0
+    static let defaultExposureLocked = false
+    static let defaultFocusLocked = false
+    static let defaultWhiteBalanceLocked = false
 }
 
 /// Snapshot of tunable inference and tracking values, passed into Live camera updates.
@@ -33,6 +42,28 @@ struct RuntimeSettings: Equatable {
     var selectedModelName: String
     var liveRotation: LivePreviewRotation
     var liveMirror: Bool
+    var brightness: Double
+    var contrast: Double
+    var saturation: Double
+    var exposureLocked: Bool
+    var focusLocked: Bool
+    var whiteBalanceLocked: Bool
+
+    var captureControls: CameraCaptureControls {
+        CameraCaptureControls(
+            exposureLocked: exposureLocked,
+            focusLocked: focusLocked,
+            whiteBalanceLocked: whiteBalanceLocked
+        )
+    }
+
+    var frameColor: FrameColorControls {
+        FrameColorControls(
+            brightness: brightness,
+            contrast: contrast,
+            saturation: saturation
+        )
+    }
 }
 
 @MainActor
@@ -83,6 +114,27 @@ final class AppSettings: ObservableObject {
     @Published var showConfidence: Bool {
         didSet { persist(showConfidence, key: Keys.showConfidence) }
     }
+    @Published var ctaStyle: CTAStyle {
+        didSet { persist(ctaStyle.rawValue, key: Keys.ctaStyle) }
+    }
+    @Published var brightness: Double {
+        didSet { persist(brightness, key: Keys.brightness) }
+    }
+    @Published var contrast: Double {
+        didSet { persist(contrast, key: Keys.contrast) }
+    }
+    @Published var saturation: Double {
+        didSet { persist(saturation, key: Keys.saturation) }
+    }
+    @Published var exposureLocked: Bool {
+        didSet { persist(exposureLocked, key: Keys.exposureLocked) }
+    }
+    @Published var focusLocked: Bool {
+        didSet { persist(focusLocked, key: Keys.focusLocked) }
+    }
+    @Published var whiteBalanceLocked: Bool {
+        didSet { persist(whiteBalanceLocked, key: Keys.whiteBalanceLocked) }
+    }
 
     var selectedModel: WasteSortModel {
         WasteSortModel.from(resourceName: selectedModelName)
@@ -102,7 +154,13 @@ final class AppSettings: ObservableObject {
             preferredCameraID: preferredCameraID,
             selectedModelName: selectedModelName,
             liveRotation: liveRotation,
-            liveMirror: liveMirror
+            liveMirror: liveMirror,
+            brightness: brightness,
+            contrast: contrast,
+            saturation: saturation,
+            exposureLocked: exposureLocked,
+            focusLocked: focusLocked,
+            whiteBalanceLocked: whiteBalanceLocked
         )
     }
 
@@ -125,6 +183,13 @@ final class AppSettings: ObservableObject {
         static let liveRotation = "settings.liveRotation"
         static let liveMirror = "settings.liveMirror"
         static let showConfidence = "settings.showConfidence"
+        static let ctaStyle = "settings.ctaStyle"
+        static let brightness = "settings.brightness"
+        static let contrast = "settings.contrast"
+        static let saturation = "settings.saturation"
+        static let exposureLocked = "settings.exposureLocked"
+        static let focusLocked = "settings.focusLocked"
+        static let whiteBalanceLocked = "settings.whiteBalanceLocked"
     }
 
     private init(defaults: UserDefaults = .standard) {
@@ -153,6 +218,19 @@ final class AppSettings: ObservableObject {
         )
         liveMirror = Self.loadBool(defaults, Keys.liveMirror, WasteSortConfig.defaultLiveMirror)
         showConfidence = Self.loadBool(defaults, Keys.showConfidence, WasteSortConfig.defaultShowConfidence)
+        ctaStyle = CTAStyle(
+            rawValue: Self.loadString(defaults, Keys.ctaStyle, WasteSortConfig.defaultCTAStyle.rawValue)
+        ) ?? WasteSortConfig.defaultCTAStyle
+        brightness = Self.loadDouble(defaults, Keys.brightness, WasteSortConfig.defaultBrightness)
+        contrast = Self.loadDouble(defaults, Keys.contrast, WasteSortConfig.defaultContrast)
+        saturation = Self.loadDouble(defaults, Keys.saturation, WasteSortConfig.defaultSaturation)
+        exposureLocked = Self.loadBool(defaults, Keys.exposureLocked, WasteSortConfig.defaultExposureLocked)
+        focusLocked = Self.loadBool(defaults, Keys.focusLocked, WasteSortConfig.defaultFocusLocked)
+        whiteBalanceLocked = Self.loadBool(
+            defaults,
+            Keys.whiteBalanceLocked,
+            WasteSortConfig.defaultWhiteBalanceLocked
+        )
     }
 
     func resetToDefaults() {
@@ -170,6 +248,26 @@ final class AppSettings: ObservableObject {
         liveRotation = WasteSortConfig.defaultLiveRotation
         liveMirror = WasteSortConfig.defaultLiveMirror
         showConfidence = WasteSortConfig.defaultShowConfidence
+        ctaStyle = WasteSortConfig.defaultCTAStyle
+        resetCaptureToDefaults()
+    }
+
+    func resetCaptureToDefaults() {
+        brightness = WasteSortConfig.defaultBrightness
+        contrast = WasteSortConfig.defaultContrast
+        saturation = WasteSortConfig.defaultSaturation
+        exposureLocked = WasteSortConfig.defaultExposureLocked
+        focusLocked = WasteSortConfig.defaultFocusLocked
+        whiteBalanceLocked = WasteSortConfig.defaultWhiteBalanceLocked
+    }
+
+    var isCaptureAtDefaults: Bool {
+        brightness == WasteSortConfig.defaultBrightness
+            && contrast == WasteSortConfig.defaultContrast
+            && saturation == WasteSortConfig.defaultSaturation
+            && exposureLocked == WasteSortConfig.defaultExposureLocked
+            && focusLocked == WasteSortConfig.defaultFocusLocked
+            && whiteBalanceLocked == WasteSortConfig.defaultWhiteBalanceLocked
     }
 
     private func persist(_ value: Double, key: String) {

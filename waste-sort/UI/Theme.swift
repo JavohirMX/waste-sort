@@ -13,6 +13,13 @@ enum Theme {
     static let segmentDetectedOpacity: Double = 0.95
     static let segmentIdleOpacity: Double = 0.42
     static let animationDuration: Double = 0.2
+    static let barCornerRadius: CGFloat = 14
+    static let ctaPulseScale: CGFloat = 1.08
+    static let ctaPulsePeriod: TimeInterval = 0.7
+    static let ctaHighlightOpacity: Double = 0.24
+    static let ctaHighlightPulseAmount: Double = 0.06
+    static let ctaHighlightPulsePeriod: TimeInterval = 1.4
+    static let ctaDropdownMessage = "Open the bin and throw it here."
     /// Keep current primary until another box is this much larger.
     static let primaryAreaHysteresis: CGFloat = 1.25
 

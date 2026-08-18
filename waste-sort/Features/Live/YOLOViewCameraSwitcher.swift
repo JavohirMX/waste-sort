@@ -61,13 +61,16 @@ enum YOLOViewCameraSwitcher {
         return true
     }
 
-    static func currentDeviceUniqueID(in view: YOLOView) -> String? {
+    static func currentVideoDevice(in view: YOLOView) -> AVCaptureDevice? {
         guard let session = captureSession(in: view) else { return nil }
         return session.inputs
             .compactMap { $0 as? AVCaptureDeviceInput }
             .first { $0.device.hasMediaType(.video) }?
             .device
-            .uniqueID
+    }
+
+    static func currentDeviceUniqueID(in view: YOLOView) -> String? {
+        currentVideoDevice(in: view)?.uniqueID
     }
 
     static func captureSession(in view: YOLOView) -> AVCaptureSession? {
