@@ -18,6 +18,12 @@ struct TrackedDetection: Identifiable, Equatable, Sendable {
     let conf: Float
     /// Inflated display rect in normalized coordinates.
     let displayXywhn: CGRect
+    /// Consecutive frames the model has failed to find this track. Zero means the box
+    /// comes from a real detection this frame; anything higher means it is frozen in
+    /// place, still drawn but no longer evidence that the object is there.
+    var misses: Int = 0
+
+    var isCoasting: Bool { misses > 0 }
 }
 
 /// Associates per-frame detections across time with EMA box smoothing and sticky class labels.
@@ -155,7 +161,8 @@ final class DetectionTracker {
             classKey: track.classKey,
             className: track.className,
             conf: track.conf,
-            displayXywhn: inflate(track.displayXywhn)
+            displayXywhn: inflate(track.displayXywhn),
+            misses: track.misses
         )
     }
 

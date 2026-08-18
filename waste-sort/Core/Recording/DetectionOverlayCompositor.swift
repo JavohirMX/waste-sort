@@ -6,6 +6,7 @@ nonisolated enum DetectionOverlayCompositor {
     static func render(
         image: UIImage,
         tracks: [TrackedDetection],
+        zones: [DropZone] = [],
         timestamp: Date,
         rotation: LivePreviewRotation = .oneEighty,
         mirror: Bool = false
@@ -25,6 +26,17 @@ nonisolated enum DetectionOverlayCompositor {
             let stroke = max(3, size.width * 0.0035)
             let fontSize = max(16, size.width * 0.02)
             let corner = max(6, size.width * 0.008)
+
+            for zone in zones {
+                drawZone(
+                    zone: zone,
+                    canvasSize: size,
+                    rotation: rotation,
+                    mirror: mirror,
+                    stroke: stroke,
+                    fontSize: fontSize
+                )
+            }
 
             for track in tracks {
                 var normalized = track.displayXywhn
@@ -52,6 +64,72 @@ nonisolated enum DetectionOverlayCompositor {
 
             drawTimestamp(timestamp, canvasSize: size, fontSize: fontSize)
         }
+    }
+
+    private static func drawZone(
+        zone: DropZone,
+        canvasSize: CGSize,
+        rotation: LivePreviewRotation,
+        mirror: Bool,
+        stroke: CGFloat,
+        fontSize: CGFloat
+    ) {
+        let points = zone.corners.map { corner -> CGPoint in
+            var normalized = corner
+            if mirror {
+                normalized = DetectionGeometry.mirrorNormalized(normalized)
+            }
+            normalized = DetectionGeometry.rotateNormalized(normalized, by: rotation)
+            return CGPoint(x: normalized.x * canvasSize.width, y: normalized.y * canvasSize.height)
+        }
+        guard points.count >= 3 else { return }
+
+        let color = OverlayBinStyle.uiColor(for: zone.binID)
+        let path = UIBezierPath()
+        path.move(to: points[0])
+        for point in points.dropFirst() { path.addLine(to: point) }
+        path.close()
+
+        color.withAlphaComponent(0.12).setFill()
+        path.fill()
+        color.setStroke()
+        path.lineWidth = stroke
+        path.lineJoinStyle = .round
+        path.setLineDash([stroke * 4, stroke * 2.5], count: 2, phase: 0)
+        path.stroke()
+
+        let center = points.reduce(CGPoint.zero) {
+            CGPoint(
+                x: $0.x + $1.x / CGFloat(points.count),
+                y: $0.y + $1.y / CGFloat(points.count)
+            )
+        }
+        let label = zone.name.uppercased()
+        let font = UIFont.systemFont(ofSize: fontSize * 0.85, weight: .bold)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: UIColor.white,
+        ]
+        let textSize = (label as NSString).size(withAttributes: attributes)
+        let padding = CGSize(width: fontSize * 0.4, height: fontSize * 0.2)
+        let badgeRect = CGRect(
+            x: center.x - (textSize.width + padding.width * 2) / 2,
+            y: center.y - (textSize.height + padding.height * 2) / 2,
+            width: textSize.width + padding.width * 2,
+            height: textSize.height + padding.height * 2
+        )
+        let badgePath = UIBezierPath(roundedRect: badgeRect, cornerRadius: badgeRect.height / 2)
+        color.withAlphaComponent(0.9).setFill()
+        badgePath.fill()
+        (label as NSString).draw(
+            in: CGRect(
+                x: badgeRect.minX + padding.width,
+                y: badgeRect.minY + padding.height,
+                width: textSize.width,
+                height: textSize.height
+            ),
+            withAttributes: attributes
+        )
     }
 
     private static func drawBox(

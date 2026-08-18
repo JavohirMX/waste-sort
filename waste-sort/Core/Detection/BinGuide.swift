@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct BinInfo: Identifiable, Hashable {
+nonisolated struct BinInfo: Identifiable, Hashable {
     let id: String
     let title: String
     let displayName: String
@@ -14,7 +14,7 @@ struct BinInfo: Identifiable, Hashable {
     let instructions: String
 }
 
-enum BinGuide {
+nonisolated enum BinGuide {
     static let organic = BinInfo(
         id: "organic",
         title: "organic",

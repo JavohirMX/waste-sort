@@ -6,12 +6,21 @@ import UltralyticsYOLO
 struct LiveCameraView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var recording: RecordingController
+    @EnvironmentObject private var zoneStore: ZoneStore
+    @EnvironmentObject private var history: ZoneEventHistoryStore
     @State private var counts: [String: Int] = [:]
     @State private var fps = 0
     @State private var tracks: [TrackedDetection] = []
     @State private var imageSize: CGSize = .zero
     @State private var fpsMonitor = FrameRateMonitor()
     @State private var showSettings = false
+    @State private var selectedZoneID: UUID?
+    @State private var flashedZoneIDs: Set<UUID> = []
+    @State private var occupiedZoneIDs: Set<UUID> = []
+    @State private var armedZoneIDs: Set<UUID> = []
+    @State private var settlingZoneIDs: Set<UUID> = []
+    @State private var freshDepositID: UUID?
+    @State private var showHistory = false
     @State private var segmentFrames: [String: CGRect] = [:]
 
     private var activeBinIDs: Set<String> {
@@ -52,13 +61,29 @@ struct LiveCameraView: View {
                         settings: settings.runtime,
                         preferredCameraID: settings.preferredCameraID,
                         selectedModelName: settings.selectedModelName,
-                        recording: recording
-                    ) { result, tracked in
+                        recording: recording,
+                        zones: zoneStore.zones,
+                        dwellFrames: zoneStore.dwellFrames,
+                        reacquireGrace: zoneStore.reacquireGrace
+                    ) { result, tracked, zoneFrame in
                         if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                             fps = measured
                         }
                         imageSize = result.orig_shape
                         tracks = tracked
+                        if occupiedZoneIDs != zoneFrame.occupiedZoneIDs {
+                            occupiedZoneIDs = zoneFrame.occupiedZoneIDs
+                        }
+                        if armedZoneIDs != zoneFrame.armedZoneIDs {
+                            armedZoneIDs = zoneFrame.armedZoneIDs
+                        }
+                        if settlingZoneIDs != zoneFrame.settlingZoneIDs {
+                            settlingZoneIDs = zoneFrame.settlingZoneIDs
+                        }
+                        if !zoneFrame.deposits.isEmpty {
+                            history.append(zoneFrame.deposits)
+                            flash(zoneFrame.deposits)
+                        }
 
                         var nextCounts: [String: Int] = [:]
                         for track in tracked {
@@ -74,7 +99,24 @@ struct LiveCameraView: View {
                     .rotationEffect(.degrees(settings.liveRotation.degrees))
                     .scaleEffect(coverScale)
 
-                    if settings.ctaStyle == .highlightSection {
+                    ZoneOverlayView(
+                        zones: zoneStore.zones,
+                        imageSize: imageSize,
+                        viewSize: geo.size,
+                        rotation: settings.liveRotation,
+                        mirror: settings.liveMirror,
+                        isEditing: zoneStore.isEditingZones,
+                        selectedZoneID: selectedZoneID,
+                        flashedZoneIDs: flashedZoneIDs,
+                        occupiedZoneIDs: occupiedZoneIDs,
+                        armedZoneIDs: armedZoneIDs,
+                        settlingZoneIDs: settlingZoneIDs,
+                        onMoveCorner: moveCorner,
+                        onMoveZone: moveZone,
+                        onSelectZone: { selectedZoneID = $0 }
+                    )
+
+                    if !zoneStore.isEditingZones, settings.ctaStyle == .highlightSection {
                         CTAHighlightOverlay(
                             activeBinIDs: activeBinIDs,
                             viewSize: geo.size,
@@ -93,41 +135,117 @@ struct LiveCameraView: View {
                     )
                     .allowsHitTesting(false)
 
-                    if settings.ctaStyle == .arrows {
+                    if !zoneStore.isEditingZones, settings.ctaStyle == .arrows {
                         CTAArrowOverlay(cues: cues, segmentFrames: cameraSegmentFrames)
                     }
                 }
             }
             .ignoresSafeArea()
+            .allowsHitTesting(zoneStore.isEditingZones)
 
             VStack(spacing: 0) {
-                CategoryBar(counts: counts, ctaStyle: settings.ctaStyle)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, Theme.categoryBarTopGap)
+                // The top stays clear while calibrating so nothing covers a zone.
+                if !zoneStore.isEditingZones {
+                    CategoryBar(counts: counts, ctaStyle: settings.ctaStyle)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, Theme.categoryBarTopGap)
+                }
 
                 Spacer(minLength: 0)
 
-                HStack {
-                    Spacer(minLength: 0)
-                    fpsBadge
+                if zoneStore.isEditingZones {
+                    ZoneEditBar(
+                        zones: zoneStore.zones,
+                        selectedZoneID: $selectedZoneID,
+                        onReset: {
+                            zoneStore.resetToDefaults(
+                                rotation: settings.liveRotation,
+                                mirror: settings.liveMirror
+                            )
+                        },
+                        onDone: { zoneStore.isEditingZones = false }
+                    )
+                    .padding(.horizontal, Theme.hudInset)
+                    .padding(.bottom, Theme.hudInset)
+                } else {
+                    HStack(alignment: .bottom) {
+                        if let last = history.events.first {
+                            LastDepositChip(
+                                record: last,
+                                isFresh: freshDepositID == last.id,
+                                onTap: { showHistory = true }
+                            )
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                            .id(last.id)
+                        }
+                        Spacer(minLength: 0)
+                        fpsBadge
+                    }
+                    .animation(
+                        .spring(response: 0.35, dampingFraction: 0.7),
+                        value: history.events.first?.id
+                    )
+                    .animation(.easeOut(duration: Theme.animationDuration), value: freshDepositID)
+                    .padding(.horizontal, Theme.hudInset)
+                    .padding(.bottom, Theme.hudInset)
                 }
-                .padding(.horizontal, Theme.hudInset)
-                .padding(.bottom, Theme.hudInset)
             }
         }
         .coordinateSpace(name: CTASpace.name)
         .overlay {
-            if settings.ctaStyle == .dropdown {
+            if !zoneStore.isEditingZones, settings.ctaStyle == .dropdown {
                 CTADropdownOverlay(activeBinIDs: activeBinIDs, segmentFrames: segmentFrames)
             }
         }
         .onPreferenceChange(CategorySegmentFramesKey.self) { segmentFrames = $0 }
+        .onChange(of: zoneStore.isEditingZones) { _, editing in
+            selectedZoneID = editing ? zoneStore.zones.first?.id : nil
+        }
+        .sheet(isPresented: $showHistory) {
+            HistoryView()
+                .environmentObject(history)
+                .environmentObject(zoneStore)
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(settings)
                 .environmentObject(recording)
+                .environmentObject(zoneStore)
+                .environmentObject(history)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func moveCorner(zoneID: UUID, index: Int, point: CGPoint) {
+        guard var zone = zoneStore.zones.first(where: { $0.id == zoneID }),
+              zone.corners.indices.contains(index)
+        else { return }
+        zone.corners[index] = point
+        zoneStore.update(zone)
+    }
+
+    private func moveZone(zoneID: UUID, corners: [CGPoint]) {
+        guard var zone = zoneStore.zones.first(where: { $0.id == zoneID }) else { return }
+        zone.corners = corners
+        zoneStore.update(zone)
+    }
+
+    /// Flashes the receiving zone outline and pops the last-deposit chip.
+    private func flash(_ deposits: [ZoneDeposit]) {
+        let zoneIDs = Set(deposits.map(\.zoneID))
+        let latest = history.events.first?.id
+        withAnimation(.easeOut(duration: Theme.animationDuration)) {
+            flashedZoneIDs.formUnion(zoneIDs)
+            freshDepositID = latest
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        Task {
+            try? await Task.sleep(for: .milliseconds(900))
+            withAnimation(.easeOut(duration: Theme.animationDuration)) {
+                flashedZoneIDs.subtract(zoneIDs)
+                if freshDepositID == latest { freshDepositID = nil }
+            }
         }
     }
 
@@ -186,7 +304,10 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     var preferredCameraID: String
     var selectedModelName: String
     var recording: RecordingController
-    var onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?
+    var zones: [DropZone]
+    var dwellFrames: Int
+    var reacquireGrace: Double
+    var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -194,6 +315,9 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             preferredCameraID: preferredCameraID,
             selectedModelName: selectedModelName,
             recording: recording,
+            zones: zones,
+            dwellFrames: dwellFrames,
+            reacquireGrace: reacquireGrace,
             onDetection: onDetection
         )
     }
@@ -206,6 +330,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         )
         applyThresholds(view, settings: settings)
         applyTracking(context.coordinator, settings: settings)
+        applyZones(context.coordinator)
         view.showOverlays = false
         hideDeveloperChrome(view)
         let coordinator = context.coordinator
@@ -226,6 +351,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         context.coordinator.recording = recording
         applyThresholds(uiView, settings: settings)
         applyTracking(context.coordinator, settings: settings)
+        applyZones(context.coordinator)
         let coordinator = context.coordinator
         uiView.onDetection = { result in
             coordinator.handle(result)
@@ -276,6 +402,12 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         coordinator.tracker.maxSpeed = CGFloat(settings.maxSpeed)
     }
 
+    private func applyZones(_ coordinator: Coordinator) {
+        coordinator.zones = zones
+        coordinator.depositDetector.requiredDwellFrames = dwellFrames
+        coordinator.depositDetector.reacquireGrace = reacquireGrace
+    }
+
     private func hideDeveloperChrome(_ view: YOLOView) {
         view.sliderNumItems.isHidden = true
         view.labelSliderNumItems.isHidden = true
@@ -296,13 +428,15 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     }
 
     final class Coordinator {
-        var onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?
+        var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult) -> Void)?
         var settings: RuntimeSettings
         var preferredCameraID: String
         var selectedModelName: String
         var recording: RecordingController
+        var zones: [DropZone]
         weak var yoloView: YOLOView?
         let tracker = DetectionTracker()
+        let depositDetector = ZoneDepositDetector()
         private var cameraObservers: [NSObjectProtocol] = []
         private var applyWorkItem: DispatchWorkItem?
         private var isReloadingModel = false
@@ -316,13 +450,19 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             preferredCameraID: String,
             selectedModelName: String,
             recording: RecordingController,
-            onDetection: ((YOLOResult, [TrackedDetection]) -> Void)?
+            zones: [DropZone],
+            dwellFrames: Int,
+            reacquireGrace: Double,
+            onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult) -> Void)?
         ) {
             self.settings = settings
             self.preferredCameraID = preferredCameraID
             self.selectedModelName = selectedModelName
             self.recording = recording
+            self.zones = zones
             self.onDetection = onDetection
+            depositDetector.requiredDwellFrames = dwellFrames
+            depositDetector.reacquireGrace = reacquireGrace
         }
 
         func handle(_ result: YOLOResult) {
@@ -348,17 +488,23 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                 )
             }
             let tracked = tracker.update(raw)
+            let currentZones = zones
+            let zoneFrame = depositDetector.update(tracks: tracked, zones: currentZones)
             if recording.isRecording {
                 let fps = result.fps.flatMap { $0.isFinite ? Int($0.rounded()) : nil } ?? 0
                 recording.ingestLiveFrame(
                     tracks: tracked,
+                    deposits: zoneFrame.deposits,
+                    zones: currentZones,
                     originalImage: result.originalImage,
                     fps: fps,
                     settings: settings
                 )
             }
+            // Zone results ride the existing main-thread hop so the @Published history
+            // append never happens off-main.
             DispatchQueue.main.async {
-                self.onDetection?(result, tracked)
+                self.onDetection?(result, tracked, zoneFrame)
             }
         }
 

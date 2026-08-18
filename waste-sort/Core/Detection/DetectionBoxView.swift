@@ -124,6 +124,143 @@ nonisolated enum DetectionGeometry {
         )
     }
 
+    // MARK: - Point mapping (drop zone corners)
+
+    static func mirrorNormalized(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: 1 - point.x, y: point.y)
+    }
+
+    /// Point form of `rotateNormalized(_:by:)` — the rect version is its bounding box.
+    static func rotateNormalized(_ point: CGPoint, by rotation: LivePreviewRotation) -> CGPoint {
+        switch rotation {
+        case .zero:
+            return point
+        case .ninety:
+            return CGPoint(x: 1 - point.y, y: point.x)
+        case .oneEighty:
+            return CGPoint(x: 1 - point.x, y: 1 - point.y)
+        case .twoSeventy:
+            return CGPoint(x: point.y, y: 1 - point.x)
+        }
+    }
+
+    /// Point form of `mapDisplayRect`, for geometry that must survive rotation as a
+    /// shape rather than a bounding box.
+    static func mapDisplayPoint(
+        normalized: CGPoint,
+        imageSize: CGSize,
+        viewSize: CGSize,
+        rotation: LivePreviewRotation,
+        mirror: Bool,
+        useAspectFill: Bool
+    ) -> CGPoint {
+        guard let placement = Placement(
+            imageSize: imageSize,
+            viewSize: viewSize,
+            useAspectFill: useAspectFill
+        ) else { return .zero }
+
+        var point = CGPoint(
+            x: normalized.x * imageSize.width * placement.scale - placement.offset.x,
+            y: normalized.y * imageSize.height * placement.scale - placement.offset.y
+        )
+        if mirror {
+            point.x = viewSize.width - point.x
+        }
+        let center = CGPoint(x: viewSize.width * 0.5, y: viewSize.height * 0.5)
+        point = rotatePoint(point, around: center, by: rotation)
+        let scale = coverScale(for: rotation, viewSize: viewSize)
+        if scale != 1 {
+            point = scalePoint(point, around: center, by: scale)
+        }
+        return point
+    }
+
+    /// Exact inverse of `mapDisplayPoint` — turns a drag location back into image space.
+    static func mapNormalizedPoint(
+        viewPoint: CGPoint,
+        imageSize: CGSize,
+        viewSize: CGSize,
+        rotation: LivePreviewRotation,
+        mirror: Bool,
+        useAspectFill: Bool
+    ) -> CGPoint {
+        guard let placement = Placement(
+            imageSize: imageSize,
+            viewSize: viewSize,
+            useAspectFill: useAspectFill
+        ) else { return .zero }
+
+        var point = viewPoint
+        let center = CGPoint(x: viewSize.width * 0.5, y: viewSize.height * 0.5)
+        let scale = coverScale(for: rotation, viewSize: viewSize)
+        if scale != 1 {
+            point = scalePoint(point, around: center, by: 1 / scale)
+        }
+        point = rotatePoint(point, around: center, by: inverse(rotation))
+        if mirror {
+            point.x = viewSize.width - point.x
+        }
+        return CGPoint(
+            x: (point.x + placement.offset.x) / (imageSize.width * placement.scale),
+            y: (point.y + placement.offset.y) / (imageSize.height * placement.scale)
+        )
+    }
+
+    static func rotatePoint(
+        _ point: CGPoint,
+        around center: CGPoint,
+        by rotation: LivePreviewRotation
+    ) -> CGPoint {
+        let rel = CGPoint(x: point.x - center.x, y: point.y - center.y)
+        let rotated: CGPoint
+        switch rotation {
+        case .zero:
+            rotated = rel
+        case .ninety:
+            rotated = CGPoint(x: -rel.y, y: rel.x)
+        case .oneEighty:
+            rotated = CGPoint(x: -rel.x, y: -rel.y)
+        case .twoSeventy:
+            rotated = CGPoint(x: rel.y, y: -rel.x)
+        }
+        return CGPoint(x: rotated.x + center.x, y: rotated.y + center.y)
+    }
+
+    static func scalePoint(_ point: CGPoint, around center: CGPoint, by scale: CGFloat) -> CGPoint {
+        CGPoint(
+            x: center.x + (point.x - center.x) * scale,
+            y: center.y + (point.y - center.y) * scale
+        )
+    }
+
+    static func inverse(_ rotation: LivePreviewRotation) -> LivePreviewRotation {
+        switch rotation {
+        case .zero: return .zero
+        case .ninety: return .twoSeventy
+        case .oneEighty: return .oneEighty
+        case .twoSeventy: return .ninety
+        }
+    }
+
+    /// Shared placement maths for both fill and fit: `view = n * image * scale - offset`.
+    private struct Placement {
+        let scale: CGFloat
+        let offset: CGPoint
+
+        init?(imageSize: CGSize, viewSize: CGSize, useAspectFill: Bool) {
+            guard imageSize.width > 0, imageSize.height > 0,
+                  viewSize.width > 0, viewSize.height > 0
+            else { return nil }
+            let ratios = (viewSize.width / imageSize.width, viewSize.height / imageSize.height)
+            scale = useAspectFill ? max(ratios.0, ratios.1) : min(ratios.0, ratios.1)
+            offset = CGPoint(
+                x: (imageSize.width * scale - viewSize.width) / 2,
+                y: (imageSize.height * scale - viewSize.height) / 2
+            )
+        }
+    }
+
     static func aspectFillDisplayRect(
         for normalizedRect: CGRect,
         imageSize: CGSize,
