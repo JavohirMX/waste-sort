@@ -70,7 +70,7 @@ final class AppSettings: ObservableObject {
     @Published var preferredCameraID: String {
         didSet { persist(preferredCameraID, key: Keys.preferredCameraID) }
     }
-    /// Bundle resource name: `best`, `bestv3.2`, or `bestv3.3`.
+    /// Bundle resource name: `best`, `bestv3.2`, `bestv3.3`, `bestv3.4`, or `bestv3.5`.
     @Published var selectedModelName: String {
         didSet { persist(selectedModelName, key: Keys.selectedModelName) }
     }
