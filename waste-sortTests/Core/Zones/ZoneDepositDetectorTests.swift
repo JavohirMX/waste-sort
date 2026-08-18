@@ -188,6 +188,49 @@ struct ZoneDepositDetectorTests {
         #expect(deposits.first?.classKey == "organic")
     }
 
+    /// Reproduces what `DetectionTracker` actually emits on a relabel, which is not a clean
+    /// gap: it cannot associate the new label with the old track, so it coasts the old one
+    /// for `maxMisses` frames *while* the new one is already live. Both are in the array at
+    /// once. Treating the frozen box as a sighting used to strand the old object — armed,
+    /// never adopted, firing a throw that never happened — and disqualify the new one for
+    /// having been born inside the zone.
+    @Test("a relabel with overlapping coasting frames is still one item")
+    func classChangeWithOverlappingCoastFrames() {
+        let c = clock(dwell: 2)
+        c.tick([track(id: 1, classKey: "organic", centerX: 0.5)])
+        c.tick([track(id: 1, classKey: "organic", centerX: 0.2)], times: 3)
+
+        // Frame 1 of the relabel: old track coasts alone, new track not yet confirmed.
+        c.tick([track(id: 1, classKey: "organic", centerX: 0.2, misses: 1)])
+        // Frames 2-3: both emitted at once — frozen organic beside live residual.
+        for miss in 2...3 {
+            c.tick([
+                track(id: 1, classKey: "organic", centerX: 0.2, misses: miss),
+                track(id: 2, classKey: "residual", centerX: 0.2),
+            ])
+        }
+        // The old track is finally dropped and only the new one continues.
+        c.tick([track(id: 2, classKey: "residual", centerX: 0.2)], times: 3)
+
+        // One object throughout: nothing fired while the item was still on camera.
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.trackSegments == 2)
+        #expect(deposits.first?.classesSeen == 2)
+    }
+
+    @Test("a frozen box alone does not keep an object present")
+    func coastingDoesNotHoldTheObjectOpen() {
+        let c = clock(dwell: 2)
+        c.tick([track(id: 1, centerX: 0.5)])
+        c.tick([track(id: 1, centerX: 0.2)], times: 2)
+        // The model has lost it; only the frozen box remains. The reacquisition window
+        // should already be running, not waiting for the tracker to give up.
+        let coasting = c.tick([track(id: 1, centerX: 0.2, misses: 1)])
+        #expect(coasting.occupiedZoneIDs.isEmpty)
+        #expect(coasting.settlingZoneIDs == [organicZone.id])
+    }
+
     @Test("a reappearance beyond the window is a different object")
     func reappearanceAfterWindowIsNew() {
         let c = clock(grace: 0.5)
@@ -212,6 +255,40 @@ struct ZoneDepositDetectorTests {
         // The first object is credited; the second was never seen outside a zone.
         #expect(deposits.count == 1)
         #expect(deposits.first?.zoneID == organicZone.id)
+    }
+
+    /// With `confirmHits` at 1 the tracker confirms the replacement id on the very frame it
+    /// coasts the old one, so the old object has not been marked missing yet. Adoption has
+    /// to work off "not claimed this frame", not off the missing flag alone.
+    @Test("a relabel confirmed on the same frame is still one item")
+    func classChangeConfirmedImmediately() {
+        let c = clock(dwell: 2)
+        c.tick([track(id: 1, classKey: "organic", centerX: 0.5)])
+        c.tick([track(id: 1, classKey: "organic", centerX: 0.2)], times: 2)
+        // Same frame: old id frozen, new id already live.
+        c.tick([
+            track(id: 1, classKey: "organic", centerX: 0.2, misses: 1),
+            track(id: 2, classKey: "residual", centerX: 0.2),
+        ])
+        c.tick([track(id: 2, classKey: "residual", centerX: 0.2)], times: 2)
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.trackSegments == 2)
+    }
+
+    /// Track order inside a frame is arbitrary, so a new id arriving before the live id it
+    /// sits next to must not be able to steal that object.
+    @Test("a new track listed first cannot steal a live object")
+    func newTrackDoesNotStealALiveObject() {
+        let c = clock(dwell: 2)
+        c.tick([track(id: 1, centerX: 0.5)])
+        c.tick([track(id: 1, centerX: 0.2)], times: 2)
+        // Second item appears right next to the first, and happens to come first in the array.
+        c.tick([track(id: 2, centerX: 0.22), track(id: 1, centerX: 0.2)], times: 2)
+        // Two objects, and the newcomer was born inside the zone, so only one is credited.
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.trackSegments == 1)
     }
 
     @Test("two objects visible at once are never merged")
