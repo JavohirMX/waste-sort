@@ -12,6 +12,13 @@ struct LiveCameraView: View {
     @State private var imageSize: CGSize = .zero
     @State private var fpsMonitor = FrameRateMonitor()
     @State private var showSettings = false
+    @State private var segmentFrames: [String: CGRect] = [:]
+
+    private var activeBinIDs: Set<String> {
+        Set(counts.compactMap { key, value in
+            value > 0 ? key : nil
+        })
+    }
 
     var body: some View {
         ZStack {
@@ -19,6 +26,25 @@ struct LiveCameraView: View {
                 let coverScale = DetectionGeometry.coverScale(
                     for: settings.liveRotation,
                     viewSize: geo.size
+                )
+                let geoOrigin = geo.frame(in: .named(CTASpace.name)).origin
+                let cameraSegmentFrames = Dictionary(
+                    uniqueKeysWithValues: segmentFrames.map { id, rect in
+                        (id, CTALayout.convert(rect, from: geoOrigin))
+                    }
+                )
+                let cues = settings.ctaStyle == .arrows
+                    ? CTACueMapper.cues(
+                        from: tracks,
+                        imageSize: imageSize,
+                        viewSize: geo.size,
+                        rotation: settings.liveRotation,
+                        mirror: settings.liveMirror
+                    )
+                    : []
+                let highlightBottom = CTALayout.barBottom(
+                    from: cameraSegmentFrames,
+                    fallback: Theme.categoryBarTopGap + Theme.barHeight - geoOrigin.y
                 )
                 ZStack {
                     // Rotate/mirror only the camera pixels; boxes stay upright and are remapped below.
@@ -48,6 +74,14 @@ struct LiveCameraView: View {
                     .rotationEffect(.degrees(settings.liveRotation.degrees))
                     .scaleEffect(coverScale)
 
+                    if settings.ctaStyle == .highlightSection {
+                        CTAHighlightOverlay(
+                            activeBinIDs: activeBinIDs,
+                            viewSize: geo.size,
+                            barBottom: highlightBottom
+                        )
+                    }
+
                     DetectionBoxOverlay(
                         tracks: tracks,
                         imageSize: imageSize,
@@ -58,12 +92,16 @@ struct LiveCameraView: View {
                         showConfidence: settings.showConfidence
                     )
                     .allowsHitTesting(false)
+
+                    if settings.ctaStyle == .arrows {
+                        CTAArrowOverlay(cues: cues, segmentFrames: cameraSegmentFrames)
+                    }
                 }
             }
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                CategoryBar(counts: counts)
+                CategoryBar(counts: counts, ctaStyle: settings.ctaStyle)
                     .frame(maxWidth: .infinity)
                     .padding(.top, Theme.categoryBarTopGap)
 
@@ -77,6 +115,13 @@ struct LiveCameraView: View {
                 .padding(.bottom, Theme.hudInset)
             }
         }
+        .coordinateSpace(name: CTASpace.name)
+        .overlay {
+            if settings.ctaStyle == .dropdown {
+                CTADropdownOverlay(activeBinIDs: activeBinIDs, segmentFrames: segmentFrames)
+            }
+        }
+        .onPreferenceChange(CategorySegmentFramesKey.self) { segmentFrames = $0 }
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(settings)

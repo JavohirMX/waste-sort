@@ -100,6 +100,19 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker("Style", selection: $settings.ctaStyle) {
+                        ForEach(CTAStyle.allCases) { style in
+                            Text(style.displayName).tag(style)
+                        }
+                    }
+                } header: {
+                    Text("Call to action")
+                        .foregroundStyle(BinGuide.organic.color)
+                } footer: {
+                    Text("Shown on the live camera when waste is detected. Choose one visual guide at a time.")
+                }
+
+                Section {
                     SettingsSliderRow(
                         title: "Confidence",
                         help: "How sure the model must be before showing an item. Higher = fewer boxes, more certain. Lower = more boxes, more mistakes.",

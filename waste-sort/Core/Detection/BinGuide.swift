@@ -72,6 +72,10 @@ enum BinGuide {
             .replacingOccurrences(of: "-", with: "_")
     }
 
+    static func bin(id: String) -> BinInfo {
+        all.first { $0.id == id } ?? unknown
+    }
+
     static func info(for className: String) -> BinInfo {
         switch normalizedKey(className) {
         case "organic":

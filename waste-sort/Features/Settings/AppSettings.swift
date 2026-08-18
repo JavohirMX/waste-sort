@@ -16,6 +16,7 @@ enum WasteSortConfig {
     static let defaultLiveRotation = LivePreviewRotation.oneEighty
     static let defaultLiveMirror = false
     static let defaultShowConfidence = false
+    static let defaultCTAStyle = CTAStyle.off
 }
 
 /// Snapshot of tunable inference and tracking values, passed into Live camera updates.
@@ -83,6 +84,9 @@ final class AppSettings: ObservableObject {
     @Published var showConfidence: Bool {
         didSet { persist(showConfidence, key: Keys.showConfidence) }
     }
+    @Published var ctaStyle: CTAStyle {
+        didSet { persist(ctaStyle.rawValue, key: Keys.ctaStyle) }
+    }
 
     var selectedModel: WasteSortModel {
         WasteSortModel.from(resourceName: selectedModelName)
@@ -125,6 +129,7 @@ final class AppSettings: ObservableObject {
         static let liveRotation = "settings.liveRotation"
         static let liveMirror = "settings.liveMirror"
         static let showConfidence = "settings.showConfidence"
+        static let ctaStyle = "settings.ctaStyle"
     }
 
     private init(defaults: UserDefaults = .standard) {
@@ -153,6 +158,9 @@ final class AppSettings: ObservableObject {
         )
         liveMirror = Self.loadBool(defaults, Keys.liveMirror, WasteSortConfig.defaultLiveMirror)
         showConfidence = Self.loadBool(defaults, Keys.showConfidence, WasteSortConfig.defaultShowConfidence)
+        ctaStyle = CTAStyle(
+            rawValue: Self.loadString(defaults, Keys.ctaStyle, WasteSortConfig.defaultCTAStyle.rawValue)
+        ) ?? WasteSortConfig.defaultCTAStyle
     }
 
     func resetToDefaults() {
@@ -170,6 +178,7 @@ final class AppSettings: ObservableObject {
         liveRotation = WasteSortConfig.defaultLiveRotation
         liveMirror = WasteSortConfig.defaultLiveMirror
         showConfidence = WasteSortConfig.defaultShowConfidence
+        ctaStyle = WasteSortConfig.defaultCTAStyle
     }
 
     private func persist(_ value: Double, key: String) {
