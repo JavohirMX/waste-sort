@@ -74,6 +74,57 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    SettingsPickerRow(
+                        title: "Exposure",
+                        help: "Lock auto-exposure so a bright item does not pump the picture. USB webcams may ignore this.",
+                        isLocked: $settings.exposureLocked
+                    )
+                    SettingsPickerRow(
+                        title: "Focus",
+                        help: "Lock focus so the lens does not hunt while items pass. USB webcams may ignore this.",
+                        isLocked: $settings.focusLocked
+                    )
+                    SettingsPickerRow(
+                        title: "White balance",
+                        help: "Lock white balance so colors stay stable. USB webcams may ignore this.",
+                        isLocked: $settings.whiteBalanceLocked
+                    )
+                    SettingsSliderRow(
+                        title: "Brightness",
+                        help: "Brighten or darken the image the model sees.",
+                        valueText: signedDecimal(settings.brightness),
+                        value: $settings.brightness,
+                        range: FrameColorAdjuster.brightnessRange,
+                        step: 0.05
+                    )
+                    SettingsSliderRow(
+                        title: "Contrast",
+                        help: "Increase or decrease contrast before detection.",
+                        valueText: decimal(settings.contrast),
+                        value: $settings.contrast,
+                        range: FrameColorAdjuster.contrastRange,
+                        step: 0.05
+                    )
+                    SettingsSliderRow(
+                        title: "Saturation",
+                        help: "Increase or decrease color intensity before detection.",
+                        valueText: decimal(settings.saturation),
+                        value: $settings.saturation,
+                        range: FrameColorAdjuster.saturationRange,
+                        step: 0.05
+                    )
+                    Button("Reset capture") {
+                        settings.resetCaptureToDefaults()
+                    }
+                    .disabled(settings.isCaptureAtDefaults)
+                } header: {
+                    Text("Capture")
+                        .foregroundStyle(BinGuide.residual.color)
+                } footer: {
+                    Text("These adjust the image the model sees. USB cameras ignore hardware lock more often than these sliders.")
+                }
+
+                Section {
                     Button("Sort a photo") {
                         showPhotoSort = true
                     }
@@ -118,6 +169,19 @@ struct SettingsView: View {
                             ? "Saves a raw clip to Photos, an overlay clip (boxes, labels, timestamps) to Photos and Files, and a detection CSV to Files (On My iPad/iPhone → iSort). Records the camera feed only for the raw clip. Saves if you stop, or if the app is backgrounded or closed."
                             : "The live camera must be running before you can start a recording."
                     )
+                }
+
+                Section {
+                    Picker("Style", selection: $settings.ctaStyle) {
+                        ForEach(CTAStyle.allCases) { style in
+                            Text(style.displayName).tag(style)
+                        }
+                    }
+                } header: {
+                    Text("Call to action")
+                        .foregroundStyle(BinGuide.organic.color)
+                } footer: {
+                    Text("Shown on the live camera when waste is detected. Choose one visual guide at a time.")
                 }
 
                 Section {
@@ -319,6 +383,33 @@ struct SettingsView: View {
 
     private func decimal(_ value: Double) -> String {
         String(format: "%.2f", value)
+    }
+
+    private func signedDecimal(_ value: Double) -> String {
+        String(format: "%+.2f", value)
+    }
+}
+
+private struct SettingsPickerRow: View {
+    let title: String
+    let help: String
+    @Binding var isLocked: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+            Picker(title, selection: $isLocked) {
+                Text("Auto").tag(false)
+                Text("Locked").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            Text(help)
+                .font(.system(.footnote, design: .default))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 }
 

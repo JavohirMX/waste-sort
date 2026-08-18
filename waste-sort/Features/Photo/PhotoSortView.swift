@@ -241,9 +241,18 @@ struct PhotoSortView: View {
 
         applyThresholds(model)
         let minConf = Float(settings.confidence)
+        let color = settings.runtime.frameColor.clamped
+        let prepared: UIImage
+        if color.isIdentity {
+            prepared = image
+        } else {
+            let adjusted = FrameColorAdjuster.apply(color, to: FrameColorAdjuster.ciImage(from: image))
+            prepared = FrameColorAdjuster.uiImage(from: adjusted) ?? image
+        }
+        sourceImage = prepared
 
         let result = await Task.detached(priority: .userInitiated) {
-            model(image)
+            model(prepared)
         }.value
 
         detections = result.boxes.filter { $0.conf >= minConf }

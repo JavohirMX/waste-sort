@@ -26,7 +26,7 @@ struct TrackedDetection: Identifiable, Equatable, Sendable {
     var isCoasting: Bool { misses > 0 }
 }
 
-/// Associates per-frame detections across time with EMA smoothing.
+/// Associates per-frame detections across time with EMA box smoothing and sticky class labels.
 /// Unmatched tracks briefly freeze in place (no velocity coast on display) then drop.
 final class DetectionTracker {
     var iouThreshold: CGFloat = 0.3
@@ -38,6 +38,12 @@ final class DetectionTracker {
     var maxSpeed: CGFloat = 0.8
     /// Velocity multiplier applied on each unmatched frame.
     var missVelocityDecay: CGFloat = 0.25
+    /// Overlap required to keep the same track when YOLO changes class.
+    var crossClassIouThreshold: CGFloat = CGFloat(WasteSortConfig.defaultCrossClassIou)
+    /// Consecutive disagreeing frames before the emitted bin label switches.
+    var classSwitchHits: Int = WasteSortConfig.defaultClassSwitchHits
+    /// Hide a younger confirmed track when it sits on top of an older one.
+    var emitOverlapIou: CGFloat = 0.45
 
     private struct Track {
         let id: Int
@@ -54,6 +60,9 @@ final class DetectionTracker {
         var confirmed: Bool
         var matched: Bool
         var t: CFAbsoluteTime
+        var pendingClassKey: String?
+        var pendingClassName: String
+        var pendingHits: Int
     }
 
     private var tracks: [Track] = []
@@ -81,45 +90,26 @@ final class DetectionTracker {
 
         var assigned = Set<Int>()
         for (detIndex, det) in filtered.enumerated() {
-            var bestI = -1
-            var bestIoU: CGFloat = 0
-            for (i, track) in tracks.enumerated() {
-                if track.matched || track.classKey != det.classKey { continue }
-                let value = iou(track.predXywhn, det.xywhn)
-                if value > bestIoU {
-                    bestIoU = value
-                    bestI = i
-                }
+            guard let bestI = bestMatchIndex(for: det, sameClassOnly: true, iouMin: iouThreshold) else {
+                continue
             }
-            guard bestI >= 0, bestIoU >= iouThreshold else { continue }
-
-            let dt = max(timestamp - tracks[bestI].t, 1e-3)
-            let oldC = center(of: tracks[bestI].xywhn)
-            let newC = center(of: det.xywhn)
-            let (vx, vy) = clampVelocity(
-                (newC.x - oldC.x) / dt,
-                (newC.y - oldC.y) / dt
-            )
-
-            tracks[bestI].matched = true
-            tracks[bestI].hits += 1
-            tracks[bestI].misses = 0
-            tracks[bestI].vx = vx
-            tracks[bestI].vy = vy
-            tracks[bestI].xywhn = det.xywhn
-            tracks[bestI].displayXywhn = ema(tracks[bestI].displayXywhn, det.xywhn)
-            tracks[bestI].conf = det.conf
-            tracks[bestI].className = det.className
-            tracks[bestI].classKey = det.classKey
-            tracks[bestI].t = timestamp
-            if tracks[bestI].hits >= confirmHits {
-                tracks[bestI].confirmed = true
+            applyMatch(trackIndex: bestI, det: det, timestamp: timestamp)
+            assigned.insert(detIndex)
+        }
+        for (detIndex, det) in filtered.enumerated() {
+            guard !assigned.contains(detIndex) else { continue }
+            guard let bestI = bestMatchIndex(for: det, sameClassOnly: false, iouMin: crossClassIouThreshold) else {
+                continue
             }
+            applyMatch(trackIndex: bestI, det: det, timestamp: timestamp)
             assigned.insert(detIndex)
         }
 
-        for (detIndex, det) in filtered.enumerated() {
-            guard !assigned.contains(detIndex) else { continue }
+        let leftover = filtered.indices.filter { !assigned.contains($0) }
+            .sorted { filtered[$0].conf > filtered[$1].conf }
+        for detIndex in leftover {
+            let det = filtered[detIndex]
+            if overlapsExistingTrack(det) { continue }
             let track = Track(
                 id: nextID,
                 classKey: det.classKey,
@@ -134,20 +124,19 @@ final class DetectionTracker {
                 misses: 0,
                 confirmed: confirmHits <= 1,
                 matched: true,
-                t: timestamp
+                t: timestamp,
+                pendingClassKey: nil,
+                pendingClassName: "",
+                pendingHits: 0
             )
             nextID += 1
             tracks.append(track)
         }
 
-        var confirmed: [TrackedDetection] = []
         var kept: [Track] = []
         for var track in tracks {
             if track.matched {
                 kept.append(track)
-                if track.confirmed {
-                    confirmed.append(emit(track))
-                }
                 continue
             }
             track.misses += 1
@@ -159,11 +148,11 @@ final class DetectionTracker {
                 if abs(track.vy) < 1e-4 { track.vy = 0 }
                 track.t = timestamp
                 kept.append(track)
-                confirmed.append(emit(track))
             }
         }
-        tracks = kept
-        return confirmed
+        let visibleIDs = Set(suppressOverlapping(kept.filter(\.confirmed)).map(\.id))
+        tracks = kept.filter { !$0.confirmed || visibleIDs.contains($0.id) }
+        return tracks.filter(\.confirmed).map { emit($0) }
     }
 
     private func emit(_ track: Track) -> TrackedDetection {
@@ -175,6 +164,84 @@ final class DetectionTracker {
             displayXywhn: inflate(track.displayXywhn),
             misses: track.misses
         )
+    }
+
+    private func overlapsExistingTrack(_ det: RawDetection) -> Bool {
+        tracks.contains { iou($0.xywhn, det.xywhn) >= iouThreshold }
+    }
+
+    private func suppressOverlapping(_ confirmed: [Track]) -> [Track] {
+        let oldestFirst = confirmed.sorted { $0.id < $1.id }
+        var kept: [Track] = []
+        for track in oldestFirst {
+            let overlapsOlder = kept.contains { iou($0.displayXywhn, track.displayXywhn) >= emitOverlapIou }
+            if overlapsOlder { continue }
+            kept.append(track)
+        }
+        return kept
+    }
+
+    private func bestMatchIndex(for det: RawDetection, sameClassOnly: Bool, iouMin: CGFloat) -> Int? {
+        var bestI = -1
+        var bestIoU: CGFloat = 0
+        for (i, track) in tracks.enumerated() {
+            if track.matched { continue }
+            if sameClassOnly, track.classKey != det.classKey { continue }
+            let value = iou(track.predXywhn, det.xywhn)
+            if value > bestIoU {
+                bestIoU = value
+                bestI = i
+            }
+        }
+        guard bestI >= 0, bestIoU >= iouMin else { return nil }
+        return bestI
+    }
+
+    private func applyMatch(trackIndex i: Int, det: RawDetection, timestamp: CFAbsoluteTime) {
+        let dt = max(timestamp - tracks[i].t, 1e-3)
+        let oldC = center(of: tracks[i].xywhn)
+        let newC = center(of: det.xywhn)
+        let (vx, vy) = clampVelocity(
+            (newC.x - oldC.x) / dt,
+            (newC.y - oldC.y) / dt
+        )
+
+        tracks[i].matched = true
+        tracks[i].hits += 1
+        tracks[i].misses = 0
+        tracks[i].vx = vx
+        tracks[i].vy = vy
+        tracks[i].xywhn = det.xywhn
+        tracks[i].displayXywhn = ema(tracks[i].displayXywhn, det.xywhn)
+        tracks[i].conf = det.conf
+        tracks[i].t = timestamp
+        if tracks[i].hits >= confirmHits {
+            tracks[i].confirmed = true
+        }
+
+        if det.classKey == tracks[i].classKey {
+            tracks[i].pendingClassKey = nil
+            tracks[i].pendingHits = 0
+        } else if tracks[i].pendingClassKey == det.classKey {
+            tracks[i].pendingHits += 1
+            tracks[i].pendingClassName = det.className
+            if tracks[i].pendingHits >= classSwitchHits {
+                tracks[i].classKey = det.classKey
+                tracks[i].className = det.className
+                tracks[i].pendingClassKey = nil
+                tracks[i].pendingHits = 0
+            }
+        } else {
+            tracks[i].pendingClassKey = det.classKey
+            tracks[i].pendingClassName = det.className
+            tracks[i].pendingHits = 1
+            if classSwitchHits <= 1 {
+                tracks[i].classKey = det.classKey
+                tracks[i].className = det.className
+                tracks[i].pendingClassKey = nil
+                tracks[i].pendingHits = 0
+            }
+        }
     }
 
     private func ema(_ prev: CGRect, _ new: CGRect) -> CGRect {

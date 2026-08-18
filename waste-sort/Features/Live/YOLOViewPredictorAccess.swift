@@ -1,3 +1,4 @@
+import AVFoundation
 import UltralyticsYOLO
 
 enum YOLOViewPredictorAccess {
@@ -6,11 +7,28 @@ enum YOLOViewPredictorAccess {
     }
 
     static func predictor(in view: YOLOView) -> BasePredictor? {
-        let mirror = Mirror(reflecting: view)
-        for child in mirror.children where child.label == "videoCapture" {
-            if let capture = child.value as? VideoCapture {
-                return capture.predictor as? BasePredictor
-            }
+        videoCapture(in: view)?.predictor as? BasePredictor
+    }
+
+    static func videoCapture(in view: YOLOView) -> VideoCapture? {
+        mirroredValue(in: view, label: "videoCapture")
+    }
+
+    static func cameraQueue(in capture: VideoCapture) -> DispatchQueue? {
+        if let queued = videoOutput(in: capture)?.sampleBufferCallbackQueue {
+            return queued
+        }
+        return mirroredValue(in: capture, label: "cameraQueue")
+    }
+
+    static func videoOutput(in capture: VideoCapture) -> AVCaptureVideoDataOutput? {
+        mirroredValue(in: capture, label: "videoOutput")
+    }
+
+    private static func mirroredValue<T>(in object: Any, label: String) -> T? {
+        let mirror = Mirror(reflecting: object)
+        for child in mirror.children where child.label == label {
+            return child.value as? T
         }
         return nil
     }

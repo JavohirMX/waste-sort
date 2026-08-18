@@ -73,9 +73,11 @@ nonisolated final class ZoneDepositDetector {
     /// How far a reappearing box may sit from where the object was lost, in normalized
     /// image widths, at the instant it vanishes.
     var reacquireRadius: CGFloat = 0.10
-    /// Extra search radius per second missing: the longer it has been gone, the further it
-    /// could legitimately have travelled while unseen.
-    var reacquireDriftPerSecond: CGFloat = 0.12
+    /// Extra search radius per second missing. Sized so a carry from the mid-frame gap
+    /// into a bin during a short blink still stitches; a 0.4s dropout can cover ~0.3.
+    var reacquireDriftPerSecond: CGFloat = 0.55
+    /// Ceiling so a long dropout cannot claim a box on the far side of the frame.
+    var reacquireMaxRadius: CGFloat = 0.35
 
     private struct Sighting {
         var center: CGPoint
@@ -249,7 +251,10 @@ nonisolated final class ZoneDepositDetector {
             guard elapsed <= reacquireGrace else { continue }
             // Deliberately class-blind. The model relabelling a cup mid-carry is one of the
             // things this layer exists to absorb.
-            let limit = reacquireRadius + reacquireDriftPerSecond * CGFloat(max(0, elapsed))
+            let limit = min(
+                reacquireMaxRadius,
+                reacquireRadius + reacquireDriftPerSecond * CGFloat(max(0, elapsed))
+            )
             let dx = candidate.last.center.x - sighting.center.x
             let dy = candidate.last.center.y - sighting.center.y
             let distance = (dx * dx + dy * dy).squareRoot()
