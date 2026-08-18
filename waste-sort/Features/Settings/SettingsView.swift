@@ -4,8 +4,13 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var recording: RecordingController
+    @EnvironmentObject private var zoneStore: ZoneStore
+    @EnvironmentObject private var history: ZoneEventHistoryStore
+    @Environment(\.dismiss) private var dismiss
     @State private var cameraOptions: [CameraOption] = CameraDeviceCatalog.availableOptions()
     @State private var showPhotoSort = false
+    @State private var showHistory = false
+    @State private var showZoneResetConfirm = false
 
     var body: some View {
         NavigationStack {
@@ -50,6 +55,22 @@ struct SettingsView: View {
                         .foregroundStyle(BinGuide.residual.color)
                 } footer: {
                     Text("Auto uses a connected USB-C webcam when available, otherwise the iPad back camera. Rotation and mirror apply to Live preview and to recordings started after you change them.")
+                }
+
+                zonesSection
+
+                Section {
+                    Button("History") { showHistory = true }
+                    if !history.events.isEmpty {
+                        Text("\(history.events.count) recorded items")
+                            .font(.system(.footnote, design: .default))
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("History")
+                        .foregroundStyle(BinGuide.organic.color)
+                } footer: {
+                    Text("Everything dropped into a zone, with counters and charts. Recorded whether or not a video recording is running.")
                 }
 
                 Section {
@@ -210,12 +231,62 @@ struct SettingsView: View {
                     settings.preferredCameraID = CameraPreference.autoID
                 }
             }
+            .sheet(isPresented: $showHistory) {
+                HistoryView()
+                    .environmentObject(history)
+                    .environmentObject(zoneStore)
+            }
             .sheet(isPresented: $showPhotoSort) {
                 PhotoSortView()
                     .environmentObject(settings)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var zonesSection: some View {
+        Section {
+            ForEach(zoneStore.zones) { zone in
+                ZoneSettingsRow(zone: zone) { zoneStore.update($0) }
+            }
+            .onDelete { offsets in
+                for index in offsets { zoneStore.remove(id: zoneStore.zones[index].id) }
+            }
+
+            SettingsIntSliderRow(
+                title: "Dwell frames",
+                help: "How long an item must sit inside a zone before it can be counted. Higher = fewer accidental counts when something passes over a bin.",
+                value: Binding(
+                    get: { zoneStore.dwellFrames },
+                    set: { zoneStore.dwellFrames = $0 }
+                ),
+                range: ZoneConfig.dwellRange
+            )
+
+            Button("Edit zones on camera") {
+                zoneStore.isEditingZones = true
+                dismiss()
+            }
+            .disabled(zoneStore.zones.isEmpty)
+
+            Button("Add zone") { zoneStore.addZone() }
+
+            Button("Reset zones", role: .destructive) { showZoneResetConfirm = true }
+        } header: {
+            Text("Zones")
+                .foregroundStyle(BinGuide.cleanInorganic.color)
+        } footer: {
+            Text("Draw a zone over each real bin. An item is recorded when it stays inside a zone for the dwell frames above and then disappears — carrying it across a zone does not count.")
+        }
+        .confirmationDialog(
+            "Reset zones to defaults?",
+            isPresented: $showZoneResetConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Reset zones", role: .destructive) { zoneStore.resetToDefaults() }
+            Button("Cancel", role: .cancel) {}
         }
     }
 
@@ -282,8 +353,46 @@ private struct SettingsIntSliderRow: View {
     }
 }
 
+private struct ZoneSettingsRow: View {
+    let zone: DropZone
+    var onChange: (DropZone) -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: zone.bin.symbolName)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(zone.bin.color, in: Circle())
+
+            TextField(
+                "Zone name",
+                text: Binding(
+                    get: { zone.name },
+                    set: { var copy = zone; copy.name = $0; onChange(copy) }
+                )
+            )
+
+            Picker(
+                "",
+                selection: Binding(
+                    get: { zone.binID },
+                    set: { var copy = zone; copy.binID = $0; onChange(copy) }
+                )
+            ) {
+                ForEach(BinGuide.all) { bin in
+                    Text(bin.displayName).tag(bin.id)
+                }
+            }
+            .labelsHidden()
+        }
+    }
+}
+
 #Preview {
     SettingsView()
         .environmentObject(AppSettings.shared)
         .environmentObject(RecordingController.shared)
+        .environmentObject(ZoneStore.shared)
+        .environmentObject(ZoneEventHistoryStore.shared)
 }

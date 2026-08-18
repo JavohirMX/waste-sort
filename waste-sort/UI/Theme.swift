@@ -16,5 +16,10 @@ enum Theme {
     /// Keep current primary until another box is this much larger.
     static let primaryAreaHysteresis: CGFloat = 1.25
 
+    static let zoneStrokeWidth: CGFloat = 3
+    static let zoneFillOpacity: Double = 0.14
+    static let zoneFlashFillOpacity: Double = 0.55
+    static let zoneHandleSize: CGFloat = 26
+
     static let categoryLabelFont = Font.system(size: 14, weight: .semibold)
 }

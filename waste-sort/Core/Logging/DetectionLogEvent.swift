@@ -18,9 +18,20 @@ struct DetectionLogEvent: Codable, Equatable, Sendable {
     var boxW: Double
     var boxH: Double
     var fps: Int
+    /// `first_seen` when a track is confirmed, `zone_deposit` when it is released in a zone.
+    /// Optional so pre-upgrade JSONL still decodes during crash recovery.
+    var eventType: String? = nil
+    var zoneId: String? = nil
+    var zoneName: String? = nil
+    var zoneBin: String? = nil
+    var isCorrect: Bool? = nil
+    var dwellFrames: Int? = nil
+
+    static let eventTypeFirstSeen = "first_seen"
+    static let eventTypeZoneDeposit = "zone_deposit"
 
     static let csvHeader =
-        "timestamp,sessionId,sessionStartedAt,trackId,classKey,className,bin,confidence,model,confidenceThreshold,iouThreshold,cameraId,boxX,boxY,boxW,boxH,fps"
+        "timestamp,sessionId,sessionStartedAt,trackId,classKey,className,bin,confidence,model,confidenceThreshold,iouThreshold,cameraId,boxX,boxY,boxW,boxH,fps,eventType,zoneId,zoneName,zoneBin,isCorrect,dwellFrames"
 
     static let timestampFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -47,6 +58,12 @@ struct DetectionLogEvent: Codable, Equatable, Sendable {
             String(format: "%.4f", boxW),
             String(format: "%.4f", boxH),
             String(fps),
+            escape(eventType ?? ""),
+            escape(zoneId ?? ""),
+            escape(zoneName ?? ""),
+            escape(zoneBin ?? ""),
+            isCorrect.map { $0 ? "true" : "false" } ?? "",
+            dwellFrames.map(String.init) ?? "",
         ].joined(separator: ",")
     }
 

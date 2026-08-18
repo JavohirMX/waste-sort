@@ -111,6 +111,8 @@ final class RecordingController: NSObject, ObservableObject {
 
     func ingestLiveFrame(
         tracks: [TrackedDetection],
+        deposits: [ZoneDeposit],
+        zones: [DropZone],
         originalImage: UIImage?,
         fps: Int,
         settings: RuntimeSettings
@@ -138,13 +140,50 @@ final class RecordingController: NSObject, ObservableObject {
                     boxY: Double(track.displayXywhn.origin.y),
                     boxW: Double(track.displayXywhn.width),
                     boxH: Double(track.displayXywhn.height),
-                    fps: fps
+                    fps: fps,
+                    eventType: DetectionLogEvent.eventTypeFirstSeen
+                )
+            )
+        }
+
+        for deposit in deposits {
+            let bin = BinGuide.info(for: deposit.classKey)
+            logStore.append(
+                DetectionLogEvent(
+                    timestamp: now,
+                    sessionId: sessionId,
+                    sessionStartedAt: sessionStartedAt,
+                    trackId: deposit.trackID,
+                    classKey: deposit.classKey,
+                    className: deposit.className,
+                    bin: bin.id,
+                    confidence: Double(deposit.conf),
+                    model: settings.selectedModelName,
+                    confidenceThreshold: settings.confidence,
+                    iouThreshold: settings.iou,
+                    cameraId: settings.preferredCameraID,
+                    boxX: Double(deposit.boxXywhn.origin.x),
+                    boxY: Double(deposit.boxXywhn.origin.y),
+                    boxW: Double(deposit.boxXywhn.width),
+                    boxH: Double(deposit.boxXywhn.height),
+                    fps: fps,
+                    eventType: DetectionLogEvent.eventTypeZoneDeposit,
+                    zoneId: deposit.zoneID.uuidString,
+                    zoneName: deposit.zoneName,
+                    zoneBin: deposit.zoneBinID,
+                    isCorrect: deposit.isCorrect,
+                    dwellFrames: deposit.dwellFrames
                 )
             )
         }
 
         if let originalImage {
-            annotatedWriter?.append(image: originalImage, tracks: tracks, timestamp: now)
+            annotatedWriter?.append(
+                image: originalImage,
+                tracks: tracks,
+                zones: zones,
+                timestamp: now
+            )
         }
     }
 

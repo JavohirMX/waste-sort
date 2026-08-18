@@ -176,7 +176,7 @@ final class DetectionLogStore {
     }
 }
 
-private extension JSONEncoder.DateEncodingStrategy {
+extension JSONEncoder.DateEncodingStrategy {
     static var iso8601Fractional: JSONEncoder.DateEncodingStrategy {
         .custom { date, encoder in
             var container = encoder.singleValueContainer()
@@ -185,7 +185,7 @@ private extension JSONEncoder.DateEncodingStrategy {
     }
 }
 
-private extension JSONDecoder.DateDecodingStrategy {
+extension JSONDecoder.DateDecodingStrategy {
     static var iso8601Fractional: JSONDecoder.DateDecodingStrategy {
         .custom { decoder in
             let container = try decoder.singleValueContainer()

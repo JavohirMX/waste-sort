@@ -24,9 +24,9 @@ nonisolated final class AnnotatedVideoWriter: @unchecked Sendable {
         self.mirror = mirror
     }
 
-    func append(image: UIImage, tracks: [TrackedDetection], timestamp: Date) {
+    func append(image: UIImage, tracks: [TrackedDetection], zones: [DropZone], timestamp: Date) {
         queue.async { [weak self] in
-            self?.appendOnQueue(image: image, tracks: tracks, timestamp: timestamp)
+            self?.appendOnQueue(image: image, tracks: tracks, zones: zones, timestamp: timestamp)
         }
     }
 
@@ -57,11 +57,17 @@ nonisolated final class AnnotatedVideoWriter: @unchecked Sendable {
         }
     }
 
-    private func appendOnQueue(image: UIImage, tracks: [TrackedDetection], timestamp: Date) {
+    private func appendOnQueue(
+        image: UIImage,
+        tracks: [TrackedDetection],
+        zones: [DropZone],
+        timestamp: Date
+    ) {
         guard !isFinished else { return }
         let composed = DetectionOverlayCompositor.render(
             image: image,
             tracks: tracks,
+            zones: zones,
             timestamp: timestamp,
             rotation: rotation,
             mirror: mirror

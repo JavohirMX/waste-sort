@@ -11,12 +11,16 @@ import SwiftUI
 struct waste_sortApp: App {
     @StateObject private var settings = AppSettings.shared
     @StateObject private var recording = RecordingController.shared
+    @StateObject private var zoneStore = ZoneStore.shared
+    @StateObject private var history = ZoneEventHistoryStore.shared
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(settings)
                 .environmentObject(recording)
+                .environmentObject(zoneStore)
+                .environmentObject(history)
         }
     }
 }
