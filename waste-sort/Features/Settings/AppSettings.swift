@@ -25,6 +25,7 @@ enum WasteSortConfig {
     static let defaultExposureLocked = false
     static let defaultFocusLocked = false
     static let defaultWhiteBalanceLocked = false
+    static let defaultAutoRecordOnOpen = false
 }
 
 /// Snapshot of tunable inference and tracking values, passed into Live camera updates.
@@ -135,6 +136,9 @@ final class AppSettings: ObservableObject {
     @Published var whiteBalanceLocked: Bool {
         didSet { persist(whiteBalanceLocked, key: Keys.whiteBalanceLocked) }
     }
+    @Published var autoRecordOnOpen: Bool {
+        didSet { persist(autoRecordOnOpen, key: Keys.autoRecordOnOpen) }
+    }
 
     var selectedModel: WasteSortModel {
         WasteSortModel.from(resourceName: selectedModelName)
@@ -190,6 +194,7 @@ final class AppSettings: ObservableObject {
         static let exposureLocked = "settings.exposureLocked"
         static let focusLocked = "settings.focusLocked"
         static let whiteBalanceLocked = "settings.whiteBalanceLocked"
+        static let autoRecordOnOpen = "settings.autoRecordOnOpen"
     }
 
     private init(defaults: UserDefaults = .standard) {
@@ -231,6 +236,11 @@ final class AppSettings: ObservableObject {
             Keys.whiteBalanceLocked,
             WasteSortConfig.defaultWhiteBalanceLocked
         )
+        autoRecordOnOpen = Self.loadBool(
+            defaults,
+            Keys.autoRecordOnOpen,
+            WasteSortConfig.defaultAutoRecordOnOpen
+        )
     }
 
     func resetToDefaults() {
@@ -249,6 +259,7 @@ final class AppSettings: ObservableObject {
         liveMirror = WasteSortConfig.defaultLiveMirror
         showConfidence = WasteSortConfig.defaultShowConfidence
         ctaStyle = WasteSortConfig.defaultCTAStyle
+        autoRecordOnOpen = WasteSortConfig.defaultAutoRecordOnOpen
         resetCaptureToDefaults()
     }
 

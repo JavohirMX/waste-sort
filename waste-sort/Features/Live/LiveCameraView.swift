@@ -495,7 +495,6 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                 recording.ingestLiveFrame(
                     tracks: tracked,
                     deposits: zoneFrame.deposits,
-                    zones: currentZones,
                     originalImage: result.originalImage,
                     fps: fps,
                     settings: settings

@@ -49,6 +49,10 @@ final class RecordingController: NSObject, ObservableObject {
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     private var sessionObservers: [NSObjectProtocol] = []
     private var lifecycleObservers: [NSObjectProtocol] = []
+    private var autoStartWorkItem: DispatchWorkItem?
+    private var suppressAutoStartUntilInactive = false
+    private var startGeneration = 0
+    private var startingWatchdogItem: DispatchWorkItem?
 
     private let logStore = DetectionLogStore.shared
     private var annotatedWriter: AnnotatedVideoWriter?
@@ -100,9 +104,54 @@ final class RecordingController: NSObject, ObservableObject {
             hasLiveSession = nextHasSession
         }
         observeCaptureSession(session)
-        if session == nil, canStop || phase == .stopping {
-            flushAndSave()
+        if session == nil {
+            cancelAutoStart()
+            if canStop || phase == .stopping {
+                flushAndSave()
+            }
+        } else {
+            considerAutoStart()
         }
+    }
+
+    /// Starts recording when auto-record is on, the camera is ready, and the user has not just stopped.
+    func considerAutoStart(retries: Int = 20, ignoringManualStop: Bool = false) {
+        autoStartWorkItem?.cancel()
+        autoStartWorkItem = nil
+
+        if ignoringManualStop {
+            suppressAutoStartUntilInactive = false
+        }
+
+        guard AppSettings.shared.autoRecordOnOpen else { return }
+        guard !suppressAutoStartUntilInactive else { return }
+
+        switch phase {
+        case .starting, .recording:
+            return
+        case .stopping, .saving:
+            scheduleAutoStartRetry(retries: retries)
+            return
+        case .idle:
+            break
+        }
+
+        guard hasLiveSession, let session = captureSession else {
+            scheduleAutoStartRetry(retries: retries)
+            return
+        }
+        guard session.isRunning else {
+            scheduleAutoStartRetry(retries: retries)
+            return
+        }
+
+        startRecording()
+    }
+
+    /// Clears the manual-stop suppress so the next foreground can auto-start again.
+    func noteSceneBecameInactive() {
+        suppressAutoStartUntilInactive = false
+        cancelAutoStart()
     }
 
     func register(from view: YOLOView) {
@@ -112,7 +161,6 @@ final class RecordingController: NSObject, ObservableObject {
     func ingestLiveFrame(
         tracks: [TrackedDetection],
         deposits: [ZoneDeposit],
-        zones: [DropZone],
         originalImage: UIImage?,
         fps: Int,
         settings: RuntimeSettings
@@ -181,13 +229,16 @@ final class RecordingController: NSObject, ObservableObject {
             annotatedWriter?.append(
                 image: originalImage,
                 tracks: tracks,
-                zones: zones,
                 timestamp: now
             )
         }
     }
 
     func startRecording() {
+        startRecording(isRetry: false)
+    }
+
+    private func startRecording(isRetry: Bool) {
         guard canStart else { return }
         guard let session = captureSession else {
             statusMessage = "Open the Live tab first."
@@ -200,6 +251,8 @@ final class RecordingController: NSObject, ObservableObject {
         annotatedSavedToFiles = false
         sessionRotation = AppSettings.shared.liveRotation
         sessionMirror = AppSettings.shared.liveMirror
+        startGeneration += 1
+        let generation = startGeneration
         phase = .starting
         statusMessage = "Starting…"
 
@@ -213,6 +266,7 @@ final class RecordingController: NSObject, ObservableObject {
                 return
             }
 
+            let needsSettle = !session.outputs.contains(where: { $0 === self.movieOutput })
             guard self.ensureMovieOutput(on: session) else {
                 DispatchQueue.main.async {
                     self.failStart("Could not attach video recorder to the camera.")
@@ -220,34 +274,60 @@ final class RecordingController: NSObject, ObservableObject {
                 return
             }
 
-            let url = self.makeRecordingURL()
-            try? FileManager.default.removeItem(at: url)
-
-            guard self.movieOutput.connection(with: .video) != nil else {
-                DispatchQueue.main.async {
-                    self.failStart("Could not connect video for recording.")
+            if needsSettle {
+                self.sessionQueue.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                    self?.beginMovieFileRecording(session: session, generation: generation, isRetry: isRetry)
                 }
-                return
+            } else {
+                self.beginMovieFileRecording(session: session, generation: generation, isRetry: isRetry)
             }
-
-            if let audio = self.movieOutput.connection(with: .audio) {
-                audio.isEnabled = false
-            }
-
-            if let video = self.movieOutput.connection(with: .video) {
-                self.applyFeedRotation(to: video, session: session)
-            }
-
-            DispatchQueue.main.async {
-                self.outputURL = url
-                UserDefaults.standard.set(url.path, forKey: self.activeFileKey)
-            }
-
-            self.movieOutput.startRecording(to: url, recordingDelegate: self)
         }
     }
 
-    func stopRecording() {
+    private func beginMovieFileRecording(
+        session: AVCaptureSession,
+        generation: Int,
+        isRetry: Bool
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard self.startGeneration == generation, self.phase == .starting else { return }
+
+            let url = self.makeRecordingURL()
+            try? FileManager.default.removeItem(at: url)
+            self.outputURL = url
+            UserDefaults.standard.set(url.path, forKey: self.activeFileKey)
+
+            self.sessionQueue.async { [weak self] in
+                guard let self else { return }
+                guard self.movieOutput.connection(with: .video) != nil else {
+                    DispatchQueue.main.async {
+                        self.failStart("Could not connect video for recording.")
+                    }
+                    return
+                }
+
+                if let audio = self.movieOutput.connection(with: .audio) {
+                    audio.isEnabled = false
+                }
+                if let video = self.movieOutput.connection(with: .video) {
+                    self.applyFeedRotation(to: video, session: session)
+                }
+
+                self.movieOutput.startRecording(to: url, recordingDelegate: self)
+                DispatchQueue.main.async {
+                    self.scheduleStartingWatchdog(generation: generation, isRetry: isRetry)
+                }
+            }
+        }
+    }
+
+    func stopRecording(userInitiated: Bool = false) {
+        if userInitiated {
+            suppressAutoStartUntilInactive = true
+            cancelAutoStart()
+        }
+
         switch phase {
         case .idle, .stopping, .saving:
             return
@@ -256,6 +336,7 @@ final class RecordingController: NSObject, ObservableObject {
         }
 
         stopRequested = true
+        cancelStartingWatchdog()
         beginBackgroundTaskIfNeeded()
         phase = .stopping
         statusMessage = "Stopping…"
@@ -293,6 +374,7 @@ final class RecordingController: NSObject, ObservableObject {
     }
 
     private func failStart(_ message: String) {
+        cancelStartingWatchdog()
         abortDetectionSession()
         phase = .idle
         outputURL = nil
@@ -300,6 +382,52 @@ final class RecordingController: NSObject, ObservableObject {
         statusMessage = stopRequested ? "Recording cancelled." : message
         stopRequested = false
         endBackgroundTask()
+    }
+
+    private func scheduleStartingWatchdog(generation: Int, isRetry: Bool) {
+        cancelStartingWatchdog()
+        let work = DispatchWorkItem { [weak self] in
+            self?.handleStartingTimeout(generation: generation, isRetry: isRetry)
+        }
+        startingWatchdogItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+    }
+
+    private func handleStartingTimeout(generation: Int, isRetry: Bool) {
+        guard startGeneration == generation, phase == .starting else { return }
+        guard !movieOutput.isRecording else { return }
+
+        if isRetry {
+            failStart("Could not start recording. Try again.")
+            return
+        }
+
+        if let url = outputURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+        outputURL = nil
+        UserDefaults.standard.removeObject(forKey: activeFileKey)
+        phase = .idle
+        startRecording(isRetry: true)
+    }
+
+    private func cancelStartingWatchdog() {
+        startingWatchdogItem?.cancel()
+        startingWatchdogItem = nil
+    }
+
+    private func scheduleAutoStartRetry(retries: Int) {
+        guard retries > 0 else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.considerAutoStart(retries: retries - 1)
+        }
+        autoStartWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    private func cancelAutoStart() {
+        autoStartWorkItem?.cancel()
+        autoStartWorkItem = nil
     }
 
     private func beginDetectionSession() {
@@ -655,6 +783,8 @@ extension RecordingController: AVCaptureFileOutputRecordingDelegate {
         from connections: [AVCaptureConnection]
     ) {
         Task { @MainActor in
+            guard phase == .starting, outputURL?.path == fileURL.path else { return }
+            cancelStartingWatchdog()
             outputURL = fileURL
             UserDefaults.standard.set(fileURL.path, forKey: activeFileKey)
             beginDetectionSession()
@@ -680,6 +810,15 @@ extension RecordingController: AVCaptureFileOutputRecordingDelegate {
         error: Error?
     ) {
         Task { @MainActor in
+            if (phase == .starting || phase == .recording),
+               let current = outputURL,
+               current.path != outputFileURL.path
+            {
+                try? FileManager.default.removeItem(at: outputFileURL)
+                return
+            }
+
+            cancelStartingWatchdog()
             outputURL = nil
 
             if let usable = usableRecordingURL(outputFileURL) {

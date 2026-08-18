@@ -15,257 +15,16 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Picker("Model", selection: $settings.selectedModelName) {
-                        ForEach(WasteSortModel.allCases) { model in
-                            Text(model.displayName).tag(model.resourceName)
-                        }
-                    }
-                } header: {
-                    Text("Model")
-                        .foregroundStyle(BinGuide.organic.color)
-                } footer: {
-                    Text("Changes reload Live and Photo sorting with the selected CoreML weights.")
-                }
-
-                Section {
-                    Picker("Camera", selection: $settings.preferredCameraID) {
-                        Text("Auto (prefer USB)").tag(CameraPreference.autoID)
-                        ForEach(cameraOptions) { option in
-                            Text("\(option.name) · \(option.subtitle)").tag(option.id)
-                        }
-                    }
-                    .onChange(of: settings.preferredCameraID) { _, newValue in
-                        if newValue != CameraPreference.autoID,
-                           !cameraOptions.contains(where: { $0.id == newValue })
-                        {
-                            settings.preferredCameraID = CameraPreference.autoID
-                        }
-                    }
-
-                    Picker("Rotation", selection: $settings.liveRotation) {
-                        ForEach(LivePreviewRotation.allCases) { rotation in
-                            Text(rotation.displayName).tag(rotation)
-                        }
-                    }
-
-                    Toggle("Mirror", isOn: $settings.liveMirror)
-                } header: {
-                    Text("Camera")
-                        .foregroundStyle(BinGuide.residual.color)
-                } footer: {
-                    Text("Auto uses a connected USB-C webcam when available, otherwise the iPad back camera. Rotation and mirror apply to Live preview and to recordings started after you change them.")
-                }
-
+                recordingSection
+                cameraSection
+                captureSection
                 zonesSection
-
-                Section {
-                    Button("History") { showHistory = true }
-                    if !history.events.isEmpty {
-                        Text("\(history.events.count) recorded items")
-                            .font(.system(.footnote, design: .default))
-                            .foregroundStyle(.secondary)
-                    }
-                } header: {
-                    Text("History")
-                        .foregroundStyle(BinGuide.organic.color)
-                } footer: {
-                    Text("Everything dropped into a zone, with counters and charts. Recorded whether or not a video recording is running.")
-                }
-
-                Section {
-                    SettingsPickerRow(
-                        title: "Exposure",
-                        help: "Lock auto-exposure so a bright item does not pump the picture. USB webcams may ignore this.",
-                        isLocked: $settings.exposureLocked
-                    )
-                    SettingsPickerRow(
-                        title: "Focus",
-                        help: "Lock focus so the lens does not hunt while items pass. USB webcams may ignore this.",
-                        isLocked: $settings.focusLocked
-                    )
-                    SettingsPickerRow(
-                        title: "White balance",
-                        help: "Lock white balance so colors stay stable. USB webcams may ignore this.",
-                        isLocked: $settings.whiteBalanceLocked
-                    )
-                    SettingsSliderRow(
-                        title: "Brightness",
-                        help: "Brighten or darken the image the model sees.",
-                        valueText: signedDecimal(settings.brightness),
-                        value: $settings.brightness,
-                        range: FrameColorAdjuster.brightnessRange,
-                        step: 0.05
-                    )
-                    SettingsSliderRow(
-                        title: "Contrast",
-                        help: "Increase or decrease contrast before detection.",
-                        valueText: decimal(settings.contrast),
-                        value: $settings.contrast,
-                        range: FrameColorAdjuster.contrastRange,
-                        step: 0.05
-                    )
-                    SettingsSliderRow(
-                        title: "Saturation",
-                        help: "Increase or decrease color intensity before detection.",
-                        valueText: decimal(settings.saturation),
-                        value: $settings.saturation,
-                        range: FrameColorAdjuster.saturationRange,
-                        step: 0.05
-                    )
-                    Button("Reset capture") {
-                        settings.resetCaptureToDefaults()
-                    }
-                    .disabled(settings.isCaptureAtDefaults)
-                } header: {
-                    Text("Capture")
-                        .foregroundStyle(BinGuide.residual.color)
-                } footer: {
-                    Text("These adjust the image the model sees. USB cameras ignore hardware lock more often than these sliders.")
-                }
-
-                Section {
-                    Button("Sort a photo") {
-                        showPhotoSort = true
-                    }
-                } header: {
-                    Text("Photo")
-                        .foregroundStyle(BinGuide.cleanInorganic.color)
-                } footer: {
-                    Text("Pick a still image from your library and sort items without the live camera.")
-                }
-
-                Section {
-                    if recording.canStop {
-                        Button("Stop recording", role: .destructive) {
-                            recording.stopRecording()
-                        }
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(recording.isRecording ? Color.red : Color.secondary)
-                                .frame(width: 8, height: 8)
-                            Text(recording.isRecording ? "Recording camera feed…" : "Starting…")
-                                .foregroundStyle(.secondary)
-                        }
-                        .font(.system(.footnote, design: .default))
-                    } else {
-                        Button("Start recording") {
-                            recording.startRecording()
-                        }
-                        .disabled(!recording.canStart)
-                    }
-
-                    if let status = recording.statusMessage {
-                        Text(status)
-                            .font(.system(.footnote, design: .default))
-                            .foregroundStyle(.secondary)
-                    }
-                } header: {
-                    Text("Recording")
-                        .foregroundStyle(Color.red.opacity(0.85))
-                } footer: {
-                    Text(
-                        recording.hasLiveSession
-                            ? "Saves a raw clip to Photos, an overlay clip (boxes, labels, timestamps) to Photos and Files, and a detection CSV to Files (On My iPad/iPhone → iSort). Records the camera feed only for the raw clip. Saves if you stop, or if the app is backgrounded or closed."
-                            : "The live camera must be running before you can start a recording."
-                    )
-                }
-
-                Section {
-                    Picker("Style", selection: $settings.ctaStyle) {
-                        ForEach(CTAStyle.allCases) { style in
-                            Text(style.displayName).tag(style)
-                        }
-                    }
-                } header: {
-                    Text("Call to action")
-                        .foregroundStyle(BinGuide.organic.color)
-                } footer: {
-                    Text("Shown on the live camera when waste is detected. Choose one visual guide at a time.")
-                }
-
-                Section {
-                    SettingsSliderRow(
-                        title: "Confidence",
-                        help: "How sure the model must be before showing an item. Higher = fewer boxes, more certain. Lower = more boxes, more mistakes.",
-                        valueText: percent(settings.confidence),
-                        value: $settings.confidence,
-                        range: 0.05...1.0,
-                        step: 0.05
-                    )
-                    SettingsSliderRow(
-                        title: "Overlap",
-                        help: "How much two boxes can overlap before one is dropped. Higher = fewer duplicate boxes. Lower = more overlapping boxes kept.",
-                        valueText: decimal(settings.iou),
-                        value: $settings.iou,
-                        range: 0.1...1.0,
-                        step: 0.05
-                    )
-                    SettingsIntSliderRow(
-                        title: "Max items",
-                        help: "Maximum number of items shown at once. Lower can be faster; higher finds more objects.",
-                        value: $settings.maxItems,
-                        range: 1...100
-                    )
-                    Toggle("Show confidence", isOn: $settings.showConfidence)
-                } header: {
-                    Text("Detection")
-                        .foregroundStyle(BinGuide.organic.color)
-                } footer: {
-                    Text("These affect live camera and photo sorting. Confidence labels appear on each box as a percent.")
-                }
-
-                Section {
-                    SettingsIntSliderRow(
-                        title: "Confirm frames",
-                        help: "How many frames an item must appear before it shows. Higher = fewer false flashes, slower to appear.",
-                        value: $settings.confirmHits,
-                        range: 1...10
-                    )
-                    SettingsIntSliderRow(
-                        title: "Keep after miss",
-                        help: "How many frames a box stays after the model loses it. Boxes freeze in place (no sliding). Higher = boxes linger more.",
-                        value: $settings.maxMisses,
-                        range: 1...20
-                    )
-                    SettingsSliderRow(
-                        title: "Same-item overlap",
-                        help: "How much two detections must overlap to count as the same item across frames.",
-                        valueText: decimal(settings.trackerIou),
-                        value: $settings.trackerIou,
-                        range: 0.1...0.9,
-                        step: 0.05
-                    )
-                    SettingsSliderRow(
-                        title: "Smoothing",
-                        help: "How quickly boxes follow movement. Higher = snappier. Lower = smoother but laggy.",
-                        valueText: decimal(settings.emaAlpha),
-                        value: $settings.emaAlpha,
-                        range: 0.05...1.0,
-                        step: 0.05
-                    )
-                    SettingsSliderRow(
-                        title: "Box padding",
-                        help: "Extra space around each box. Higher = larger boxes.",
-                        valueText: percent(settings.boxInflate),
-                        value: $settings.boxInflate,
-                        range: 0...0.3,
-                        step: 0.01
-                    )
-                    SettingsSliderRow(
-                        title: "Max jump speed",
-                        help: "How far a box can move in one second. Lower = less teleporting, more likely to drop fast moves.",
-                        valueText: String(format: "%.1f", settings.maxSpeed),
-                        value: $settings.maxSpeed,
-                        range: 0.5...5.0,
-                        step: 0.1
-                    )
-                } header: {
-                    Text("Live tracking")
-                        .foregroundStyle(BinGuide.cleanInorganic.color)
-                } footer: {
-                    Text("These only affect the camera overlay.")
-                }
+                historySection
+                photoSection
+                liveOverlaySection
+                modelSection
+                detectionSection
+                liveTrackingSection
 
                 Section {
                     Button("Reset to defaults", role: .destructive) {
@@ -310,15 +69,136 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private var zonesSection: some View {
+    private var recordingSection: some View {
         Section {
-            ForEach(zoneStore.zones) { zone in
-                ZoneSettingsRow(zone: zone) { zoneStore.update($0) }
-            }
-            .onDelete { offsets in
-                for index in offsets { zoneStore.remove(id: zoneStore.zones[index].id) }
+            Toggle("Start recording when app opens", isOn: $settings.autoRecordOnOpen)
+                .onChange(of: settings.autoRecordOnOpen) { _, isOn in
+                    if isOn {
+                        recording.considerAutoStart(ignoringManualStop: true)
+                    }
+                }
+
+            if recording.canStop {
+                Button("Stop recording", role: .destructive) {
+                    recording.stopRecording(userInitiated: true)
+                }
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(recording.isRecording ? Color.red : Color.secondary)
+                        .frame(width: 8, height: 8)
+                    Text(recording.isRecording ? "Recording camera feed…" : "Starting…")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.system(.footnote, design: .default))
+            } else {
+                Button("Start recording") {
+                    recording.startRecording()
+                }
+                .disabled(!recording.canStart)
             }
 
+            if let status = recording.statusMessage {
+                Text(status)
+                    .font(.system(.footnote, design: .default))
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Recording")
+                .foregroundStyle(Color.red.opacity(0.85))
+        } footer: {
+            Text(recordingFooter)
+        }
+    }
+
+    @ViewBuilder
+    private var cameraSection: some View {
+        Section {
+            Picker("Camera", selection: $settings.preferredCameraID) {
+                Text("Auto (prefer USB)").tag(CameraPreference.autoID)
+                ForEach(cameraOptions) { option in
+                    Text("\(option.name) · \(option.subtitle)").tag(option.id)
+                }
+            }
+            .onChange(of: settings.preferredCameraID) { _, newValue in
+                if newValue != CameraPreference.autoID,
+                   !cameraOptions.contains(where: { $0.id == newValue })
+                {
+                    settings.preferredCameraID = CameraPreference.autoID
+                }
+            }
+
+            Picker("Rotation", selection: $settings.liveRotation) {
+                ForEach(LivePreviewRotation.allCases) { rotation in
+                    Text(rotation.displayName).tag(rotation)
+                }
+            }
+
+            Toggle("Mirror", isOn: $settings.liveMirror)
+        } header: {
+            Text("Camera")
+                .foregroundStyle(BinGuide.residual.color)
+        } footer: {
+            Text("Auto uses a connected USB-C webcam when available, otherwise the iPad back camera. Rotation and mirror apply to Live preview and to recordings started after you change them.")
+        }
+    }
+
+    @ViewBuilder
+    private var captureSection: some View {
+        Section {
+            SettingsPickerRow(
+                title: "Exposure",
+                help: "Lock auto-exposure so a bright item does not pump the picture. USB webcams may ignore this.",
+                isLocked: $settings.exposureLocked
+            )
+            SettingsPickerRow(
+                title: "Focus",
+                help: "Lock focus so the lens does not hunt while items pass. USB webcams may ignore this.",
+                isLocked: $settings.focusLocked
+            )
+            SettingsPickerRow(
+                title: "White balance",
+                help: "Lock white balance so colors stay stable. USB webcams may ignore this.",
+                isLocked: $settings.whiteBalanceLocked
+            )
+            SettingsSliderRow(
+                title: "Brightness",
+                help: "Brighten or darken the image the model sees.",
+                valueText: signedDecimal(settings.brightness),
+                value: $settings.brightness,
+                range: FrameColorAdjuster.brightnessRange,
+                step: 0.05
+            )
+            SettingsSliderRow(
+                title: "Contrast",
+                help: "Increase or decrease contrast before detection.",
+                valueText: decimal(settings.contrast),
+                value: $settings.contrast,
+                range: FrameColorAdjuster.contrastRange,
+                step: 0.05
+            )
+            SettingsSliderRow(
+                title: "Saturation",
+                help: "Increase or decrease color intensity before detection.",
+                valueText: decimal(settings.saturation),
+                value: $settings.saturation,
+                range: FrameColorAdjuster.saturationRange,
+                step: 0.05
+            )
+            Button("Reset capture") {
+                settings.resetCaptureToDefaults()
+            }
+            .disabled(settings.isCaptureAtDefaults)
+        } header: {
+            Text("Capture")
+                .foregroundStyle(BinGuide.residual.color)
+        } footer: {
+            Text("These adjust the image the model sees. USB cameras ignore hardware lock more often than these sliders.")
+        }
+    }
+
+    @ViewBuilder
+    private var zonesSection: some View {
+        Section {
             SettingsIntSliderRow(
                 title: "Dwell frames",
                 help: "How many frames the model must actually see an item inside a zone before it can be counted. Frames where the box is frozen after a lost detection do not count. Higher = fewer accidental counts when something passes over a bin.",
@@ -347,14 +227,12 @@ struct SettingsView: View {
             }
             .disabled(zoneStore.zones.isEmpty)
 
-            Button("Add zone") { zoneStore.addZone() }
-
             Button("Reset zones", role: .destructive) { showZoneResetConfirm = true }
         } header: {
             Text("Zones")
                 .foregroundStyle(BinGuide.cleanInorganic.color)
         } footer: {
-            Text("Draw a zone over each real bin. On the live feed a zone is invisible until something is in it: dashed while an item is inside, tighter dashes once it has dwelt long enough, filled faintly while a vanished item waits out the reacquire window, then filled solid for a moment when it is recorded.\n\nAn item is recorded only if it was seen outside the zones at some point, stayed inside one for the dwell frames above, and then stayed gone for the reacquire window. Tracking survives dropouts and relabelling, so an item that blinks and comes back inside the zone still counts — unlike one that was never tracked and simply appeared there, which is read as waste already in the bin.")
+            Text("Organic, Residual, and Inorganic bins are fixed. Edit on camera to draw each zone over a real bin. An item counts only if it was seen outside the zones, stayed inside one for the dwell frames, then stayed gone for the reacquire window.")
         }
         .confirmationDialog(
             "Reset zones to defaults?",
@@ -369,6 +247,170 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    @ViewBuilder
+    private var historySection: some View {
+        Section {
+            Button("History") { showHistory = true }
+            if !history.events.isEmpty {
+                Text("\(history.events.count) recorded items")
+                    .font(.system(.footnote, design: .default))
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("History")
+                .foregroundStyle(BinGuide.organic.color)
+        } footer: {
+            Text("Everything dropped into a zone, with counters and charts. Recorded whether or not a video recording is running.")
+        }
+    }
+
+    @ViewBuilder
+    private var photoSection: some View {
+        Section {
+            Button("Sort a photo") {
+                showPhotoSort = true
+            }
+        } header: {
+            Text("Photo")
+                .foregroundStyle(BinGuide.cleanInorganic.color)
+        } footer: {
+            Text("Pick a still image from your library and sort items without the live camera.")
+        }
+    }
+
+    @ViewBuilder
+    private var liveOverlaySection: some View {
+        Section {
+            Picker("Style", selection: $settings.ctaStyle) {
+                ForEach(CTAStyle.allCases) { style in
+                    Text(style.displayName).tag(style)
+                }
+            }
+            Toggle("Show confidence", isOn: $settings.showConfidence)
+        } header: {
+            Text("Live overlay")
+                .foregroundStyle(BinGuide.organic.color)
+        } footer: {
+            Text("Shown on the live camera when waste is detected. Choose one visual guide at a time. Confidence labels appear on each box as a percent.")
+        }
+    }
+
+    @ViewBuilder
+    private var modelSection: some View {
+        Section {
+            Picker("Model", selection: $settings.selectedModelName) {
+                ForEach(WasteSortModel.allCases) { model in
+                    Text(model.displayName).tag(model.resourceName)
+                }
+            }
+        } header: {
+            Text("Model")
+                .foregroundStyle(BinGuide.organic.color)
+        } footer: {
+            Text("Changes reload Live and Photo sorting with the selected CoreML weights.")
+        }
+    }
+
+    @ViewBuilder
+    private var detectionSection: some View {
+        Section {
+            SettingsSliderRow(
+                title: "Confidence",
+                help: "How sure the model must be before showing an item. Higher = fewer boxes, more certain. Lower = more boxes, more mistakes.",
+                valueText: percent(settings.confidence),
+                value: $settings.confidence,
+                range: 0.05...1.0,
+                step: 0.05
+            )
+            SettingsSliderRow(
+                title: "Overlap",
+                help: "How much two boxes can overlap before one is dropped. Higher = fewer duplicate boxes. Lower = more overlapping boxes kept.",
+                valueText: decimal(settings.iou),
+                value: $settings.iou,
+                range: 0.1...1.0,
+                step: 0.05
+            )
+            SettingsIntSliderRow(
+                title: "Max items",
+                help: "Maximum number of items shown at once. Lower can be faster; higher finds more objects.",
+                value: $settings.maxItems,
+                range: 1...100
+            )
+        } header: {
+            Text("Detection")
+                .foregroundStyle(BinGuide.organic.color)
+        } footer: {
+            Text("These affect live camera and photo sorting.")
+        }
+    }
+
+    @ViewBuilder
+    private var liveTrackingSection: some View {
+        Section {
+            SettingsIntSliderRow(
+                title: "Confirm frames",
+                help: "How many frames an item must appear before it shows. Higher = fewer false flashes, slower to appear.",
+                value: $settings.confirmHits,
+                range: 1...10
+            )
+            SettingsIntSliderRow(
+                title: "Keep after miss",
+                help: "How many frames a box stays after the model loses it. Boxes freeze in place (no sliding). Higher = boxes linger more.",
+                value: $settings.maxMisses,
+                range: 1...20
+            )
+            SettingsSliderRow(
+                title: "Same-item overlap",
+                help: "How much two detections must overlap to count as the same item across frames.",
+                valueText: decimal(settings.trackerIou),
+                value: $settings.trackerIou,
+                range: 0.1...0.9,
+                step: 0.05
+            )
+            SettingsSliderRow(
+                title: "Smoothing",
+                help: "How quickly boxes follow movement. Higher = snappier. Lower = smoother but laggy.",
+                valueText: decimal(settings.emaAlpha),
+                value: $settings.emaAlpha,
+                range: 0.05...1.0,
+                step: 0.05
+            )
+            SettingsSliderRow(
+                title: "Box padding",
+                help: "Extra space around each box. Higher = larger boxes.",
+                valueText: percent(settings.boxInflate),
+                value: $settings.boxInflate,
+                range: 0...0.3,
+                step: 0.01
+            )
+            SettingsSliderRow(
+                title: "Max jump speed",
+                help: "How far a box can move in one second. Lower = less teleporting, more likely to drop fast moves.",
+                valueText: String(format: "%.1f", settings.maxSpeed),
+                value: $settings.maxSpeed,
+                range: 0.5...5.0,
+                step: 0.1
+            )
+        } header: {
+            Text("Live tracking")
+                .foregroundStyle(BinGuide.cleanInorganic.color)
+        } footer: {
+            Text("These only affect the camera overlay.")
+        }
+    }
+
+    private var recordingFooter: String {
+        guard recording.hasLiveSession else {
+            return "The live camera must be running before you can start a recording."
+        }
+        let saves =
+            "Saves a raw clip to Photos, an overlay clip (boxes, labels, timestamps) to Photos and Files, and a detection CSV to Files (On My iPad/iPhone → iSort). Records the camera feed only for the raw clip. Saves if you stop, or if the app is backgrounded or closed."
+        if settings.autoRecordOnOpen {
+            return "Starts automatically when the app opens or returns to the foreground. \(saves)"
+        }
+        return saves
     }
 
     private func refreshCameras() {
@@ -396,19 +438,22 @@ private struct SettingsPickerRow: View {
     @Binding var isLocked: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-            Picker(title, selection: $isLocked) {
-                Text("Auto").tag(false)
-                Text("Locked").tag(true)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                Text(title)
+                Spacer(minLength: 8)
+                Picker(title, selection: $isLocked) {
+                    Text("Auto").tag(false)
+                    Text("Locked").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 180)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
             Text(help)
                 .font(.system(.footnote, design: .default))
                 .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
 }
@@ -458,42 +503,6 @@ private struct SettingsIntSliderRow: View {
             range: Double(range.lowerBound)...Double(range.upperBound),
             step: 1
         )
-    }
-}
-
-private struct ZoneSettingsRow: View {
-    let zone: DropZone
-    var onChange: (DropZone) -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: zone.bin.symbolName)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 26, height: 26)
-                .background(zone.bin.color, in: Circle())
-
-            TextField(
-                "Zone name",
-                text: Binding(
-                    get: { zone.name },
-                    set: { var copy = zone; copy.name = $0; onChange(copy) }
-                )
-            )
-
-            Picker(
-                "",
-                selection: Binding(
-                    get: { zone.binID },
-                    set: { var copy = zone; copy.binID = $0; onChange(copy) }
-                )
-            ) {
-                ForEach(BinGuide.all) { bin in
-                    Text(bin.displayName).tag(bin.id)
-                }
-            }
-            .labelsHidden()
-        }
     }
 }
 
