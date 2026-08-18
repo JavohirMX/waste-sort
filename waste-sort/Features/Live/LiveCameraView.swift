@@ -242,6 +242,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             coordinator.selectedModelName = selectedModelName
             coordinator.reloadModel(named: selectedModelName)
         }
+        coordinator.applyCaptureControlsIfNeeded()
+        coordinator.updateFrameColorControls()
         // Do not register the capture session here: updateUIView runs on every
         // SwiftUI refresh (including each detection frame). Publishing from
         // RecordingController during that path caused a 100% CPU update loop.
@@ -249,6 +251,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
 
     static func dismantleUIView(_ uiView: YOLOView, coordinator: Coordinator) {
         coordinator.stopObservingCameraChanges()
+        coordinator.uninstallFrameColorProxy()
         YOLOViewPredictorAccess.setCapturesOriginalImage(false, in: uiView)
         coordinator.capturingOriginals = false
         // Clear after the current update cycle so we don't publish mid-teardown.
@@ -304,6 +307,9 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         private var applyWorkItem: DispatchWorkItem?
         private var isReloadingModel = false
         var capturingOriginals = false
+        private var lastAppliedCaptureDeviceID: String?
+        private var lastAppliedCaptureControls: CameraCaptureControls?
+        private var frameColorProxy: VideoFrameColorProxy?
 
         init(
             settings: RuntimeSettings,
@@ -395,6 +401,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                 self.registerCaptureSessionIfNeeded()
                 if self.applyPreferredCamera() {
                     self.registerCaptureSessionIfNeeded()
+                    self.installFrameColorProxyIfNeeded()
                     return
                 }
                 if retries > 0 {
@@ -415,14 +422,56 @@ private struct LiveYOLOCamera: UIViewRepresentable {
 
             if YOLOViewCameraSwitcher.currentDeviceUniqueID(in: view) == device.uniqueID {
                 registerCaptureSessionIfNeeded()
+                applyCaptureControlsIfNeeded()
+                installFrameColorProxyIfNeeded()
                 return true
             }
 
             let ok = YOLOViewCameraSwitcher.switchTo(device, in: view)
             if ok {
+                lastAppliedCaptureDeviceID = nil
                 registerCaptureSessionIfNeeded()
+                applyCaptureControlsIfNeeded()
+                installFrameColorProxyIfNeeded()
             }
             return ok
+        }
+
+        func updateFrameColorControls() {
+            frameColorProxy?.controls = settings.frameColor
+            frameColorProxy?.syncPreviewLayout()
+        }
+
+        func installFrameColorProxyIfNeeded() {
+            guard let view = yoloView else { return }
+            if frameColorProxy == nil {
+                frameColorProxy = VideoFrameColorProxy()
+            }
+            frameColorProxy?.controls = settings.frameColor
+            frameColorProxy?.install(on: view)
+            frameColorProxy?.syncPreviewLayout()
+        }
+
+        func uninstallFrameColorProxy() {
+            frameColorProxy?.uninstall()
+            frameColorProxy = nil
+        }
+
+        func applyCaptureControlsIfNeeded() {
+            guard let view = yoloView,
+                  let device = YOLOViewCameraSwitcher.currentVideoDevice(in: view)
+            else {
+                return
+            }
+            let controls = settings.captureControls
+            if lastAppliedCaptureDeviceID == device.uniqueID,
+               lastAppliedCaptureControls == controls
+            {
+                return
+            }
+            CameraCaptureAdjuster.apply(controls, to: device)
+            lastAppliedCaptureDeviceID = device.uniqueID
+            lastAppliedCaptureControls = controls
         }
 
         func registerCaptureSessionIfNeeded() {
@@ -450,6 +499,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                         }
                         self.applyPreferredCamera()
                         self.registerCaptureSessionIfNeeded()
+                        self.applyCaptureControlsIfNeeded()
+                        self.installFrameColorProxyIfNeeded()
                     }
                 }
             }

@@ -93,7 +93,7 @@ File Sharing is on. Recorded overlay clips and CSV logs show up in the Files app
 **Settings.** Long-press the FPS badge.
 
 - **Model** — bundled weights (`best` v3.1, `bestv3.2`–`bestv3.5`); changing it reloads Live and Photo
-- **Camera** — Auto (prefer USB) or a specific device; rotation and mirror apply to preview and to recordings started after the change
+- **Camera** — Auto (prefer USB) or a specific device; rotation and mirror apply to preview and to recordings started after the change. Software brightness, contrast, and saturation preprocess the image the model sees. Hardware exposure, focus, and white balance can be locked (USB cameras may ignore those).
 - **Photo** — sort a still from the library
 - **Recording** — start/stop; the live camera must be running first
 - **Detection / Live tracking** — confidence, overlap, max items, confirm frames, and box smoothing
@@ -133,7 +133,7 @@ waste-sort/
     Settings/          # model, camera, thresholds
   Core/
     Detection/         # tracker, bin map, box overlay
-    Camera/            # device catalog (USB vs built-in)
+    Camera/            # device catalog, capture locks, color preprocess
     Logging/           # JSONL session + CSV export
     Recording/         # overlay compositor / annotated writer
   Resources/Models/    # Core ML weights
