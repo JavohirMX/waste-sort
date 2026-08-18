@@ -20,6 +20,11 @@ enum Theme {
     static let zoneFillOpacity: Double = 0.14
     static let zoneFlashFillOpacity: Double = 0.55
     static let zoneHandleSize: CGFloat = 26
+    static let zoneEditDash: [CGFloat] = [10, 6]
+    /// An item is in the zone but has not dwelt long enough to count yet.
+    static let zoneOccupiedDash: [CGFloat] = [6, 8]
+    /// Dwell met — dropping it now would be recorded.
+    static let zoneArmedDash: [CGFloat] = [14, 5]
 
     static let categoryLabelFont = Font.system(size: 14, weight: .semibold)
 }

@@ -257,7 +257,7 @@ struct SettingsView: View {
 
             SettingsIntSliderRow(
                 title: "Dwell frames",
-                help: "How long an item must sit inside a zone before it can be counted. Higher = fewer accidental counts when something passes over a bin.",
+                help: "How many frames the model must actually see an item inside a zone before it can be counted. Frames where the box is frozen after a lost detection do not count. Higher = fewer accidental counts when something passes over a bin.",
                 value: Binding(
                     get: { zoneStore.dwellFrames },
                     set: { zoneStore.dwellFrames = $0 }
@@ -278,7 +278,7 @@ struct SettingsView: View {
             Text("Zones")
                 .foregroundStyle(BinGuide.cleanInorganic.color)
         } footer: {
-            Text("Draw a zone over each real bin. Zones are hidden on the live feed except while editing. An item is recorded only if it was first seen outside the zones, then stayed inside one for the dwell frames above and disappeared there — carrying it across a bin, or an item the model first spots already inside, does not count.")
+            Text("Draw a zone over each real bin. On the live feed a zone is invisible until something is in it: dashed while an item is inside, tighter dashes once it has dwelt long enough to count, then filled for a moment when it is recorded. An item is recorded only if it was first seen outside the zones, then stayed inside one for the dwell frames above and disappeared there — carrying it across a bin, or an item the model first spots already inside, does not count.")
         }
         .confirmationDialog(
             "Reset zones to defaults?",

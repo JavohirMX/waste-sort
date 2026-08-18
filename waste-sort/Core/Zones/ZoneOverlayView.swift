@@ -17,6 +17,10 @@ struct ZoneOverlayView: View {
     var selectedZoneID: UUID?
     /// Zones that just took a deposit — shown briefly even when calibration is off.
     var flashedZoneIDs: Set<UUID> = []
+    /// Zones with an item inside right now — outlined, not filled.
+    var occupiedZoneIDs: Set<UUID> = []
+    /// Occupied zones whose item has met the dwell requirement.
+    var armedZoneIDs: Set<UUID> = []
     var onMoveCorner: ((UUID, Int, CGPoint) -> Void)?
     var onMoveZone: ((UUID, [CGPoint]) -> Void)?
     var onSelectZone: ((UUID) -> Void)?
@@ -43,11 +47,53 @@ struct ZoneOverlayView: View {
     }
 
     private var visibleZones: [DropZone] {
-        isEditing ? zones : zones.filter { flashedZoneIDs.contains($0.id) }
+        guard !isEditing else { return zones }
+        return zones.filter {
+            flashedZoneIDs.contains($0.id) || occupiedZoneIDs.contains($0.id)
+        }
     }
 
     private func isActive(_ zone: DropZone) -> Bool {
         !isEditing || selectedZoneID == nil || selectedZoneID == zone.id
+    }
+
+    private struct ZoneStyle {
+        var fill: Double
+        var stroke: Double
+        var lineWidth: CGFloat
+        var dash: [CGFloat]
+    }
+
+    /// Three states the operator needs to tell apart at a glance: being calibrated,
+    /// holding an item right now, and having just recorded one.
+    private func style(for zone: DropZone) -> ZoneStyle {
+        if flashedZoneIDs.contains(zone.id) {
+            // Deposited: solid and filled.
+            return ZoneStyle(
+                fill: Theme.zoneFlashFillOpacity,
+                stroke: 1,
+                lineWidth: Theme.zoneStrokeWidth * 1.4,
+                dash: []
+            )
+        }
+        if isEditing {
+            let active = isActive(zone)
+            return ZoneStyle(
+                fill: active ? Theme.zoneFillOpacity : Theme.zoneFillOpacity * 0.4,
+                stroke: active ? 1 : 0.45,
+                lineWidth: Theme.zoneStrokeWidth,
+                dash: Theme.zoneEditDash
+            )
+        }
+        // Occupied: dashed outline only. Tighter dashes once the dwell is met, so
+        // "would count if dropped now" is visible without a second colour.
+        let armed = armedZoneIDs.contains(zone.id)
+        return ZoneStyle(
+            fill: 0,
+            stroke: armed ? 0.95 : 0.6,
+            lineWidth: Theme.zoneStrokeWidth,
+            dash: armed ? Theme.zoneArmedDash : Theme.zoneOccupiedDash
+        )
     }
 
     private func path(_ points: [CGPoint]) -> Path {
@@ -60,20 +106,16 @@ struct ZoneOverlayView: View {
 
     private func shape(for zone: DropZone, points: [CGPoint]) -> some View {
         let outline = path(points)
-        let active = isActive(zone)
-        let flashed = flashedZoneIDs.contains(zone.id)
-        let fill = flashed
-            ? Theme.zoneFlashFillOpacity
-            : (active ? Theme.zoneFillOpacity : Theme.zoneFillOpacity * 0.4)
+        let style = style(for: zone)
 
         return ZStack {
-            outline.fill(zone.bin.color.opacity(fill))
+            outline.fill(zone.bin.color.opacity(style.fill))
             outline.stroke(
-                zone.bin.color.opacity(active ? 1 : 0.45),
+                zone.bin.color.opacity(style.stroke),
                 style: StrokeStyle(
-                    lineWidth: Theme.zoneStrokeWidth,
+                    lineWidth: style.lineWidth,
                     lineJoin: .round,
-                    dash: isEditing ? [10, 6] : []
+                    dash: style.dash
                 )
             )
         }

@@ -16,6 +16,8 @@ struct LiveCameraView: View {
     @State private var showSettings = false
     @State private var selectedZoneID: UUID?
     @State private var flashedZoneIDs: Set<UUID> = []
+    @State private var occupiedZoneIDs: Set<UUID> = []
+    @State private var armedZoneIDs: Set<UUID> = []
     @State private var freshDepositID: UUID?
     @State private var showHistory = false
 
@@ -35,15 +37,21 @@ struct LiveCameraView: View {
                         recording: recording,
                         zones: zoneStore.zones,
                         dwellFrames: zoneStore.dwellFrames
-                    ) { result, tracked, deposits in
+                    ) { result, tracked, zoneFrame in
                         if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                             fps = measured
                         }
                         imageSize = result.orig_shape
                         tracks = tracked
-                        if !deposits.isEmpty {
-                            history.append(deposits)
-                            flash(deposits)
+                        if occupiedZoneIDs != zoneFrame.occupiedZoneIDs {
+                            occupiedZoneIDs = zoneFrame.occupiedZoneIDs
+                        }
+                        if armedZoneIDs != zoneFrame.armedZoneIDs {
+                            armedZoneIDs = zoneFrame.armedZoneIDs
+                        }
+                        if !zoneFrame.deposits.isEmpty {
+                            history.append(zoneFrame.deposits)
+                            flash(zoneFrame.deposits)
                         }
 
                         var nextCounts: [String: Int] = [:]
@@ -69,6 +77,8 @@ struct LiveCameraView: View {
                         isEditing: zoneStore.isEditingZones,
                         selectedZoneID: selectedZoneID,
                         flashedZoneIDs: flashedZoneIDs,
+                        occupiedZoneIDs: occupiedZoneIDs,
+                        armedZoneIDs: armedZoneIDs,
                         onMoveCorner: moveCorner,
                         onMoveZone: moveZone,
                         onSelectZone: { selectedZoneID = $0 }
@@ -234,7 +244,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     var recording: RecordingController
     var zones: [DropZone]
     var dwellFrames: Int
-    var onDetection: ((YOLOResult, [TrackedDetection], [ZoneDeposit]) -> Void)?
+    var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -350,7 +360,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     }
 
     final class Coordinator {
-        var onDetection: ((YOLOResult, [TrackedDetection], [ZoneDeposit]) -> Void)?
+        var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult) -> Void)?
         var settings: RuntimeSettings
         var preferredCameraID: String
         var selectedModelName: String
@@ -371,7 +381,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             recording: RecordingController,
             zones: [DropZone],
             dwellFrames: Int,
-            onDetection: ((YOLOResult, [TrackedDetection], [ZoneDeposit]) -> Void)?
+            onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult) -> Void)?
         ) {
             self.settings = settings
             self.preferredCameraID = preferredCameraID
@@ -406,22 +416,22 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             }
             let tracked = tracker.update(raw)
             let currentZones = zones
-            let deposits = depositDetector.update(tracks: tracked, zones: currentZones)
+            let zoneFrame = depositDetector.update(tracks: tracked, zones: currentZones)
             if recording.isRecording {
                 let fps = result.fps.flatMap { $0.isFinite ? Int($0.rounded()) : nil } ?? 0
                 recording.ingestLiveFrame(
                     tracks: tracked,
-                    deposits: deposits,
+                    deposits: zoneFrame.deposits,
                     zones: currentZones,
                     originalImage: result.originalImage,
                     fps: fps,
                     settings: settings
                 )
             }
-            // Deposits ride the existing main-thread hop so the @Published history
+            // Zone results ride the existing main-thread hop so the @Published history
             // append never happens off-main.
             DispatchQueue.main.async {
-                self.onDetection?(result, tracked, deposits)
+                self.onDetection?(result, tracked, zoneFrame)
             }
         }
 

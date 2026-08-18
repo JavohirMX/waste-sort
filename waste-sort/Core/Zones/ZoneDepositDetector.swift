@@ -20,6 +20,17 @@ nonisolated struct ZoneDeposit: Identifiable, Equatable, Sendable {
     var isCorrect: Bool { BinGuide.info(for: classKey).id == zoneBinID }
 }
 
+/// What one frame of zone evaluation produced.
+nonisolated struct ZoneFrameResult: Equatable, Sendable {
+    /// Items released this frame.
+    var deposits: [ZoneDeposit] = []
+    /// Zones with an item inside them right now — drives the dashed live outline.
+    var occupiedZoneIDs: Set<UUID> = []
+    /// Subset of `occupiedZoneIDs` whose item has met the dwell requirement and
+    /// would be counted if the tracker lost it on this frame.
+    var armedZoneIDs: Set<UUID> = []
+}
+
 /// Arms a track once it has *entered* a zone from outside and dwelt there, then fires
 /// when the tracker drops it.
 ///
@@ -52,15 +63,16 @@ nonisolated final class ZoneDepositDetector {
         enteredFromOutside.removeAll(keepingCapacity: true)
     }
 
-    func update(tracks: [TrackedDetection], zones: [DropZone]) -> [ZoneDeposit] {
+    func update(tracks: [TrackedDetection], zones: [DropZone]) -> ZoneFrameResult {
         guard !zones.isEmpty else {
             armed.removeAll(keepingCapacity: true)
             enteredFromOutside.removeAll(keepingCapacity: true)
-            return []
+            return ZoneFrameResult()
         }
 
         var live = Set<Int>()
         live.reserveCapacity(tracks.count)
+        var occupied = Set<UUID>()
 
         for track in tracks {
             live.insert(track.id)
@@ -72,11 +84,20 @@ nonisolated final class ZoneDepositDetector {
                 continue
             }
 
+            // Occupancy is about what the operator can see, so it counts every item
+            // sitting in the zone — including ones that can never be credited.
+            occupied.insert(zone.id)
+
             // Materialised straight into a zone — we never saw it cross the boundary,
             // so it was not thrown in on camera.
             guard enteredFromOutside.contains(track.id) else { continue }
 
-            let dwell = armed[track.id]?.zoneID == zone.id ? (armed[track.id]?.dwell ?? 0) + 1 : 1
+            let previous = armed[track.id]?.zoneID == zone.id ? armed[track.id] : nil
+            // A coasting box is the tracker holding the last known position, not the
+            // model still seeing the object. Counting those frames would let an item
+            // reach the dwell threshold purely by vanishing, which is the opposite of
+            // what the threshold is for.
+            let dwell = (previous?.dwell ?? 0) + (track.isCoasting ? 0 : 1)
             armed[track.id] = Armed(
                 zoneID: zone.id,
                 zoneName: zone.name,
@@ -109,6 +130,16 @@ nonisolated final class ZoneDepositDetector {
                 )
             )
         }
-        return deposits.sorted { $0.trackID < $1.trackID }
+
+        var armedZoneIDs = Set<UUID>()
+        for state in armed.values where state.dwell >= requiredDwellFrames {
+            armedZoneIDs.insert(state.zoneID)
+        }
+
+        return ZoneFrameResult(
+            deposits: deposits.sorted { $0.trackID < $1.trackID },
+            occupiedZoneIDs: occupied,
+            armedZoneIDs: armedZoneIDs
+        )
     }
 }
