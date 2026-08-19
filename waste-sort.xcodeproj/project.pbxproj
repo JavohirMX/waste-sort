@@ -404,14 +404,14 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = BD8SA4X398;
+				DEVELOPMENT_TEAM = MBBD9BRZ67;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = iSort;
+				INFOPLIST_KEY_CFBundleDisplayName = Sortla;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "iSort uses the camera to identify waste items and suggest a bin.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "iSort saves camera recordings to your photo library.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "iSort uses your photos to identify waste items and suggest a bin.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Sortla uses the camera to identify waste items and suggest a bin.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Sortla saves camera recordings to your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Sortla uses your photos to identify waste items and suggest a bin.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIFileSharingEnabled = YES;
@@ -423,7 +423,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.javohirmx.waste-sort";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.javohirmx.sortla";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -442,14 +442,14 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = BD8SA4X398;
+				DEVELOPMENT_TEAM = MBBD9BRZ67;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = iSort;
+				INFOPLIST_KEY_CFBundleDisplayName = Sortla;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "iSort uses the camera to identify waste items and suggest a bin.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "iSort saves camera recordings to your photo library.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "iSort uses your photos to identify waste items and suggest a bin.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Sortla uses the camera to identify waste items and suggest a bin.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Sortla saves camera recordings to your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Sortla uses your photos to identify waste items and suggest a bin.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIFileSharingEnabled = YES;
@@ -461,7 +461,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.javohirmx.waste-sort";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.javohirmx.sortla";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -482,7 +482,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.javohirmx.waste-sortTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.javohirmx.sortlaTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -503,7 +503,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.javohirmx.waste-sortTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.javohirmx.sortlaTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -522,7 +522,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.javohirmx.waste-sortUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.javohirmx.sortlaUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -541,7 +541,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.javohirmx.waste-sortUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.javohirmx.sortlaUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

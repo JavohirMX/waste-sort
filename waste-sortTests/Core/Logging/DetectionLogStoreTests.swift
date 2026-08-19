@@ -11,7 +11,7 @@ struct DetectionLogStoreTests {
             supportDirectory: dirs.support
         )
         let started = Date(timeIntervalSince1970: 1_700_000_000)
-        store.startSession(id: "session-a", startedAt: started, filePrefix: "iSort-test")
+        store.startSession(id: "session-a", startedAt: started, filePrefix: "Sortla-test")
         store.append(event(sessionId: "session-a", startedAt: started, trackId: 1, classKey: "organic"))
         store.append(event(sessionId: "session-a", startedAt: started, trackId: 2, classKey: "residual"))
 
@@ -34,7 +34,7 @@ struct DetectionLogStoreTests {
             documentsDirectory: dirs.documents,
             supportDirectory: dirs.support
         )
-        store.startSession(id: "empty", startedAt: Date(), filePrefix: "iSort-empty")
+        store.startSession(id: "empty", startedAt: Date(), filePrefix: "Sortla-empty")
         let csvURL = try #require(store.finishSession())
         let text = try String(contentsOf: csvURL, encoding: .utf8)
         let lines = text.split(whereSeparator: \.isNewline).map(String.init)
@@ -48,7 +48,7 @@ struct DetectionLogStoreTests {
             supportDirectory: dirs.support
         )
         let started = Date(timeIntervalSince1970: 1_700_000_100)
-        first.startSession(id: "crash-session", startedAt: started, filePrefix: "iSort-recovered")
+        first.startSession(id: "crash-session", startedAt: started, filePrefix: "Sortla-recovered")
         first.append(event(sessionId: "crash-session", startedAt: started, trackId: 7, classKey: "clean_inorganic"))
 
         let recovered = DetectionLogStore(

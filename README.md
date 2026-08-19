@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/app-icon.png" width="128" alt="iSort app icon">
+  <img src="docs/app-icon.png" width="128" alt="Sortla app icon">
 </p>
 
-<h1 align="center">iSort</h1>
+<h1 align="center">Sortla</h1>
 
 <p align="center">
   On-device waste sorting for iPhone and iPad.<br>
@@ -18,7 +18,7 @@
   <img alt="On-device" src="https://img.shields.io/badge/Inference-on--device-22C55E">
 </p>
 
-iSort is a kiosk-style camera app. Mount an iPhone or iPad above a waste station (or plug in a USB-C webcam), and it watches items in view, labels each one, and lights up the matching bin: **organic**, **residual**, or **clean recyclables**.
+Sortla is a kiosk-style camera app. Mount an iPhone or iPad above a waste station (or plug in a USB-C webcam), and it watches items in view, labels each one, and lights up the matching bin: **organic**, **residual**, or **clean recyclables**.
 
 Inference runs entirely on device. Nothing is uploaded.
 
@@ -51,7 +51,7 @@ flowchart LR
   bins --> hud
   tracker --> rec
   rec --> photos[Photos]
-  rec --> files[Files app iSort]
+  rec --> files[Files app Sortla]
 ```
 
 Each frame goes through Core ML, then a tracker that holds an ID across frames (confirm hits, IoU association, EMA smoothing, time-window class vote). Confirmed tracks map to a bin via `BinGuide` and light the HUD. While recording, the same tracks are written to an overlay movie and a CSV.
@@ -76,17 +76,17 @@ The Simulator can build the app, but live camera, USB webcams, and recording nee
 
 1. Clone this repo and open [`waste-sort.xcodeproj`](waste-sort.xcodeproj).
 2. Select the **waste-sort** scheme and a connected device.
-3. Set your Development Team under Signing & Capabilities (bundle ID is `com.javohirmx.waste-sort`).
+3. Set your Development Team under Signing & Capabilities (bundle ID is `com.javohirmx.sortla`).
 4. Run.
 
-On first launch, iSort asks for:
+On first launch, Sortla asks for:
 
 - **Camera** — live sorting
 - **Photos** — photo sort, and saving recordings
 
-File Sharing is on. Recorded overlay clips and CSV logs show up in the Files app under **On My iPad** / **On My iPhone → iSort**.
+File Sharing is on. Recorded overlay clips and CSV logs show up in the Files app under **On My iPad** / **On My iPhone → Sortla**.
 
-## Using iSort
+## Using Sortla
 
 **Live.** Point the camera at waste. The top bar lights the bins currently in frame. Boxes follow items after they are confirmed across a couple of frames; if the model briefly loses an item, the box freezes in place instead of sliding. The bin label stays with the item until a new class leads by confidence for a short time (default 0.4s).
 
@@ -98,13 +98,13 @@ File Sharing is on. Recorded overlay clips and CSV logs show up in the Files app
 - **Recording** — start/stop; the live camera must be running first
 - **Detection / Live tracking** — confidence, overlap, max items, confirm frames, class-change overlap, label stickiness, and box smoothing
 
-**Recording outputs** share a local-time prefix, e.g. `iSort-2026-08-14-150932`:
+**Recording outputs** share a local-time prefix, e.g. `Sortla-2026-08-14-150932`:
 
 | File | Where |
 | --- | --- |
 | Raw camera clip | Photos |
 | Overlay clip (boxes, labels, timestamps) | Photos and Files |
-| Detection CSV | Files (`On My iPad/iPhone → iSort`) |
+| Detection CSV | Files (`On My iPad/iPhone → Sortla`) |
 
 CSV columns: timestamp, session, track ID, class, bin, confidence, model, thresholds, camera, box, FPS, event type (`first_seen`, `class_switch`, `coast_start`, `zone_deposit`), raw class.
 

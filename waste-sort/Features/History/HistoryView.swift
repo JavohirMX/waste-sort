@@ -73,7 +73,7 @@ struct HistoryView: View {
             ) {
                 Button("OK") { exportURL = nil }
             } message: {
-                Text("Saved \(exportURL?.lastPathComponent ?? "") to On My iPad → iSort.")
+                Text("Saved \(exportURL?.lastPathComponent ?? "") to On My iPad → Sortla.")
             }
         }
         .tint(BinGuide.organic.color)

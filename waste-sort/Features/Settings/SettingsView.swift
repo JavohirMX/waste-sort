@@ -471,7 +471,7 @@ struct SettingsView: View {
             return "The live camera must be running before you can start a recording."
         }
         let saves =
-            "Saves a raw clip to Photos, an overlay clip (boxes, labels, timestamps) to Photos and Files, and a detection CSV to Files (On My iPad/iPhone → iSort). Records the camera feed only for the raw clip. Saves if you stop, or if the app is backgrounded or closed."
+            "Saves a raw clip to Photos, an overlay clip (boxes, labels, timestamps) to Photos and Files, and a detection CSV to Files (On My iPad/iPhone → Sortla). Records the camera feed only for the raw clip. Saves if you stop, or if the app is backgrounded or closed."
         if settings.autoRecordOnOpen {
             return "Starts automatically when the app opens or returns to the foreground. \(saves)"
         }
