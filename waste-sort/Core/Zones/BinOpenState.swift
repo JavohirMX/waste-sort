@@ -16,12 +16,23 @@ nonisolated protocol BinOpenStateProviding {
     func isOpen(binID: String) -> Bool
 }
 
-/// **Placeholder.** Every bin always reads open, which reproduces exactly the behaviour
-/// that shipped before the lid signal existed.
-///
-/// Real lid detection lands separately. When it does, the only thing that changes is the
-/// provider handed to `ZoneDepositDetector` — every rule that depends on the lid is
-/// already written against the protocol above.
+/// Default when AprilTag is off, and the lid signal for tests that do not care about it:
+/// every bin reads open, which is the behaviour that shipped before the lid existed.
 nonisolated struct AlwaysOpenBins: BinOpenStateProviding {
     func isOpen(binID: String) -> Bool { true }
+}
+
+/// One-frame snapshot of AprilTag lid state, keyed the way `ZoneDepositDetector` asks:
+/// by `BinGuide` id. Only `.closed` zones count as shut; `.open` and `.unknown` (and an
+/// empty frame when tags are disabled) all read as open.
+nonisolated struct FrameBinOpenState: BinOpenStateProviding {
+    let closedBinIDs: Set<String>
+
+    init(tagFrame: AprilTagStatusFrame, zones: [DropZone]) {
+        closedBinIDs = Set(
+            zones.filter { tagFrame.closedZoneIDs.contains($0.id) }.map(\.binID)
+        )
+    }
+
+    func isOpen(binID: String) -> Bool { !closedBinIDs.contains(binID) }
 }

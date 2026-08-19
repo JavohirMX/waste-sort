@@ -43,7 +43,9 @@ struct ZoneDepositDetectorTests {
         id: Int = 1,
         classKey: String = "organic",
         at point: CGPoint,
-        misses: Int = 0
+        misses: Int = 0,
+        rawClassKey: String = "",
+        rawConf: Float = 0
     ) -> TrackedDetection {
         TrackedDetection(
             id: id,
@@ -51,7 +53,9 @@ struct ZoneDepositDetectorTests {
             className: classKey,
             conf: 0.9,
             displayXywhn: CGRect(x: point.x - 0.05, y: point.y - 0.05, width: 0.1, height: 0.1),
-            misses: misses
+            misses: misses,
+            rawClassKey: rawClassKey,
+            rawConf: rawConf
         )
     }
 
@@ -60,9 +64,18 @@ struct ZoneDepositDetectorTests {
         classKey: String = "organic",
         centerX: CGFloat,
         centerY: CGFloat = 0.5,
-        misses: Int = 0
+        misses: Int = 0,
+        rawClassKey: String = "",
+        rawConf: Float = 0
     ) -> TrackedDetection {
-        track(id: id, classKey: classKey, at: CGPoint(x: centerX, y: centerY), misses: misses)
+        track(
+            id: id,
+            classKey: classKey,
+            at: CGPoint(x: centerX, y: centerY),
+            misses: misses,
+            rawClassKey: rawClassKey,
+            rawConf: rawConf
+        )
     }
 
     /// Drives the detector frame by frame at a fixed 30fps so the time-based reacquisition
@@ -149,6 +162,7 @@ struct ZoneDepositDetectorTests {
         #expect(deposits.first?.isCorrect == true)
         #expect(deposits.first?.trackSegments == 1)
         #expect(deposits.first?.viaTrajectory == false)
+        #expect(deposits.first?.binWasOpen == true)
     }
 
     @Test("the deposit is withheld until the reacquire window has passed")
@@ -263,8 +277,8 @@ struct ZoneDepositDetectorTests {
         c.tick([track(id: 1, classKey: "organic", centerX: 0.5)])
         c.tick([track(id: 1, classKey: "organic", centerX: 0.2)], times: 3)
         c.idle(seconds: 0.3)
-        // The tracker refuses to associate across a class change, so this is a new id
-        // with a different label — but it is the same cup.
+        // When association fails, the detector stitches by proximity — a new id with a
+        // different label is still the same cup.
         c.tick([track(id: 2, classKey: "residual", centerX: 0.2)], times: 2)
         let deposits = c.waitOutGrace()
         #expect(deposits.count == 1)
@@ -273,12 +287,11 @@ struct ZoneDepositDetectorTests {
         #expect(deposits.first?.classKey == "organic")
     }
 
-    /// Reproduces what `DetectionTracker` actually emits on a relabel, which is not a clean
-    /// gap: it cannot associate the new label with the old track, so it coasts the old one
-    /// for `maxMisses` frames *while* the new one is already live. Both are in the array at
-    /// once. Treating the frozen box as a sighting used to strand the old object — armed,
-    /// never adopted, firing a throw that never happened — and disqualify the new one for
-    /// having been born inside the zone.
+    /// Low-IoU relabel fallback: the tracker cannot associate the new label, so it coasts
+    /// the old track for `maxMisses` frames *while* the new one is already live. Both are
+    /// in the array at once. Treating the frozen box as a sighting used to strand the old
+    /// object — armed, never adopted, firing a throw that never happened — and disqualify
+    /// the new one for having been born inside the zone.
     @Test("a relabel with overlapping coasting frames is still one item")
     func classChangeWithOverlappingCoastFrames() {
         let c = clock(dwell: 2)
@@ -541,6 +554,21 @@ struct ZoneDepositDetectorTests {
         let deposits = c.waitOutGrace()
         #expect(deposits.count == 1)
         #expect(deposits.first?.dwellFrames == 3)
+    }
+
+    @Test("deposit scores the raw YOLO class, not the overlay lock")
+    func rawClassOutvotesLockedLabel() {
+        let c = clock(dwell: 3)
+        c.tick([
+            track(classKey: "organic", centerX: 0.5, rawClassKey: "residual", rawConf: 0.95),
+        ])
+        c.tick(
+            [track(classKey: "organic", centerX: 0.2, rawClassKey: "residual", rawConf: 0.95)],
+            times: 3
+        )
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.classKey == "residual")
     }
 
     // MARK: - Overlay state

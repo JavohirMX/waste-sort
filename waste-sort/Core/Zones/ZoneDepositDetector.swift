@@ -26,6 +26,9 @@ nonisolated struct ZoneDeposit: Identifiable, Equatable, Sendable {
     /// True when the object was never seen strictly inside the zone: it vanished on its way
     /// in and was credited by where it was heading. `dwellFrames` is 0 for these.
     let viaTrajectory: Bool
+    /// True when the target bin was open during the settling window. Credited deposits
+    /// always have this true, because a closed lid is not counted.
+    let binWasOpen: Bool
 
     /// True when the detected category matches the bin the item went into.
     var isCorrect: Bool { BinGuide.info(for: classKey).id == zoneBinID }
@@ -49,14 +52,16 @@ nonisolated struct ZoneFrameResult: Equatable, Sendable {
 /// Decides when an item counts as thrown away.
 ///
 /// The unit of reasoning is the **object**, not the tracker id. `DetectionTracker` starts a
-/// fresh id whenever the model blinks for more than `maxMisses` frames, and it refuses to
-/// associate across a class change at all — so a single cup being carried to a bin can arrive
-/// as three or four ids, some of them labelled differently. Treating each id as its own item
-/// is what makes a momentary dropout look like a throw, and what makes the throw that follows
-/// look like waste that materialised inside the bin.
+/// fresh id whenever the model blinks for more than `maxMisses` frames. It does associate
+/// across a class change when the boxes overlap enough; the overlay label is a short
+/// confidence vote, not a new id. When overlap is too low, a relabel still arrives as a
+/// new id (sometimes beside a frozen coast of the old one). Treating each id as its own
+/// item is what makes a momentary dropout look like a throw, and what makes the throw
+/// that follows look like waste that materialised inside the bin.
 ///
 /// So an object here spans ids. A new track that appears where a recently lost one was is
 /// assumed to be the same thing, whatever the model now calls it, and inherits its history.
+/// Overlay labels are ignored for scoring: this layer votes on the raw YOLO class.
 ///
 /// Four conditions have to hold for a deposit, each ruling out a different false positive:
 ///
@@ -86,9 +91,8 @@ nonisolated final class ZoneDepositDetector {
     /// Ceiling so a long dropout cannot claim a box on the far side of the frame.
     var reacquireMaxRadius: CGFloat = 0.35
 
-    /// Lid signal for the two rules that depend on it. Placeholder by default — see
-    /// `AlwaysOpenBins`, which reads every bin as open and so reproduces the behaviour that
-    /// shipped before the lid existed.
+    /// Lid signal for the two rules that depend on it. Defaults to `AlwaysOpenBins`.
+    /// The live camera replaces this each frame with `FrameBinOpenState` from AprilTag.
     var binOpenState: BinOpenStateProviding = AlwaysOpenBins()
 
     /// How far the last motion is projected forward when an object vanishes outside every
@@ -213,10 +217,9 @@ nonisolated final class ZoneDepositDetector {
         var occupied = Set<UUID>()
 
         // Coasting boxes are dropped outright. The tracker keeps emitting a frozen box for
-        // `maxMisses` frames after the model stops finding something, which matters here for
-        // a reason that is easy to miss: on a class change the tracker cannot associate the
-        // new label with the old track, so it coasts the old one *while* the new one is
-        // already live. Both are in this array at once. Treating the frozen box as a sighting
+        // `maxMisses` frames after the model stops finding something. When association
+        // fails (low IoU relabel), it coasts the old track *while* the new one is already
+        // live. Both are in this array at once. Treating the frozen box as a sighting
         // keeps the old object out of the missing state, so the new track cannot adopt it —
         // it becomes a fresh object born inside the zone, ineligible forever, while the old
         // one later dies still armed and fires a throw that never happened.
@@ -235,9 +238,9 @@ nonisolated final class ZoneDepositDetector {
             let sighting = Sighting(
                 center: CGPoint(x: track.displayXywhn.midX, y: track.displayXywhn.midY),
                 box: track.displayXywhn,
-                classKey: track.classKey,
-                className: track.className,
-                conf: track.conf
+                classKey: track.observedClassKey,
+                className: track.rawClassKey.isEmpty ? track.className : track.rawClassKey,
+                conf: track.rawConf > 0 ? track.rawConf : track.conf
             )
             let object = resolveObject(
                 for: track,
@@ -478,7 +481,8 @@ nonisolated final class ZoneDepositDetector {
                 dwellFrames: target.viaTrajectory ? 0 : object.dwell,
                 trackSegments: object.trackSegments,
                 classesSeen: object.classWeights.count,
-                viaTrajectory: target.viaTrajectory
+                viaTrajectory: target.viaTrajectory,
+                binWasOpen: object.sawBinOpen
             ),
         ]
     }

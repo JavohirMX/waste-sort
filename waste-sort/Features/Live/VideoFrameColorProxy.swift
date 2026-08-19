@@ -6,6 +6,7 @@ import UltralyticsYOLO
 final class VideoFrameColorProxy: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private let lock = NSLock()
     private var _controls = FrameColorControls.identity
+    private var _frameTap: ((CVPixelBuffer) -> Void)?
     private weak var videoCapture: VideoCapture?
     private weak var yoloView: YOLOView?
     private weak var videoOutput: AVCaptureVideoDataOutput?
@@ -20,6 +21,19 @@ final class VideoFrameColorProxy: NSObject, AVCaptureVideoDataOutputSampleBuffer
         return layer
     }()
     private var showingProcessedPreview = false
+
+    var frameTap: ((CVPixelBuffer) -> Void)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _frameTap
+        }
+        set {
+            lock.lock()
+            _frameTap = newValue
+            lock.unlock()
+        }
+    }
 
     var controls: FrameColorControls {
         get {
@@ -65,6 +79,7 @@ final class VideoFrameColorProxy: NSObject, AVCaptureVideoDataOutputSampleBuffer
                 output.setSampleBufferDelegate(capture, queue: queue)
             }
         }
+        _frameTap = nil
         showingProcessedPreview = false
         processedPreviewLayer.removeFromSuperlayer()
         processedPreviewLayer.contents = nil
@@ -87,10 +102,15 @@ final class VideoFrameColorProxy: NSObject, AVCaptureVideoDataOutputSampleBuffer
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        let current = controls.clamped
-        if !current.isIdentity, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-            FrameColorAdjuster.processInPlace(pixelBuffer, controls: current)
-            showProcessedPreview(from: pixelBuffer)
+        if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            frameTap?(pixelBuffer)
+            let current = controls.clamped
+            if !current.isIdentity {
+                FrameColorAdjuster.processInPlace(pixelBuffer, controls: current)
+                showProcessedPreview(from: pixelBuffer)
+            } else {
+                showNativePreview()
+            }
         } else {
             showNativePreview()
         }

@@ -12,7 +12,10 @@ struct ContentView: View {
             .onChange(of: scenePhase) { _, phase in
                 setIdleTimerDisabled(phase == .active)
                 if phase != .active {
+                    recording.noteSceneBecameInactive()
                     recording.flushAndSave()
+                } else {
+                    recording.considerAutoStart()
                 }
             }
     }

@@ -8,9 +8,12 @@ struct LiveCameraView: View {
     @EnvironmentObject private var recording: RecordingController
     @EnvironmentObject private var zoneStore: ZoneStore
     @EnvironmentObject private var history: ZoneEventHistoryStore
+    @EnvironmentObject private var aprilTagStore: AprilTagBindingStore
     @State private var counts: [String: Int] = [:]
     @State private var fps = 0
     @State private var tracks: [TrackedDetection] = []
+    @State private var detectedTags: [TrackedAprilTag] = []
+    @State private var tagStatuses: [UUID: BinOpenness] = [:]
     @State private var imageSize: CGSize = .zero
     @State private var fpsMonitor = FrameRateMonitor()
     @State private var showSettings = false
@@ -64,13 +67,17 @@ struct LiveCameraView: View {
                         recording: recording,
                         zones: zoneStore.zones,
                         dwellFrames: zoneStore.dwellFrames,
-                        reacquireGrace: zoneStore.reacquireGrace
-                    ) { result, tracked, zoneFrame in
+                        reacquireGrace: zoneStore.reacquireGrace,
+                        aprilTagEnabled: aprilTagStore.isEnabled,
+                        aprilTagBindings: aprilTagStore.bindings
+                    ) { result, tracked, zoneFrame, tagFrame in
                         if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                             fps = measured
                         }
                         imageSize = result.orig_shape
                         tracks = tracked
+                        detectedTags = tagFrame.detectedTags
+                        tagStatuses = tagFrame.statuses
                         if occupiedZoneIDs != zoneFrame.occupiedZoneIDs {
                             occupiedZoneIDs = zoneFrame.occupiedZoneIDs
                         }
@@ -86,7 +93,7 @@ struct LiveCameraView: View {
                         }
 
                         var nextCounts: [String: Int] = [:]
-                        for track in tracked {
+                        for track in tracked where !track.isCoasting {
                             let binID = BinGuide.info(for: track.classKey).id
                             guard binID != BinGuide.unknown.id else { continue }
                             nextCounts[binID, default: 0] += 1
@@ -115,6 +122,18 @@ struct LiveCameraView: View {
                         onMoveZone: moveZone,
                         onSelectZone: { selectedZoneID = $0 }
                     )
+
+                    if aprilTagStore.isEnabled, aprilTagStore.showDebugOverlay {
+                        AprilTagDebugOverlay(
+                            detectedTags: detectedTags,
+                            statuses: tagStatuses,
+                            zones: zoneStore.zones,
+                            imageSize: imageSize,
+                            viewSize: geo.size,
+                            rotation: settings.liveRotation,
+                            mirror: settings.liveMirror
+                        )
+                    }
 
                     if !zoneStore.isEditingZones, settings.ctaStyle == .highlightSection {
                         CTAHighlightOverlay(
@@ -212,6 +231,7 @@ struct LiveCameraView: View {
                 .environmentObject(recording)
                 .environmentObject(zoneStore)
                 .environmentObject(history)
+                .environmentObject(aprilTagStore)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -307,7 +327,9 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     var zones: [DropZone]
     var dwellFrames: Int
     var reacquireGrace: Double
-    var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult) -> Void)?
+    var aprilTagEnabled: Bool
+    var aprilTagBindings: [UUID: Int]
+    var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -318,6 +340,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             zones: zones,
             dwellFrames: dwellFrames,
             reacquireGrace: reacquireGrace,
+            aprilTagEnabled: aprilTagEnabled,
+            aprilTagBindings: aprilTagBindings,
             onDetection: onDetection
         )
     }
@@ -349,6 +373,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         context.coordinator.onDetection = onDetection
         context.coordinator.yoloView = uiView
         context.coordinator.recording = recording
+        context.coordinator.aprilTagEnabled = aprilTagEnabled
+        context.coordinator.aprilTagBindings = aprilTagBindings
         applyThresholds(uiView, settings: settings)
         applyTracking(context.coordinator, settings: settings)
         applyZones(context.coordinator)
@@ -397,6 +423,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         coordinator.tracker.iouThreshold = CGFloat(settings.trackerIou)
         coordinator.tracker.confirmHits = settings.confirmHits
         coordinator.tracker.maxMisses = settings.maxMisses
+        coordinator.tracker.crossClassIouThreshold = CGFloat(settings.crossClassIou)
+        coordinator.tracker.classLockWindow = settings.classLockWindow
         coordinator.tracker.emaAlpha = CGFloat(settings.emaAlpha)
         coordinator.tracker.boxInflate = CGFloat(settings.boxInflate)
         coordinator.tracker.maxSpeed = CGFloat(settings.maxSpeed)
@@ -428,15 +456,19 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     }
 
     final class Coordinator {
-        var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult) -> Void)?
+        var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
         var settings: RuntimeSettings
         var preferredCameraID: String
         var selectedModelName: String
         var recording: RecordingController
         var zones: [DropZone]
+        var aprilTagEnabled: Bool
+        var aprilTagBindings: [UUID: Int]
         weak var yoloView: YOLOView?
         let tracker = DetectionTracker()
         let depositDetector = ZoneDepositDetector()
+        let aprilTagDetector = AprilTagDetector(familyName: "tag16h5")
+        let aprilTagBinDetector = AprilTagBinStateDetector()
         private var cameraObservers: [NSObjectProtocol] = []
         private var applyWorkItem: DispatchWorkItem?
         private var isReloadingModel = false
@@ -453,20 +485,20 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             zones: [DropZone],
             dwellFrames: Int,
             reacquireGrace: Double,
-            onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult) -> Void)?
+            aprilTagEnabled: Bool,
+            aprilTagBindings: [UUID: Int],
+            onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
         ) {
             self.settings = settings
             self.preferredCameraID = preferredCameraID
             self.selectedModelName = selectedModelName
             self.recording = recording
             self.zones = zones
+            self.aprilTagEnabled = aprilTagEnabled
+            self.aprilTagBindings = aprilTagBindings
             self.onDetection = onDetection
             depositDetector.requiredDwellFrames = dwellFrames
             depositDetector.reacquireGrace = reacquireGrace
-            // Placeholder lid signal: every bin reads open, so deposits behave exactly as
-            // they did before. This assignment is the whole wiring — when real lid detection
-            // lands it replaces this one line and nothing else in the deposit path moves.
-            depositDetector.binOpenState = AlwaysOpenBins()
         }
 
         func handle(_ result: YOLOResult) {
@@ -493,13 +525,16 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             }
             let tracked = tracker.update(raw)
             let currentZones = zones
+            let tagFrame = aprilTagEnabled
+                ? aprilTagBinDetector.update(zones: currentZones, tagBindings: aprilTagBindings)
+                : AprilTagStatusFrame()
+            depositDetector.binOpenState = FrameBinOpenState(tagFrame: tagFrame, zones: currentZones)
             let zoneFrame = depositDetector.update(tracks: tracked, zones: currentZones)
             if recording.isRecording {
                 let fps = result.fps.flatMap { $0.isFinite ? Int($0.rounded()) : nil } ?? 0
                 recording.ingestLiveFrame(
                     tracks: tracked,
                     deposits: zoneFrame.deposits,
-                    zones: currentZones,
                     originalImage: result.originalImage,
                     fps: fps,
                     settings: settings
@@ -508,7 +543,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             // Zone results ride the existing main-thread hop so the @Published history
             // append never happens off-main.
             DispatchQueue.main.async {
-                self.onDetection?(result, tracked, zoneFrame)
+                self.onDetection?(result, tracked, zoneFrame, tagFrame)
             }
         }
 
@@ -596,6 +631,11 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             guard let view = yoloView else { return }
             if frameColorProxy == nil {
                 frameColorProxy = VideoFrameColorProxy()
+            }
+            frameColorProxy?.frameTap = { [weak self] pixelBuffer in
+                guard let self, self.aprilTagEnabled else { return }
+                let tags = self.aprilTagDetector.detect(in: pixelBuffer)
+                self.aprilTagBinDetector.ingest(tags: tags)
             }
             frameColorProxy?.controls = settings.frameColor
             frameColorProxy?.install(on: view)

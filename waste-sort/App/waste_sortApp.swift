@@ -13,6 +13,7 @@ struct waste_sortApp: App {
     @StateObject private var recording = RecordingController.shared
     @StateObject private var zoneStore = ZoneStore.shared
     @StateObject private var history = ZoneEventHistoryStore.shared
+    @StateObject private var aprilTagStore = AprilTagBindingStore.shared
 
     var body: some Scene {
         WindowGroup {
@@ -21,6 +22,7 @@ struct waste_sortApp: App {
                 .environmentObject(recording)
                 .environmentObject(zoneStore)
                 .environmentObject(history)
+                .environmentObject(aprilTagStore)
         }
     }
 }

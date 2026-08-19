@@ -326,7 +326,8 @@ struct DetectionBoxOverlay: View {
                         bin: BinGuide.info(for: track.classKey),
                         rect: rect,
                         confidence: track.conf,
-                        showConfidence: showConfidence
+                        showConfidence: showConfidence,
+                        isCoasting: track.isCoasting
                     )
                 }
             }
@@ -351,10 +352,11 @@ struct DetectionBoxView: View {
     let rect: CGRect
     var confidence: Float = 0
     var showConfidence: Bool = false
+    var isCoasting: Bool = false
 
     var body: some View {
         RoundedRectangle(cornerRadius: Theme.boxCornerRadius, style: .continuous)
-            .fill(bin.color.opacity(Theme.boxFillOpacity))
+            .fill(bin.color.opacity(isCoasting ? Theme.boxFillOpacity * 0.5 : Theme.boxFillOpacity))
             .overlay {
                 RoundedRectangle(cornerRadius: Theme.boxCornerRadius, style: .continuous)
                     .strokeBorder(bin.color, lineWidth: Theme.boxStrokeWidth)

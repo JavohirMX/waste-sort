@@ -29,12 +29,15 @@ struct DetectionLogEvent: Codable, Equatable, Sendable {
     /// True when the item was credited by where it was heading rather than by dwelling
     /// inside the zone. `dwellFrames` is 0 for these.
     var viaTrajectory: Bool? = nil
+    var rawClassKey: String? = nil
 
     static let eventTypeFirstSeen = "first_seen"
     static let eventTypeZoneDeposit = "zone_deposit"
+    static let eventTypeClassSwitch = "class_switch"
+    static let eventTypeCoastStart = "coast_start"
 
     static let csvHeader =
-        "timestamp,sessionId,sessionStartedAt,trackId,classKey,className,bin,confidence,model,confidenceThreshold,iouThreshold,cameraId,boxX,boxY,boxW,boxH,fps,eventType,zoneId,zoneName,zoneBin,isCorrect,dwellFrames,viaTrajectory"
+        "timestamp,sessionId,sessionStartedAt,trackId,classKey,className,bin,confidence,model,confidenceThreshold,iouThreshold,cameraId,boxX,boxY,boxW,boxH,fps,eventType,zoneId,zoneName,zoneBin,isCorrect,dwellFrames,viaTrajectory,rawClassKey"
 
     static let timestampFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -68,6 +71,7 @@ struct DetectionLogEvent: Codable, Equatable, Sendable {
             isCorrect.map { $0 ? "true" : "false" } ?? "",
             dwellFrames.map(String.init) ?? "",
             viaTrajectory.map { $0 ? "true" : "false" } ?? "",
+            escape(rawClassKey ?? ""),
         ].joined(separator: ",")
     }
 
