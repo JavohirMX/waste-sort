@@ -36,6 +36,7 @@ struct ZoneEventRecordTests {
         let csvClosed = recordClosed.csvRow()
         #expect(csvClosed.contains("false,0.8800"))
         #expect(ZoneEventRecord.csvHeader.contains("binWasOpen"))
+        #expect(ZoneEventRecord.csvHeader.contains("viaTrajectory"))
     }
 
     @Test("Legacy JSON decoding defaults binWasOpen to true")
@@ -86,5 +87,33 @@ struct ZoneEventRecordTests {
         #expect(decoded.binWasOpen == false)
         #expect(decoded.className == "Can")
         #expect(decoded.isCorrect == true)
+        #expect(decoded.viaTrajectory == nil)
+    }
+
+    @Test("JSON roundtrip preserves viaTrajectory")
+    func viaTrajectoryRoundtrip() throws {
+        let record = ZoneEventRecord(
+            timestamp: Date(),
+            classKey: "organic",
+            className: "Banana",
+            zoneID: UUID(),
+            zoneName: "Organic",
+            zoneBinID: "organic",
+            confidence: 0.91,
+            isCorrect: true,
+            viaTrajectory: true,
+            binWasOpen: true
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601Fractional
+        let data = try encoder.encode(record)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601Fractional
+        let decoded = try decoder.decode(ZoneEventRecord.self, from: data)
+
+        #expect(decoded.viaTrajectory == true)
+        #expect(decoded.binWasOpen == true)
     }
 }

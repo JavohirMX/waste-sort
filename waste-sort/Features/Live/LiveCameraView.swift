@@ -528,11 +528,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             let tagFrame = aprilTagEnabled
                 ? aprilTagBinDetector.update(zones: currentZones, tagBindings: aprilTagBindings)
                 : AprilTagStatusFrame()
-            let zoneFrame = depositDetector.update(
-                tracks: tracked,
-                zones: currentZones,
-                closedZoneIDs: tagFrame.closedZoneIDs
-            )
+            depositDetector.binOpenState = FrameBinOpenState(tagFrame: tagFrame, zones: currentZones)
+            let zoneFrame = depositDetector.update(tracks: tracked, zones: currentZones)
             if recording.isRecording {
                 let fps = result.fps.flatMap { $0.isFinite ? Int($0.rounded()) : nil } ?? 0
                 recording.ingestLiveFrame(

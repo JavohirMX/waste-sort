@@ -12,6 +12,9 @@ nonisolated struct ZoneEventRecord: Codable, Identifiable, Equatable, Sendable {
     var zoneBinID: String
     var confidence: Double
     var isCorrect: Bool
+    /// True when the item was credited by where it was heading rather than by being seen
+    /// inside the zone. Optional so pre-upgrade JSONL still decodes.
+    var viaTrajectory: Bool? = nil
     var binWasOpen: Bool
 
     init(
@@ -24,6 +27,7 @@ nonisolated struct ZoneEventRecord: Codable, Identifiable, Equatable, Sendable {
         zoneBinID: String,
         confidence: Double,
         isCorrect: Bool,
+        viaTrajectory: Bool? = nil,
         binWasOpen: Bool = true
     ) {
         self.id = id
@@ -35,6 +39,7 @@ nonisolated struct ZoneEventRecord: Codable, Identifiable, Equatable, Sendable {
         self.zoneBinID = zoneBinID
         self.confidence = confidence
         self.isCorrect = isCorrect
+        self.viaTrajectory = viaTrajectory
         self.binWasOpen = binWasOpen
     }
 
@@ -48,12 +53,13 @@ nonisolated struct ZoneEventRecord: Codable, Identifiable, Equatable, Sendable {
             zoneBinID: deposit.zoneBinID,
             confidence: Double(deposit.conf),
             isCorrect: deposit.isCorrect,
+            viaTrajectory: deposit.viaTrajectory,
             binWasOpen: deposit.binWasOpen
         )
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, timestamp, classKey, className, zoneID, zoneName, zoneBinID, confidence, isCorrect, binWasOpen
+        case id, timestamp, classKey, className, zoneID, zoneName, zoneBinID, confidence, isCorrect, viaTrajectory, binWasOpen
     }
 
     init(from decoder: Decoder) throws {
@@ -67,13 +73,14 @@ nonisolated struct ZoneEventRecord: Codable, Identifiable, Equatable, Sendable {
         zoneBinID = try container.decode(String.self, forKey: .zoneBinID)
         confidence = try container.decode(Double.self, forKey: .confidence)
         isCorrect = try container.decode(Bool.self, forKey: .isCorrect)
+        viaTrajectory = try container.decodeIfPresent(Bool.self, forKey: .viaTrajectory)
         binWasOpen = try container.decodeIfPresent(Bool.self, forKey: .binWasOpen) ?? true
     }
 
     var bin: BinInfo { BinGuide.info(for: classKey) }
     var zoneBin: BinInfo { BinGuide.info(for: zoneBinID) }
 
-    static let csvHeader = "timestamp,classKey,className,zoneName,zoneBin,isCorrect,binWasOpen,confidence"
+    static let csvHeader = "timestamp,classKey,className,zoneName,zoneBin,isCorrect,binWasOpen,confidence,viaTrajectory"
 
     func csvRow() -> String {
         [
@@ -85,6 +92,7 @@ nonisolated struct ZoneEventRecord: Codable, Identifiable, Equatable, Sendable {
             isCorrect ? "true" : "false",
             binWasOpen ? "true" : "false",
             String(format: "%.4f", confidence),
+            viaTrajectory.map { $0 ? "true" : "false" } ?? "",
         ].joined(separator: ",")
     }
 

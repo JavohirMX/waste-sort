@@ -4,6 +4,17 @@ import Testing
 
 @testable import waste_sort
 
+/// Lid state under test control: everything reads closed unless it is listed as open.
+private nonisolated final class StubBinState: BinOpenStateProviding {
+    var openBins: Set<String>
+
+    init(open: Set<String> = []) {
+        openBins = open
+    }
+
+    func isOpen(binID: String) -> Bool { openBins.contains(binID) }
+}
+
 @Suite("ZoneDepositDetector")
 struct ZoneDepositDetectorTests {
     private let organicZone = DropZone(
@@ -18,12 +29,20 @@ struct ZoneDepositDetectorTests {
         corners: DropZone.rect(CGRect(x: 0.6, y: 0.0, width: 0.4, height: 1.0))
     )
 
+    /// A small quad in the corner, for the trajectory cases: the two zones above span the
+    /// whole frame height, so there is nowhere in them that counts as "clear of the bins".
+    private let mouthZone = DropZone(
+        name: "Organic mouth",
+        binID: BinGuide.organic.id,
+        corners: DropZone.rect(CGRect(x: 0.05, y: 0.60, width: 0.30, height: 0.30))
+    )
+
     private var zones: [DropZone] { [organicZone, residualZone] }
 
     private func track(
         id: Int = 1,
         classKey: String = "organic",
-        centerX: CGFloat,
+        at point: CGPoint,
         misses: Int = 0,
         rawClassKey: String = "",
         rawConf: Float = 0
@@ -33,7 +52,26 @@ struct ZoneDepositDetectorTests {
             classKey: classKey,
             className: classKey,
             conf: 0.9,
-            displayXywhn: CGRect(x: centerX - 0.05, y: 0.45, width: 0.1, height: 0.1),
+            displayXywhn: CGRect(x: point.x - 0.05, y: point.y - 0.05, width: 0.1, height: 0.1),
+            misses: misses,
+            rawClassKey: rawClassKey,
+            rawConf: rawConf
+        )
+    }
+
+    private func track(
+        id: Int = 1,
+        classKey: String = "organic",
+        centerX: CGFloat,
+        centerY: CGFloat = 0.5,
+        misses: Int = 0,
+        rawClassKey: String = "",
+        rawConf: Float = 0
+    ) -> TrackedDetection {
+        track(
+            id: id,
+            classKey: classKey,
+            at: CGPoint(x: centerX, y: centerY),
             misses: misses,
             rawClassKey: rawClassKey,
             rawConf: rawConf
@@ -48,10 +86,18 @@ struct ZoneDepositDetectorTests {
         private let zones: [DropZone]
         private let frame: CFAbsoluteTime = 1.0 / 30.0
 
-        init(zones: [DropZone], dwell: Int = 3, grace: CFAbsoluteTime = 1.4) {
+        init(
+            zones: [DropZone],
+            dwell: Int = 3,
+            grace: CFAbsoluteTime = 1.4,
+            binState: BinOpenStateProviding? = nil
+        ) {
             self.zones = zones
             detector.requiredDwellFrames = dwell
             detector.reacquireGrace = grace
+            if let binState {
+                detector.binOpenState = binState
+            }
         }
 
         @discardableResult
@@ -88,8 +134,19 @@ struct ZoneDepositDetectorTests {
         }
     }
 
-    private func clock(dwell: Int = 3, grace: CFAbsoluteTime = 1.4) -> Clock {
-        Clock(zones: zones, dwell: dwell, grace: grace)
+    private func clock(
+        dwell: Int = 3,
+        grace: CFAbsoluteTime = 1.4,
+        binState: BinOpenStateProviding? = nil
+    ) -> Clock {
+        Clock(zones: zones, dwell: dwell, grace: grace, binState: binState)
+    }
+
+    private func mouthClock(
+        grace: CFAbsoluteTime = 1.4,
+        binState: BinOpenStateProviding? = nil
+    ) -> Clock {
+        Clock(zones: [mouthZone], dwell: 3, grace: grace, binState: binState)
     }
 
     // MARK: - The basic throw
@@ -104,6 +161,8 @@ struct ZoneDepositDetectorTests {
         #expect(deposits.first?.zoneID == organicZone.id)
         #expect(deposits.first?.isCorrect == true)
         #expect(deposits.first?.trackSegments == 1)
+        #expect(deposits.first?.viaTrajectory == false)
+        #expect(deposits.first?.binWasOpen == true)
     }
 
     @Test("the deposit is withheld until the reacquire window has passed")
@@ -148,6 +207,39 @@ struct ZoneDepositDetectorTests {
         #expect(detector.update(tracks: [], zones: [], timestamp: 2).deposits.isEmpty)
     }
 
+    // MARK: - The bin has to be open
+
+    @Test("an item lost over a closed bin is not a throw")
+    func closedBinIsNotAThrow() {
+        let c = clock(binState: StubBinState(open: []))
+        c.tick([track(centerX: 0.5)])
+        c.tick([track(centerX: 0.2)], times: 4)
+        #expect(c.waitOutGrace().isEmpty)
+    }
+
+    @Test("the lid only has to read open at some point while the item is gone")
+    func lidMayLagTheThrow() {
+        // The lid signal is noisy and can lag the release by a few frames, so the whole
+        // settling window is inspected rather than the single frame the item vanished on.
+        let lids = StubBinState(open: [])
+        let c = clock(grace: 1.0, binState: lids)
+        c.tick([track(centerX: 0.5)])
+        c.tick([track(centerX: 0.2)], times: 4)
+        c.idle(seconds: 0.3)
+        lids.openBins = [BinGuide.organic.id]
+        c.tick([])
+        lids.openBins = []
+        #expect(c.waitOutGrace().count == 1)
+    }
+
+    @Test("only the target bin's lid matters")
+    func anotherBinBeingOpenDoesNotCount() {
+        let c = clock(binState: StubBinState(open: [BinGuide.residual.id]))
+        c.tick([track(centerX: 0.5)])
+        c.tick([track(centerX: 0.2)], times: 4)
+        #expect(c.waitOutGrace().isEmpty)
+    }
+
     // MARK: - Dropouts must not read as throws
 
     @Test("a momentary dropout inside the zone is not a throw")
@@ -170,9 +262,12 @@ struct ZoneDepositDetectorTests {
         c.tick([track(id: 1, centerX: 0.5)])
         c.tick([track(id: 1, centerX: 0.2)], times: 5)
         c.idle(seconds: 0.4)
-        // Reappears in the zone, then is carried back out and put down elsewhere.
+        // Reappears in the zone, then is carried back out and set down in the gap, moving
+        // down it rather than at either bin.
         c.tick([track(id: 2, centerX: 0.2)])
-        c.tick([track(id: 2, centerX: 0.5)], times: 3)
+        c.tick([track(id: 2, centerX: 0.5, centerY: 0.5)])
+        c.tick([track(id: 2, centerX: 0.5, centerY: 0.75)])
+        c.tick([track(id: 2, centerX: 0.5, centerY: 0.9)], times: 2)
         #expect(c.waitOutGrace().isEmpty)
     }
 
@@ -288,7 +383,7 @@ struct ZoneDepositDetectorTests {
         c.tick([track(id: 1, centerX: 0.2)], times: 2)
         // Second item appears right next to the first, and happens to come first in the array.
         c.tick([track(id: 2, centerX: 0.22), track(id: 1, centerX: 0.2)], times: 2)
-        // Two objects, and the newcomer was born inside the zone, so only one is credited.
+        // Two objects, and the newcomer was born inside the open bin, so only one is credited.
         let deposits = c.waitOutGrace()
         #expect(deposits.count == 1)
         #expect(deposits.first?.trackSegments == 1)
@@ -305,11 +400,26 @@ struct ZoneDepositDetectorTests {
 
     // MARK: - Bin contents
 
-    @Test("an item that only ever appeared inside a zone is never counted")
-    func materialisedInsideIsIgnored() {
-        let c = clock()
+    @Test("an item that only ever appeared inside an open bin is never counted")
+    func materialisedInsideAnOpenBinIsIgnored() {
+        let c = clock(binState: StubBinState(open: [BinGuide.organic.id]))
         c.tick([track(centerX: 0.2)], times: 20)
         #expect(c.waitOutGrace().isEmpty)
+    }
+
+    /// A shut lid cannot be where the item came from, so something resting on one arrived
+    /// from outside by definition and stays throwable.
+    @Test("an item that appeared on a closed bin is still throwable")
+    func materialisedOnAClosedBinStaysEligible() {
+        let lids = StubBinState(open: [])
+        let c = clock(binState: lids)
+        c.tick([track(centerX: 0.2)], times: 4)
+        // Someone opens the bin and in it goes.
+        lids.openBins = [BinGuide.organic.id]
+        c.tick([track(centerX: 0.2)], times: 2)
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.zoneID == organicZone.id)
     }
 
     @Test("a tracked item reappearing inside the zone can still be thrown")
@@ -326,6 +436,78 @@ struct ZoneDepositDetectorTests {
         #expect(deposits.first?.trackSegments == 2)
     }
 
+    // MARK: - Vanishing on the way in
+
+    @Test("an item lost just short of the bin, still moving into it, counts")
+    func vanishingOnApproachCounts() {
+        let c = mouthClock()
+        c.tick([track(at: CGPoint(x: 0.60, y: 0.35))])
+        c.tick([track(at: CGPoint(x: 0.53, y: 0.42))])
+        c.tick([track(at: CGPoint(x: 0.46, y: 0.49))])
+        // Two centimetres short of the mouth when the hand hides it.
+        c.tick([track(at: CGPoint(x: 0.42, y: 0.53))])
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.zoneID == mouthZone.id)
+        #expect(deposits.first?.viaTrajectory == true)
+        #expect(deposits.first?.dwellFrames == 0)
+    }
+
+    @Test("an item lost while moving away from the bin does not count")
+    func vanishingWhileLeavingIsNotAThrow() {
+        let c = mouthClock()
+        c.tick([track(at: CGPoint(x: 0.46, y: 0.49))])
+        c.tick([track(at: CGPoint(x: 0.53, y: 0.42))])
+        c.tick([track(at: CGPoint(x: 0.60, y: 0.35))])
+        c.tick([track(at: CGPoint(x: 0.67, y: 0.28))])
+        #expect(c.waitOutGrace().isEmpty)
+    }
+
+    @Test("an item lost too far out to reach the bin does not count")
+    func vanishingOutOfReachIsNotAThrow() {
+        let c = mouthClock()
+        c.tick([track(at: CGPoint(x: 0.90, y: 0.20))])
+        c.tick([track(at: CGPoint(x: 0.83, y: 0.27))])
+        c.tick([track(at: CGPoint(x: 0.76, y: 0.34))])
+        // Pointed at the bin, but half a frame away from it.
+        #expect(c.waitOutGrace().isEmpty)
+    }
+
+    @Test("an item set down beside the bin and then lost does not count")
+    func stationaryLossIsNotAThrow() {
+        let c = mouthClock()
+        c.tick([track(at: CGPoint(x: 0.42, y: 0.53))], times: 6)
+        #expect(c.waitOutGrace().isEmpty)
+    }
+
+    @Test("a two-frame flicker beside the bin does not count")
+    func briefFlickerOnApproachIsNotAThrow() {
+        let c = mouthClock()
+        c.tick([track(at: CGPoint(x: 0.49, y: 0.46))])
+        c.tick([track(at: CGPoint(x: 0.42, y: 0.53))])
+        #expect(c.waitOutGrace().isEmpty)
+    }
+
+    @Test("an approach into a closed bin does not count either")
+    func approachIntoAClosedBinIsNotAThrow() {
+        let c = mouthClock(binState: StubBinState(open: []))
+        c.tick([track(at: CGPoint(x: 0.60, y: 0.35))])
+        c.tick([track(at: CGPoint(x: 0.53, y: 0.42))])
+        c.tick([track(at: CGPoint(x: 0.46, y: 0.49))])
+        c.tick([track(at: CGPoint(x: 0.42, y: 0.53))])
+        #expect(c.waitOutGrace().isEmpty)
+    }
+
+    @Test("a zone the item is heading into reports as settling")
+    func approachReportsSettling() {
+        let c = mouthClock()
+        c.tick([track(at: CGPoint(x: 0.60, y: 0.35))])
+        c.tick([track(at: CGPoint(x: 0.53, y: 0.42))])
+        c.tick([track(at: CGPoint(x: 0.46, y: 0.49))])
+        c.tick([track(at: CGPoint(x: 0.42, y: 0.53))])
+        #expect(c.tick([]).settlingZoneIDs == [mouthZone.id])
+    }
+
     // MARK: - Dwell
 
     @Test("passing over a zone without dwelling is not a throw")
@@ -333,7 +515,10 @@ struct ZoneDepositDetectorTests {
         let c = clock(dwell: 4)
         c.tick([track(centerX: 0.5)])
         c.tick([track(centerX: 0.2)], times: 3)
-        c.tick([track(centerX: 0.5)], times: 3)
+        // Back out into the gap and away down it, so the last motion points at no bin either.
+        c.tick([track(centerX: 0.5, centerY: 0.5)])
+        c.tick([track(centerX: 0.5, centerY: 0.7)])
+        c.tick([track(centerX: 0.5, centerY: 0.9)])
         #expect(c.waitOutGrace().isEmpty)
     }
 
@@ -412,69 +597,5 @@ struct ZoneDepositDetectorTests {
         c.tick([track(centerX: 0.2)], times: 3)
         let settling = c.tick([])
         #expect(settling.settlingZoneIDs.isEmpty)
-    }
-
-    @Test("deposit records binWasOpen true when zone is open")
-    func depositWithOpenBin() {
-        let detector = ZoneDepositDetector()
-        detector.requiredDwellFrames = 2
-        detector.reacquireGrace = 0.5
-
-        let trackOutside = track(id: 1, classKey: "organic", centerX: 0.5)
-        _ = detector.update(tracks: [trackOutside], zones: zones, closedZoneIDs: [], timestamp: 100.0)
-
-        let trackInZone = track(id: 1, classKey: "organic", centerX: 0.2)
-        _ = detector.update(tracks: [trackInZone], zones: zones, closedZoneIDs: [], timestamp: 100.1)
-        _ = detector.update(tracks: [trackInZone], zones: zones, closedZoneIDs: [], timestamp: 100.2)
-
-        // Item vanishes; start grace period
-        _ = detector.update(tracks: [], zones: zones, closedZoneIDs: [], timestamp: 100.3)
-        // Grace period elapses (> 0.5s)
-        let result = detector.update(tracks: [], zones: zones, closedZoneIDs: [], timestamp: 101.0)
-        #expect(result.deposits.count == 1)
-        #expect(result.deposits.first?.binWasOpen == true)
-    }
-
-    @Test("deposit records binWasOpen false when zone is in closedZoneIDs")
-    func depositWithClosedBin() {
-        let detector = ZoneDepositDetector()
-        detector.requiredDwellFrames = 2
-        detector.reacquireGrace = 0.5
-
-        let trackOutside = track(id: 2, classKey: "organic", centerX: 0.5)
-        _ = detector.update(tracks: [trackOutside], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.0)
-
-        let trackInZone = track(id: 2, classKey: "organic", centerX: 0.2)
-        _ = detector.update(tracks: [trackInZone], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.1)
-        _ = detector.update(tracks: [trackInZone], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.2)
-
-        // Item vanishes; start grace period
-        _ = detector.update(tracks: [], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.3)
-        // Grace period elapses (> 0.5s) while zone is closed
-        let result = detector.update(tracks: [], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 101.0)
-        #expect(result.deposits.count == 1)
-        #expect(result.deposits.first?.binWasOpen == false)
-    }
-
-    @Test("deposit remembers binWasOpen true even if lid closes during settlement grace period")
-    func depositLidClosesDuringGracePeriod() {
-        let detector = ZoneDepositDetector()
-        detector.requiredDwellFrames = 2
-        detector.reacquireGrace = 0.5
-
-        // Item is seen outside, then dwells in zone while bin is OPEN (closedZoneIDs is empty)
-        let trackOutside = track(id: 3, classKey: "organic", centerX: 0.5)
-        _ = detector.update(tracks: [trackOutside], zones: zones, closedZoneIDs: [], timestamp: 100.0)
-
-        let trackInZone = track(id: 3, classKey: "organic", centerX: 0.2)
-        _ = detector.update(tracks: [trackInZone], zones: zones, closedZoneIDs: [], timestamp: 100.1)
-        _ = detector.update(tracks: [trackInZone], zones: zones, closedZoneIDs: [], timestamp: 100.2)
-
-        // Item vanishes and user shuts the lid immediately (zone is now closed)
-        _ = detector.update(tracks: [], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.3)
-        // Settlement timer elapses at 101.0 while zone is closed
-        let result = detector.update(tracks: [], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 101.0)
-        #expect(result.deposits.count == 1)
-        #expect(result.deposits.first?.binWasOpen == true)
     }
 }

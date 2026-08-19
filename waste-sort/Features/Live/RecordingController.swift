@@ -244,7 +244,8 @@ final class RecordingController: NSObject, ObservableObject {
                     zoneName: deposit.zoneName,
                     zoneBin: deposit.zoneBinID,
                     isCorrect: deposit.isCorrect,
-                    dwellFrames: deposit.dwellFrames
+                    dwellFrames: deposit.dwellFrames,
+                    viaTrajectory: deposit.viaTrajectory
                 )
             )
         }
