@@ -17,7 +17,7 @@ struct CategoryPresenceTests {
 
     @Test func binGuideMapsCleanInorganic() {
         let info = BinGuide.info(for: "clean_inorganic")
-        #expect(info.displayName == "INORGANIC")
+        #expect(info.displayName == "RECYCLABLE")
         #expect(info.symbolName == "arrow.3.trianglepath")
     }
 }

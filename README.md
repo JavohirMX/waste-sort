@@ -18,7 +18,7 @@
   <img alt="On-device" src="https://img.shields.io/badge/Inference-on--device-22C55E">
 </p>
 
-Sortla is a kiosk-style camera app. Mount an iPhone or iPad above a waste station (or plug in a USB-C webcam), and it watches items in view, labels each one, and lights up the matching bin: **organic**, **residual**, or **clean recyclables**.
+Sortla is a kiosk-style camera app. Mount an iPhone or iPad above a waste station (or plug in a USB-C webcam), and it watches items in view, labels each one, and lights up the matching bin: **organic**, **residual**, or **recyclable**.
 
 Inference runs entirely on device. Nothing is uploaded.
 

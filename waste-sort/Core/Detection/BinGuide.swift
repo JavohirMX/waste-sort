@@ -41,10 +41,10 @@ nonisolated enum BinGuide {
 
     static let cleanInorganic = BinInfo(
         id: "clean_inorganic",
-        title: "inorganic",
-        displayName: "INORGANIC",
-        category: "inorganic",
-        bin: "Blue / Yellow Bin (Clean Recyclables)",
+        title: "recyclable",
+        displayName: "RECYCLABLE",
+        category: "recyclable",
+        bin: "Blue / Yellow Bin (Recyclable)",
         color: Color(red: 234 / 255, green: 179 / 255, blue: 8 / 255),
         idleColor: Color(red: 196 / 255, green: 164 / 255, blue: 106 / 255),
         symbolName: "arrow.3.trianglepath",

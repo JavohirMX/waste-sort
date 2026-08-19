@@ -150,7 +150,7 @@ nonisolated enum OverlayBinStyle {
         switch normalized(classKey) {
         case "organic": return "ORGANIC"
         case "residual": return "RESIDUAL"
-        case "clean_inorganic", "cleaninorganic", "inorganic": return "INORGANIC"
+        case "clean_inorganic", "cleaninorganic", "inorganic": return "RECYCLABLE"
         default: return "UNKNOWN"
         }
     }
