@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 enum WasteSortConfig {
-    static let defaultConfidence = 0.6
+    static let defaultConfidence = 0.4
     static let defaultIou = 0.7
     static let defaultMaxItems = 100
 
@@ -14,11 +14,12 @@ enum WasteSortConfig {
     static let defaultEmaAlpha = 0.4
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8
-    static let defaultModelName = WasteSortModel.bestv31.resourceName
+    static let defaultModelName = WasteSortModel.bestv35.resourceName
     static let defaultLiveRotation = LivePreviewRotation.oneEighty
     static let defaultLiveMirror = false
     static let defaultShowConfidence = false
-    static let defaultCTAStyle = CTAStyle.off
+    static let defaultShowZoneOverlay = true
+    static let defaultCTAStyle = CTAStyle.arrows
     static let defaultBrightness = 0.0
     static let defaultContrast = 1.0
     static let defaultSaturation = 1.0
@@ -123,6 +124,9 @@ final class AppSettings: ObservableObject {
     @Published var showConfidence: Bool {
         didSet { persist(showConfidence, key: Keys.showConfidence) }
     }
+    @Published var showZoneOverlay: Bool {
+        didSet { persist(showZoneOverlay, key: Keys.showZoneOverlay) }
+    }
     @Published var ctaStyle: CTAStyle {
         didSet { persist(ctaStyle.rawValue, key: Keys.ctaStyle) }
     }
@@ -199,6 +203,7 @@ final class AppSettings: ObservableObject {
         static let liveRotation = "settings.liveRotation"
         static let liveMirror = "settings.liveMirror"
         static let showConfidence = "settings.showConfidence"
+        static let showZoneOverlay = "settings.showZoneOverlay"
         static let ctaStyle = "settings.ctaStyle"
         static let brightness = "settings.brightness"
         static let contrast = "settings.contrast"
@@ -241,6 +246,11 @@ final class AppSettings: ObservableObject {
         )
         liveMirror = Self.loadBool(defaults, Keys.liveMirror, WasteSortConfig.defaultLiveMirror)
         showConfidence = Self.loadBool(defaults, Keys.showConfidence, WasteSortConfig.defaultShowConfidence)
+        showZoneOverlay = Self.loadBool(
+            defaults,
+            Keys.showZoneOverlay,
+            WasteSortConfig.defaultShowZoneOverlay
+        )
         ctaStyle = CTAStyle(
             rawValue: Self.loadString(defaults, Keys.ctaStyle, WasteSortConfig.defaultCTAStyle.rawValue)
         ) ?? WasteSortConfig.defaultCTAStyle
@@ -278,6 +288,7 @@ final class AppSettings: ObservableObject {
         liveRotation = WasteSortConfig.defaultLiveRotation
         liveMirror = WasteSortConfig.defaultLiveMirror
         showConfidence = WasteSortConfig.defaultShowConfidence
+        showZoneOverlay = WasteSortConfig.defaultShowZoneOverlay
         ctaStyle = WasteSortConfig.defaultCTAStyle
         autoRecordOnOpen = WasteSortConfig.defaultAutoRecordOnOpen
         resetCaptureToDefaults()

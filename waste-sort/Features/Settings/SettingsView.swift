@@ -196,6 +196,8 @@ struct SettingsView: View {
     @ViewBuilder
     private var zonesSection: some View {
         Section {
+            Toggle("Show zones", isOn: $settings.showZoneOverlay)
+
             ForEach(zoneStore.zones) { zone in
                 ZoneSettingsRow(zone: zone) { zoneStore.update($0) }
             }
@@ -238,7 +240,7 @@ struct SettingsView: View {
             Text("Zones")
                 .foregroundStyle(BinGuide.cleanInorganic.color)
         } footer: {
-            Text("Draw a zone over each real bin. On the live feed a zone is invisible until something is in it: dashed while an item is inside, tighter dashes once it has dwelt long enough, filled faintly while a vanished item waits out the reacquire window, then filled solid for a moment when it is recorded.\n\nAn item is recorded only if it was seen outside the zones at some point, stayed inside one for the dwell frames above, and then stayed gone for the reacquire window. Tracking survives dropouts and relabelling, so an item that blinks and comes back inside the zone still counts — unlike one that was never tracked and simply appeared there, which is read as waste already in the bin.")
+            Text("Draw a zone over each real bin. With Show zones on, a zone stays invisible until something is in it: dashed while an item is inside, tighter dashes once it has dwelt long enough, filled faintly while a vanished item waits out the reacquire window, then filled solid for a moment when it is recorded. Turn it off to hide those overlays; items are still recorded, and Edit zones on camera still shows the outlines.\n\nAn item is recorded only if it was seen outside the zones at some point, stayed inside one for the dwell frames above, and then stayed gone for the reacquire window. Tracking survives dropouts and relabelling, so an item that blinks and comes back inside the zone still counts — unlike one that was never tracked and simply appeared there, which is read as waste already in the bin.")
         }
         .confirmationDialog(
             "Reset zones to defaults?",

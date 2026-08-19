@@ -113,6 +113,7 @@ struct LiveCameraView: View {
                         rotation: settings.liveRotation,
                         mirror: settings.liveMirror,
                         isEditing: zoneStore.isEditingZones,
+                        showZones: settings.showZoneOverlay,
                         selectedZoneID: selectedZoneID,
                         flashedZoneIDs: flashedZoneIDs,
                         occupiedZoneIDs: occupiedZoneIDs,

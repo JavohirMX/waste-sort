@@ -6,7 +6,8 @@ import SwiftUI
 /// rotation/mirror/aspect-fill mapping as the detection boxes.
 ///
 /// Outside calibration the zones stay hidden so they do not clutter the live feed —
-/// only a zone that has just taken a deposit flashes up briefly as confirmation.
+/// only a zone that is occupied, settling, or has just taken a deposit is drawn.
+/// `showZones` hides even those, while editing still shows every outline.
 struct ZoneOverlayView: View {
     let zones: [DropZone]
     let imageSize: CGSize
@@ -14,6 +15,7 @@ struct ZoneOverlayView: View {
     var rotation: LivePreviewRotation = .zero
     var mirror = false
     var isEditing = false
+    var showZones = true
     var selectedZoneID: UUID?
     /// Zones that just took a deposit — shown briefly even when calibration is off.
     var flashedZoneIDs: Set<UUID> = []
@@ -51,6 +53,7 @@ struct ZoneOverlayView: View {
 
     private var visibleZones: [DropZone] {
         guard !isEditing else { return zones }
+        guard showZones else { return [] }
         return zones.filter {
             flashedZoneIDs.contains($0.id)
                 || occupiedZoneIDs.contains($0.id)
