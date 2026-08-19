@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject private var recording: RecordingController
     @EnvironmentObject private var zoneStore: ZoneStore
     @EnvironmentObject private var history: ZoneEventHistoryStore
+    @EnvironmentObject private var aprilTagStore: AprilTagBindingStore
     @Environment(\.dismiss) private var dismiss
     @State private var cameraOptions: [CameraOption] = CameraDeviceCatalog.availableOptions()
     @State private var showPhotoSort = false
@@ -19,6 +20,7 @@ struct SettingsView: View {
                 cameraSection
                 captureSection
                 zonesSection
+                aprilTagSection
                 historySection
                 photoSection
                 liveOverlaySection
@@ -34,12 +36,12 @@ struct SettingsView: View {
                 }
             }
             .font(.system(.body, design: .default))
-            .tint(BinGuide.organic.color)
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(BinGuide.residual.color.opacity(0.92), for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
             .onAppear { refreshCameras() }
             .onReceive(
                 NotificationCenter.default.publisher(for: AVCaptureDevice.wasConnectedNotification)
@@ -71,16 +73,9 @@ struct SettingsView: View {
     @ViewBuilder
     private var recordingSection: some View {
         Section {
-            Toggle("Start recording when app opens", isOn: $settings.autoRecordOnOpen)
-                .onChange(of: settings.autoRecordOnOpen) { _, isOn in
-                    if isOn {
-                        recording.considerAutoStart(ignoringManualStop: true)
-                    }
-                }
-
             if recording.canStop {
                 Button("Stop recording", role: .destructive) {
-                    recording.stopRecording(userInitiated: true)
+                    recording.stopRecording()
                 }
                 HStack(spacing: 8) {
                     Circle()
@@ -96,6 +91,8 @@ struct SettingsView: View {
                 }
                 .disabled(!recording.canStart)
             }
+
+            Toggle("Auto-record on open", isOn: $settings.autoRecordOnOpen)
 
             if let status = recording.statusMessage {
                 Text(status)
@@ -199,6 +196,13 @@ struct SettingsView: View {
     @ViewBuilder
     private var zonesSection: some View {
         Section {
+            ForEach(zoneStore.zones) { zone in
+                ZoneSettingsRow(zone: zone) { zoneStore.update($0) }
+            }
+            .onDelete { offsets in
+                for index in offsets { zoneStore.remove(id: zoneStore.zones[index].id) }
+            }
+
             SettingsIntSliderRow(
                 title: "Dwell frames",
                 help: "How many frames the model must actually see an item inside a zone before it can be counted. Frames where the box is frozen after a lost detection do not count. Higher = fewer accidental counts when something passes over a bin.",
@@ -227,12 +231,14 @@ struct SettingsView: View {
             }
             .disabled(zoneStore.zones.isEmpty)
 
+            Button("Add zone") { zoneStore.addZone() }
+
             Button("Reset zones", role: .destructive) { showZoneResetConfirm = true }
         } header: {
             Text("Zones")
                 .foregroundStyle(BinGuide.cleanInorganic.color)
         } footer: {
-            Text("Organic, Residual, and Inorganic bins are fixed. Edit on camera to draw each zone over a real bin. An item counts only if it was seen outside the zones, stayed inside one for the dwell frames, then stayed gone for the reacquire window.")
+            Text("Draw a zone over each real bin. On the live feed a zone is invisible until something is in it: dashed while an item is inside, tighter dashes once it has dwelt long enough, filled faintly while a vanished item waits out the reacquire window, then filled solid for a moment when it is recorded.\n\nAn item is recorded only if it was seen outside the zones at some point, stayed inside one for the dwell frames above, and then stayed gone for the reacquire window. Tracking survives dropouts and relabelling, so an item that blinks and comes back inside the zone still counts — unlike one that was never tracked and simply appeared there, which is read as waste already in the bin.")
         }
         .confirmationDialog(
             "Reset zones to defaults?",
@@ -246,6 +252,49 @@ struct SettingsView: View {
                 )
             }
             Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    @ViewBuilder
+    private var aprilTagSection: some View {
+        Section {
+            Toggle("Enable AprilTag detection", isOn: $aprilTagStore.isEnabled)
+
+            if aprilTagStore.isEnabled {
+                Toggle("Show debug overlay", isOn: $aprilTagStore.showDebugOverlay)
+
+                if !zoneStore.zones.isEmpty {
+                    ForEach(zoneStore.zones) { zone in
+                        HStack {
+                            Image(systemName: zone.bin.symbolName)
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 24, height: 24)
+                                .background(zone.bin.color, in: Circle())
+
+                            Text(zone.name)
+                            Spacer()
+                            Picker("Tag", selection: Binding(
+                                get: {
+                                    aprilTagStore.bindings[zone.id]
+                                        ?? (zoneStore.zones.firstIndex(where: { $0.id == zone.id }) ?? 0)
+                                },
+                                set: { aprilTagStore.setTagID($0, for: zone.id) }
+                            )) {
+                                ForEach(0..<10) { tagID in
+                                    Text("Tag #\(tagID)").tag(tagID)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("AprilTag Openness")
+                .foregroundStyle(BinGuide.organic.color)
+        } footer: {
+            Text("Uses camera to detect when bins are physically opened via inside-mounted tag16h5 AprilTags. When missing for >0.30s, the bin is marked closed.")
         }
     }
 
@@ -506,10 +555,47 @@ private struct SettingsIntSliderRow: View {
     }
 }
 
+private struct ZoneSettingsRow: View {
+    let zone: DropZone
+    var onChange: (DropZone) -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: zone.bin.symbolName)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(zone.bin.color, in: Circle())
+
+            TextField(
+                "Zone name",
+                text: Binding(
+                    get: { zone.name },
+                    set: { var copy = zone; copy.name = $0; onChange(copy) }
+                )
+            )
+
+            Picker(
+                "",
+                selection: Binding(
+                    get: { zone.binID },
+                    set: { var copy = zone; copy.binID = $0; onChange(copy) }
+                )
+            ) {
+                ForEach(BinGuide.all) { bin in
+                    Text(bin.displayName).tag(bin.id)
+                }
+            }
+            .labelsHidden()
+        }
+    }
+}
+
 #Preview {
     SettingsView()
         .environmentObject(AppSettings.shared)
         .environmentObject(RecordingController.shared)
         .environmentObject(ZoneStore.shared)
         .environmentObject(ZoneEventHistoryStore.shared)
+        .environmentObject(AprilTagBindingStore.shared)
 }

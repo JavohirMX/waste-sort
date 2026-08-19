@@ -22,6 +22,8 @@ nonisolated struct ZoneDeposit: Identifiable, Equatable, Sendable {
     /// Distinct classes the model reported over the object's life. Above 1 means the
     /// category below is a vote, not a single confident answer.
     let classesSeen: Int
+    /// True when the bin was physically open at the time of deposit.
+    var binWasOpen: Bool = true
 
     /// True when the detected category matches the bin the item went into.
     var isCorrect: Bool { BinGuide.info(for: classKey).id == zoneBinID }
@@ -99,6 +101,7 @@ nonisolated final class ZoneDepositDetector {
         var zoneName = ""
         var zoneBinID = ""
         var dwell = 0
+        var wasOpenWhileInZone = true
         var last: Sighting
         /// Last sighting that was inside a zone, which is what a deposit reports.
         var lastInZone: Sighting?
@@ -141,6 +144,7 @@ nonisolated final class ZoneDepositDetector {
     func update(
         tracks: [TrackedDetection],
         zones: [DropZone],
+        closedZoneIDs: Set<UUID> = [],
         timestamp: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
     ) -> ZoneFrameResult {
         guard !zones.isEmpty else {
@@ -200,6 +204,7 @@ nonisolated final class ZoneDepositDetector {
 
             occupied.insert(zone.id)
             object.lastInZone = sighting
+            object.wasOpenWhileInZone = !closedZoneIDs.contains(zone.id)
 
             if object.zoneID != zone.id {
                 object.zoneID = zone.id
@@ -324,7 +329,8 @@ nonisolated final class ZoneDepositDetector {
                 zoneBinID: object.zoneBinID,
                 dwellFrames: object.dwell,
                 trackSegments: object.trackSegments,
-                classesSeen: object.classWeights.count
+                classesSeen: object.classWeights.count,
+                binWasOpen: object.wasOpenWhileInZone
             ),
         ]
     }
