@@ -87,11 +87,13 @@ struct AprilTagDebugOverlay: View {
     }
 
     private func toViewSpace(_ normalizedPoint: CGPoint) -> CGPoint {
-        var norm = normalizedPoint
-        if mirror {
-            norm = CGPoint(x: 1.0 - norm.x, y: norm.y)
-        }
-        norm = DetectionGeometry.rotateNormalized(norm, by: rotation)
-        return CGPoint(x: norm.x * viewSize.width, y: norm.y * viewSize.height)
+        DetectionGeometry.mapDisplayPoint(
+            normalized: normalizedPoint,
+            imageSize: imageSize,
+            viewSize: viewSize,
+            rotation: rotation,
+            mirror: mirror,
+            useAspectFill: true
+        )
     }
 }

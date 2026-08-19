@@ -101,6 +101,7 @@ nonisolated final class ZoneDepositDetector {
         var zoneName = ""
         var zoneBinID = ""
         var dwell = 0
+        var wasOpenWhileInZone = true
         var last: Sighting
         /// Last sighting that was inside a zone, which is what a deposit reports.
         var lastInZone: Sighting?
@@ -203,6 +204,7 @@ nonisolated final class ZoneDepositDetector {
 
             occupied.insert(zone.id)
             object.lastInZone = sighting
+            object.wasOpenWhileInZone = !closedZoneIDs.contains(zone.id)
 
             if object.zoneID != zone.id {
                 object.zoneID = zone.id
@@ -228,7 +230,7 @@ nonisolated final class ZoneDepositDetector {
         }
         var deposits: [ZoneDeposit] = []
         for object in settled {
-            deposits.append(contentsOf: deposit(from: object, closedZoneIDs: closedZoneIDs))
+            deposits.append(contentsOf: deposit(from: object))
         }
         if !settled.isEmpty {
             let dead = Set(settled.map(ObjectIdentifier.init))
@@ -306,7 +308,7 @@ nonisolated final class ZoneDepositDetector {
         return created
     }
 
-    private func deposit(from object: TrackedObject, closedZoneIDs: Set<UUID> = []) -> [ZoneDeposit] {
+    private func deposit(from object: TrackedObject) -> [ZoneDeposit] {
         guard object.everSeenOutside,
               let zoneID = object.zoneID,
               let inZone = object.lastInZone,
@@ -314,7 +316,6 @@ nonisolated final class ZoneDepositDetector {
         else { return [] }
 
         let verdict = object.verdictClass
-        let wasOpen = !closedZoneIDs.contains(zoneID)
         return [
             ZoneDeposit(
                 id: object.id,
@@ -329,7 +330,7 @@ nonisolated final class ZoneDepositDetector {
                 dwellFrames: object.dwell,
                 trackSegments: object.trackSegments,
                 classesSeen: object.classWeights.count,
-                binWasOpen: wasOpen
+                binWasOpen: object.wasOpenWhileInZone
             ),
         ]
     }

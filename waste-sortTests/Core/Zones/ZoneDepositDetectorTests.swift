@@ -402,12 +402,12 @@ struct ZoneDepositDetectorTests {
         detector.requiredDwellFrames = 2
         detector.reacquireGrace = 0.5
 
-        let t = track(id: 1, classKey: "organic", centerX: 0.5)
-        _ = detector.update(tracks: [t], zones: zones, closedZoneIDs: [], timestamp: 100.0)
+        let trackOutside = track(id: 1, classKey: "organic", centerX: 0.5)
+        _ = detector.update(tracks: [trackOutside], zones: zones, closedZoneIDs: [], timestamp: 100.0)
 
-        let tInZone = track(id: 1, classKey: "organic", centerX: 0.2)
-        _ = detector.update(tracks: [tInZone], zones: zones, closedZoneIDs: [], timestamp: 100.1)
-        _ = detector.update(tracks: [tInZone], zones: zones, closedZoneIDs: [], timestamp: 100.2)
+        let trackInZone = track(id: 1, classKey: "organic", centerX: 0.2)
+        _ = detector.update(tracks: [trackInZone], zones: zones, closedZoneIDs: [], timestamp: 100.1)
+        _ = detector.update(tracks: [trackInZone], zones: zones, closedZoneIDs: [], timestamp: 100.2)
 
         // Item vanishes; start grace period
         _ = detector.update(tracks: [], zones: zones, closedZoneIDs: [], timestamp: 100.3)
@@ -423,12 +423,12 @@ struct ZoneDepositDetectorTests {
         detector.requiredDwellFrames = 2
         detector.reacquireGrace = 0.5
 
-        let t = track(id: 2, classKey: "organic", centerX: 0.5)
-        _ = detector.update(tracks: [t], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.0)
+        let trackOutside = track(id: 2, classKey: "organic", centerX: 0.5)
+        _ = detector.update(tracks: [trackOutside], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.0)
 
-        let tInZone = track(id: 2, classKey: "organic", centerX: 0.2)
-        _ = detector.update(tracks: [tInZone], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.1)
-        _ = detector.update(tracks: [tInZone], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.2)
+        let trackInZone = track(id: 2, classKey: "organic", centerX: 0.2)
+        _ = detector.update(tracks: [trackInZone], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.1)
+        _ = detector.update(tracks: [trackInZone], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.2)
 
         // Item vanishes; start grace period
         _ = detector.update(tracks: [], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.3)
@@ -436,5 +436,27 @@ struct ZoneDepositDetectorTests {
         let result = detector.update(tracks: [], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 101.0)
         #expect(result.deposits.count == 1)
         #expect(result.deposits.first?.binWasOpen == false)
+    }
+
+    @Test("deposit remembers binWasOpen true even if lid closes during settlement grace period")
+    func depositLidClosesDuringGracePeriod() {
+        let detector = ZoneDepositDetector()
+        detector.requiredDwellFrames = 2
+        detector.reacquireGrace = 0.5
+
+        // Item is seen outside, then dwells in zone while bin is OPEN (closedZoneIDs is empty)
+        let trackOutside = track(id: 3, classKey: "organic", centerX: 0.5)
+        _ = detector.update(tracks: [trackOutside], zones: zones, closedZoneIDs: [], timestamp: 100.0)
+
+        let trackInZone = track(id: 3, classKey: "organic", centerX: 0.2)
+        _ = detector.update(tracks: [trackInZone], zones: zones, closedZoneIDs: [], timestamp: 100.1)
+        _ = detector.update(tracks: [trackInZone], zones: zones, closedZoneIDs: [], timestamp: 100.2)
+
+        // Item vanishes and user shuts the lid immediately (zone is now closed)
+        _ = detector.update(tracks: [], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.3)
+        // Settlement timer elapses at 101.0 while zone is closed
+        let result = detector.update(tracks: [], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 101.0)
+        #expect(result.deposits.count == 1)
+        #expect(result.deposits.first?.binWasOpen == true)
     }
 }
