@@ -9,8 +9,8 @@ enum WasteSortConfig {
     static let defaultConfirmHits = 2
     static let defaultMaxMisses = 3
     static let defaultTrackerIou = 0.3
-    static let defaultCrossClassIou = 0.35
-    static let defaultClassSwitchHits = 8
+    static let defaultCrossClassIou = 0.30
+    static let defaultClassLockWindow = 0.40
     static let defaultEmaAlpha = 0.4
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8
@@ -36,6 +36,8 @@ struct RuntimeSettings: Equatable {
     var confirmHits: Int
     var maxMisses: Int
     var trackerIou: Double
+    var crossClassIou: Double
+    var classLockWindow: Double
     var emaAlpha: Double
     var boxInflate: Double
     var maxSpeed: Double
@@ -88,6 +90,12 @@ final class AppSettings: ObservableObject {
     }
     @Published var trackerIou: Double {
         didSet { persist(trackerIou, key: Keys.trackerIou) }
+    }
+    @Published var crossClassIou: Double {
+        didSet { persist(crossClassIou, key: Keys.crossClassIou) }
+    }
+    @Published var classLockWindow: Double {
+        didSet { persist(classLockWindow, key: Keys.classLockWindow) }
     }
     @Published var emaAlpha: Double {
         didSet { persist(emaAlpha, key: Keys.emaAlpha) }
@@ -152,6 +160,8 @@ final class AppSettings: ObservableObject {
             confirmHits: confirmHits,
             maxMisses: maxMisses,
             trackerIou: trackerIou,
+            crossClassIou: crossClassIou,
+            classLockWindow: classLockWindow,
             emaAlpha: emaAlpha,
             boxInflate: boxInflate,
             maxSpeed: maxSpeed,
@@ -178,6 +188,8 @@ final class AppSettings: ObservableObject {
         /// v2 picks up shorter ghost lifetime without requiring a manual reset.
         static let maxMisses = "settings.maxMisses.v2"
         static let trackerIou = "settings.trackerIou"
+        static let crossClassIou = "settings.crossClassIou"
+        static let classLockWindow = "settings.classLockWindow"
         static let emaAlpha = "settings.emaAlpha"
         static let boxInflate = "settings.boxInflate"
         /// v2 picks up lower association speed without requiring a manual reset.
@@ -205,6 +217,12 @@ final class AppSettings: ObservableObject {
         confirmHits = Self.loadInt(defaults, Keys.confirmHits, WasteSortConfig.defaultConfirmHits)
         maxMisses = Self.loadInt(defaults, Keys.maxMisses, WasteSortConfig.defaultMaxMisses)
         trackerIou = Self.loadDouble(defaults, Keys.trackerIou, WasteSortConfig.defaultTrackerIou)
+        crossClassIou = Self.loadDouble(defaults, Keys.crossClassIou, WasteSortConfig.defaultCrossClassIou)
+        classLockWindow = Self.loadDouble(
+            defaults,
+            Keys.classLockWindow,
+            WasteSortConfig.defaultClassLockWindow
+        )
         emaAlpha = Self.loadDouble(defaults, Keys.emaAlpha, WasteSortConfig.defaultEmaAlpha)
         boxInflate = Self.loadDouble(defaults, Keys.boxInflate, WasteSortConfig.defaultBoxInflate)
         maxSpeed = Self.loadDouble(defaults, Keys.maxSpeed, WasteSortConfig.defaultMaxSpeed)
@@ -250,6 +268,8 @@ final class AppSettings: ObservableObject {
         confirmHits = WasteSortConfig.defaultConfirmHits
         maxMisses = WasteSortConfig.defaultMaxMisses
         trackerIou = WasteSortConfig.defaultTrackerIou
+        crossClassIou = WasteSortConfig.defaultCrossClassIou
+        classLockWindow = WasteSortConfig.defaultClassLockWindow
         emaAlpha = WasteSortConfig.defaultEmaAlpha
         boxInflate = WasteSortConfig.defaultBoxInflate
         maxSpeed = WasteSortConfig.defaultMaxSpeed

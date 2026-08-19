@@ -16,6 +16,22 @@ struct CTACueMapperTests {
         #expect(cues.first?.binID == "organic")
     }
 
+    @Test func skipsCoastingTracks() {
+        let tracks = [
+            track(id: 1, classKey: "organic", width: 0.3, height: 0.3),
+            TrackedDetection(
+                id: 2,
+                classKey: "residual",
+                className: "residual",
+                conf: 0.9,
+                displayXywhn: CGRect(x: 0.5, y: 0.2, width: 0.3, height: 0.3),
+                misses: 1
+            ),
+        ]
+        let cues = map(tracks)
+        #expect(cues.map(\.id) == [1])
+    }
+
     @Test func oneCuePerTrack() {
         let tracks = [
             track(id: 1, classKey: "organic", x: 0.1, y: 0.2, width: 0.2, height: 0.2),

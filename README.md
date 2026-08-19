@@ -54,7 +54,7 @@ flowchart LR
   rec --> files[Files app iSort]
 ```
 
-Each frame goes through Core ML, then a tracker that holds an ID across frames (confirm hits, IoU association, EMA smoothing). Confirmed tracks map to a bin via `BinGuide` and light the HUD. While recording, the same tracks are written to an overlay movie and a CSV.
+Each frame goes through Core ML, then a tracker that holds an ID across frames (confirm hits, IoU association, EMA smoothing, time-window class vote). Confirmed tracks map to a bin via `BinGuide` and light the HUD. While recording, the same tracks are written to an overlay movie and a CSV.
 
 | Class | Bin | Put here | Keep out |
 | --- | --- | --- | --- |
@@ -88,7 +88,7 @@ File Sharing is on. Recorded overlay clips and CSV logs show up in the Files app
 
 ## Using iSort
 
-**Live.** Point the camera at waste. The top bar lights the bins currently in frame. Boxes follow items after they are confirmed across a couple of frames; if the model briefly loses an item, the box freezes in place instead of sliding. The bin label stays with the item unless the model disagrees for several frames in a row.
+**Live.** Point the camera at waste. The top bar lights the bins currently in frame. Boxes follow items after they are confirmed across a couple of frames; if the model briefly loses an item, the box freezes in place instead of sliding. The bin label stays with the item until a new class leads by confidence for a short time (default 0.4s).
 
 **Settings.** Long-press the FPS badge.
 
@@ -96,7 +96,7 @@ File Sharing is on. Recorded overlay clips and CSV logs show up in the Files app
 - **Camera** — Auto (prefer USB) or a specific device; rotation and mirror apply to preview and to recordings started after the change. Software brightness, contrast, and saturation preprocess the image the model sees. Hardware exposure, focus, and white balance can be locked (USB cameras may ignore those).
 - **Photo** — sort a still from the library
 - **Recording** — start/stop; the live camera must be running first
-- **Detection / Live tracking** — confidence, overlap, max items, confirm frames, and box smoothing
+- **Detection / Live tracking** — confidence, overlap, max items, confirm frames, class-change overlap, label stickiness, and box smoothing
 
 **Recording outputs** share a local-time prefix, e.g. `iSort-2026-08-14-150932`:
 
@@ -106,7 +106,7 @@ File Sharing is on. Recorded overlay clips and CSV logs show up in the Files app
 | Overlay clip (boxes, labels, timestamps) | Photos and Files |
 | Detection CSV | Files (`On My iPad/iPhone → iSort`) |
 
-CSV columns: timestamp, session, track ID, class, bin, confidence, model, thresholds, camera, box, FPS.
+CSV columns: timestamp, session, track ID, class, bin, confidence, model, thresholds, camera, box, FPS, event type (`first_seen`, `class_switch`, `coast_start`, `zone_deposit`), raw class.
 
 ## Models
 
@@ -142,7 +142,7 @@ waste-sortTests/       # Swift Testing
 
 ## Tests
 
-From Xcode, **Product → Test** (`⌘U`). Coverage includes tracker coast/drop, geometry (rotation + mirror), camera preference fallback, overlay rendering, and CSV write/recovery.
+From Xcode, **Product → Test** (`⌘U`). Coverage includes tracker coast/drop, class vote, geometry (rotation + mirror), camera preference fallback, overlay rendering, and CSV write/recovery (`class_switch`, `coast_start`).
 
 ## Credits
 

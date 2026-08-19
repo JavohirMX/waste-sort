@@ -60,6 +60,8 @@ final class RecordingController: NSObject, ObservableObject {
     private var sessionStartedAt: Date?
     private var filePrefix: String?
     private var loggedTrackIDs = Set<Int>()
+    private var lastClassByTrack: [Int: String] = [:]
+    private var lastMissesByTrack: [Int: Int] = [:]
     private var sessionRotation: LivePreviewRotation = WasteSortConfig.defaultLiveRotation
     private var sessionMirror = WasteSortConfig.defaultLiveMirror
     private var annotatedPending = false
@@ -168,30 +170,52 @@ final class RecordingController: NSObject, ObservableObject {
         guard isRecording, let sessionId, let sessionStartedAt else { return }
 
         let now = Date()
-        for track in tracks where loggedTrackIDs.insert(track.id).inserted {
-            let bin = BinGuide.info(for: track.classKey)
-            logStore.append(
-                DetectionLogEvent(
-                    timestamp: now,
-                    sessionId: sessionId,
-                    sessionStartedAt: sessionStartedAt,
-                    trackId: track.id,
-                    classKey: track.classKey,
-                    className: track.className,
-                    bin: bin.id,
-                    confidence: Double(track.conf),
-                    model: settings.selectedModelName,
-                    confidenceThreshold: settings.confidence,
-                    iouThreshold: settings.iou,
-                    cameraId: settings.preferredCameraID,
-                    boxX: Double(track.displayXywhn.origin.x),
-                    boxY: Double(track.displayXywhn.origin.y),
-                    boxW: Double(track.displayXywhn.width),
-                    boxH: Double(track.displayXywhn.height),
-                    fps: fps,
-                    eventType: DetectionLogEvent.eventTypeFirstSeen
+        for track in tracks {
+            let isNew = loggedTrackIDs.insert(track.id).inserted
+            let previousClass = lastClassByTrack[track.id]
+            let previousMisses = lastMissesByTrack[track.id] ?? 0
+            lastClassByTrack[track.id] = track.classKey
+            lastMissesByTrack[track.id] = track.misses
+
+            if isNew {
+                logStore.append(
+                    logEvent(
+                        now: now,
+                        sessionId: sessionId,
+                        sessionStartedAt: sessionStartedAt,
+                        track: track,
+                        fps: fps,
+                        settings: settings,
+                        eventType: DetectionLogEvent.eventTypeFirstSeen
+                    )
                 )
-            )
+            } else if previousClass != track.classKey {
+                logStore.append(
+                    logEvent(
+                        now: now,
+                        sessionId: sessionId,
+                        sessionStartedAt: sessionStartedAt,
+                        track: track,
+                        fps: fps,
+                        settings: settings,
+                        eventType: DetectionLogEvent.eventTypeClassSwitch
+                    )
+                )
+            }
+
+            if track.misses == 1, previousMisses == 0 {
+                logStore.append(
+                    logEvent(
+                        now: now,
+                        sessionId: sessionId,
+                        sessionStartedAt: sessionStartedAt,
+                        track: track,
+                        fps: fps,
+                        settings: settings,
+                        eventType: DetectionLogEvent.eventTypeCoastStart
+                    )
+                )
+            }
         }
 
         for deposit in deposits {
@@ -232,6 +256,39 @@ final class RecordingController: NSObject, ObservableObject {
                 timestamp: now
             )
         }
+    }
+
+    private func logEvent(
+        now: Date,
+        sessionId: String,
+        sessionStartedAt: Date,
+        track: TrackedDetection,
+        fps: Int,
+        settings: RuntimeSettings,
+        eventType: String
+    ) -> DetectionLogEvent {
+        let bin = BinGuide.info(for: track.classKey)
+        return DetectionLogEvent(
+            timestamp: now,
+            sessionId: sessionId,
+            sessionStartedAt: sessionStartedAt,
+            trackId: track.id,
+            classKey: track.classKey,
+            className: track.className,
+            bin: bin.id,
+            confidence: Double(track.conf),
+            model: settings.selectedModelName,
+            confidenceThreshold: settings.confidence,
+            iouThreshold: settings.iou,
+            cameraId: settings.preferredCameraID,
+            boxX: Double(track.displayXywhn.origin.x),
+            boxY: Double(track.displayXywhn.origin.y),
+            boxW: Double(track.displayXywhn.width),
+            boxH: Double(track.displayXywhn.height),
+            fps: fps,
+            eventType: eventType,
+            rawClassKey: track.observedClassKey
+        )
     }
 
     func startRecording() {
@@ -438,6 +495,8 @@ final class RecordingController: NSObject, ObservableObject {
         sessionStartedAt = startedAt
         filePrefix = prefix
         loggedTrackIDs.removeAll()
+        lastClassByTrack.removeAll()
+        lastMissesByTrack.removeAll()
         logSavedToFiles = false
         annotatedSavedToFiles = false
         logStore.startSession(id: id, startedAt: startedAt, filePrefix: prefix)
@@ -500,6 +559,8 @@ final class RecordingController: NSObject, ObservableObject {
         sessionStartedAt = nil
         filePrefix = nil
         loggedTrackIDs.removeAll()
+        lastClassByTrack.removeAll()
+        lastMissesByTrack.removeAll()
     }
 
     private func observeCaptureSession(_ session: AVCaptureSession?) {

@@ -19,6 +19,7 @@ enum CTACueMapper {
         useAspectFill: Bool = true
     ) -> [CTACue] {
         tracks.compactMap { track in
+            guard !track.isCoasting else { return nil }
             let bin = BinGuide.info(for: track.classKey)
             guard bin.id != BinGuide.unknown.id else { return nil }
             let rect = DetectionGeometry.mapDisplayRect(

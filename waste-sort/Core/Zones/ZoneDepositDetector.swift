@@ -47,14 +47,16 @@ nonisolated struct ZoneFrameResult: Equatable, Sendable {
 /// Decides when an item counts as thrown away.
 ///
 /// The unit of reasoning is the **object**, not the tracker id. `DetectionTracker` starts a
-/// fresh id whenever the model blinks for more than `maxMisses` frames, and it refuses to
-/// associate across a class change at all — so a single cup being carried to a bin can arrive
-/// as three or four ids, some of them labelled differently. Treating each id as its own item
-/// is what makes a momentary dropout look like a throw, and what makes the throw that follows
-/// look like waste that materialised inside the bin.
+/// fresh id whenever the model blinks for more than `maxMisses` frames. It does associate
+/// across a class change when the boxes overlap enough; the overlay label is a short
+/// confidence vote, not a new id. When overlap is too low, a relabel still arrives as a
+/// new id (sometimes beside a frozen coast of the old one). Treating each id as its own
+/// item is what makes a momentary dropout look like a throw, and what makes the throw
+/// that follows look like waste that materialised inside the bin.
 ///
 /// So an object here spans ids. A new track that appears where a recently lost one was is
 /// assumed to be the same thing, whatever the model now calls it, and inherits its history.
+/// Overlay labels are ignored for scoring: this layer votes on the raw YOLO class.
 ///
 /// Three conditions have to hold for a deposit, each ruling out a different false positive:
 ///
@@ -156,10 +158,9 @@ nonisolated final class ZoneDepositDetector {
         var occupied = Set<UUID>()
 
         // Coasting boxes are dropped outright. The tracker keeps emitting a frozen box for
-        // `maxMisses` frames after the model stops finding something, which matters here for
-        // a reason that is easy to miss: on a class change the tracker cannot associate the
-        // new label with the old track, so it coasts the old one *while* the new one is
-        // already live. Both are in this array at once. Treating the frozen box as a sighting
+        // `maxMisses` frames after the model stops finding something. When association
+        // fails (low IoU relabel), it coasts the old track *while* the new one is already
+        // live. Both are in this array at once. Treating the frozen box as a sighting
         // keeps the old object out of the missing state, so the new track cannot adopt it —
         // it becomes a fresh object born inside the zone, ineligible forever, while the old
         // one later dies still armed and fires a throw that never happened.
@@ -179,9 +180,9 @@ nonisolated final class ZoneDepositDetector {
             let sighting = Sighting(
                 center: CGPoint(x: track.displayXywhn.midX, y: track.displayXywhn.midY),
                 box: track.displayXywhn,
-                classKey: track.classKey,
-                className: track.className,
-                conf: track.conf
+                classKey: track.observedClassKey,
+                className: track.rawClassKey.isEmpty ? track.className : track.rawClassKey,
+                conf: track.rawConf > 0 ? track.rawConf : track.conf
             )
             let object = resolveObject(
                 for: track,

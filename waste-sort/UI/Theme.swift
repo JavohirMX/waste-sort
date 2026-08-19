@@ -20,8 +20,6 @@ enum Theme {
     static let ctaHighlightPulseAmount: Double = 0.06
     static let ctaHighlightPulsePeriod: TimeInterval = 1.4
     static let ctaDropdownMessage = "Open the bin and throw it here."
-    /// Keep current primary until another box is this much larger.
-    static let primaryAreaHysteresis: CGFloat = 1.25
 
     static let zoneStrokeWidth: CGFloat = 3
     static let zoneFillOpacity: Double = 0.14
