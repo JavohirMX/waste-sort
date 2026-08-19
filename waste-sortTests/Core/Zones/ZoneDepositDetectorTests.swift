@@ -395,4 +395,46 @@ struct ZoneDepositDetectorTests {
         let settling = c.tick([])
         #expect(settling.settlingZoneIDs.isEmpty)
     }
+
+    @Test("deposit records binWasOpen true when zone is open")
+    func depositWithOpenBin() {
+        let detector = ZoneDepositDetector()
+        detector.requiredDwellFrames = 2
+        detector.reacquireGrace = 0.5
+
+        let t = track(id: 1, classKey: "organic", centerX: 0.5)
+        _ = detector.update(tracks: [t], zones: zones, closedZoneIDs: [], timestamp: 100.0)
+
+        let tInZone = track(id: 1, classKey: "organic", centerX: 0.2)
+        _ = detector.update(tracks: [tInZone], zones: zones, closedZoneIDs: [], timestamp: 100.1)
+        _ = detector.update(tracks: [tInZone], zones: zones, closedZoneIDs: [], timestamp: 100.2)
+
+        // Item vanishes; start grace period
+        _ = detector.update(tracks: [], zones: zones, closedZoneIDs: [], timestamp: 100.3)
+        // Grace period elapses (> 0.5s)
+        let result = detector.update(tracks: [], zones: zones, closedZoneIDs: [], timestamp: 101.0)
+        #expect(result.deposits.count == 1)
+        #expect(result.deposits.first?.binWasOpen == true)
+    }
+
+    @Test("deposit records binWasOpen false when zone is in closedZoneIDs")
+    func depositWithClosedBin() {
+        let detector = ZoneDepositDetector()
+        detector.requiredDwellFrames = 2
+        detector.reacquireGrace = 0.5
+
+        let t = track(id: 2, classKey: "organic", centerX: 0.5)
+        _ = detector.update(tracks: [t], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.0)
+
+        let tInZone = track(id: 2, classKey: "organic", centerX: 0.2)
+        _ = detector.update(tracks: [tInZone], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.1)
+        _ = detector.update(tracks: [tInZone], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.2)
+
+        // Item vanishes; start grace period
+        _ = detector.update(tracks: [], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 100.3)
+        // Grace period elapses (> 0.5s) while zone is closed
+        let result = detector.update(tracks: [], zones: zones, closedZoneIDs: [organicZone.id], timestamp: 101.0)
+        #expect(result.deposits.count == 1)
+        #expect(result.deposits.first?.binWasOpen == false)
+    }
 }

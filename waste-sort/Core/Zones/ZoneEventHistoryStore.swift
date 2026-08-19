@@ -12,6 +12,7 @@ nonisolated struct ZoneEventRecord: Codable, Identifiable, Equatable, Sendable {
     var zoneBinID: String
     var confidence: Double
     var isCorrect: Bool
+    var binWasOpen: Bool
 
     init(
         id: UUID = UUID(),
@@ -22,7 +23,8 @@ nonisolated struct ZoneEventRecord: Codable, Identifiable, Equatable, Sendable {
         zoneName: String,
         zoneBinID: String,
         confidence: Double,
-        isCorrect: Bool
+        isCorrect: Bool,
+        binWasOpen: Bool = true
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -33,6 +35,7 @@ nonisolated struct ZoneEventRecord: Codable, Identifiable, Equatable, Sendable {
         self.zoneBinID = zoneBinID
         self.confidence = confidence
         self.isCorrect = isCorrect
+        self.binWasOpen = binWasOpen
     }
 
     init(deposit: ZoneDeposit, timestamp: Date) {
@@ -44,14 +47,33 @@ nonisolated struct ZoneEventRecord: Codable, Identifiable, Equatable, Sendable {
             zoneName: deposit.zoneName,
             zoneBinID: deposit.zoneBinID,
             confidence: Double(deposit.conf),
-            isCorrect: deposit.isCorrect
+            isCorrect: deposit.isCorrect,
+            binWasOpen: deposit.binWasOpen
         )
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, timestamp, classKey, className, zoneID, zoneName, zoneBinID, confidence, isCorrect, binWasOpen
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        classKey = try container.decode(String.self, forKey: .classKey)
+        className = try container.decode(String.self, forKey: .className)
+        zoneID = try container.decode(UUID.self, forKey: .zoneID)
+        zoneName = try container.decode(String.self, forKey: .zoneName)
+        zoneBinID = try container.decode(String.self, forKey: .zoneBinID)
+        confidence = try container.decode(Double.self, forKey: .confidence)
+        isCorrect = try container.decode(Bool.self, forKey: .isCorrect)
+        binWasOpen = try container.decodeIfPresent(Bool.self, forKey: .binWasOpen) ?? true
     }
 
     var bin: BinInfo { BinGuide.info(for: classKey) }
     var zoneBin: BinInfo { BinGuide.info(for: zoneBinID) }
 
-    static let csvHeader = "timestamp,classKey,className,zoneName,zoneBin,isCorrect,confidence"
+    static let csvHeader = "timestamp,classKey,className,zoneName,zoneBin,isCorrect,binWasOpen,confidence"
 
     func csvRow() -> String {
         [
@@ -61,6 +83,7 @@ nonisolated struct ZoneEventRecord: Codable, Identifiable, Equatable, Sendable {
             escape(zoneName),
             escape(zoneBinID),
             isCorrect ? "true" : "false",
+            binWasOpen ? "true" : "false",
             String(format: "%.4f", confidence),
         ].joined(separator: ",")
     }

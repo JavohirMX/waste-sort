@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		096508C2302BF09000842337 /* UltralyticsYOLO in Frameworks */ = {isa = PBXBuildFile; productRef = 096508C1302BF09000842337 /* UltralyticsYOLO */; };
+		14B6DBD830354BDB0002F504 /* SwiftAprilTag in Frameworks */ = {isa = PBXBuildFile; productRef = A2B3C4D5302BF09000840002 /* SwiftAprilTag */; };
+		14B6DBD930354BDB0002F504 /* SwiftAprilTag in Frameworks */ = {isa = PBXBuildFile; productRef = A2B3C4D5302BF09000840002 /* SwiftAprilTag */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -51,6 +53,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				14B6DBD830354BDB0002F504 /* SwiftAprilTag in Frameworks */,
 				096508C2302BF09000842337 /* UltralyticsYOLO in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -59,6 +62,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				14B6DBD930354BDB0002F504 /* SwiftAprilTag in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +116,7 @@
 			name = "waste-sort";
 			packageProductDependencies = (
 				096508C1302BF09000842337 /* UltralyticsYOLO */,
+				A2B3C4D5302BF09000840002 /* SwiftAprilTag */,
 			);
 			productName = "waste-sort";
 			productReference = 0965088F302BF08E00842337 /* waste-sort.app */;
@@ -135,6 +140,7 @@
 			);
 			name = "waste-sortTests";
 			packageProductDependencies = (
+				A2B3C4D5302BF09000840002 /* SwiftAprilTag */,
 			);
 			productName = "waste-sortTests";
 			productReference = 0965089C302BF08F00842337 /* waste-sortTests.xctest */;
@@ -194,6 +200,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				096508C0302BF09000842337 /* XCRemoteSwiftPackageReference "yolo-ios-app" */,
+				A2B3C4D5302BF09000840001 /* XCRemoteSwiftPackageReference "SwiftAprilTag" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 09650890302BF08E00842337 /* Products */;
@@ -397,7 +404,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = MBBD9BRZ67;
+				DEVELOPMENT_TEAM = BD8SA4X398;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = iSort;
@@ -435,7 +442,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = MBBD9BRZ67;
+				DEVELOPMENT_TEAM = BD8SA4X398;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = iSort;
@@ -596,6 +603,14 @@
 				minimumVersion = 8.9.13;
 			};
 		};
+		A2B3C4D5302BF09000840001 /* XCRemoteSwiftPackageReference "SwiftAprilTag" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/keyqcloud/SwiftAprilTag.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -603,6 +618,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 096508C0302BF09000842337 /* XCRemoteSwiftPackageReference "yolo-ios-app" */;
 			productName = UltralyticsYOLO;
+		};
+		A2B3C4D5302BF09000840002 /* SwiftAprilTag */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A2B3C4D5302BF09000840001 /* XCRemoteSwiftPackageReference "SwiftAprilTag" */;
+			productName = SwiftAprilTag;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
