@@ -96,12 +96,15 @@ struct AprilTagStatusFrame: Equatable, Sendable {
 /// Configuration settings for AprilTag detection and state machine.
 struct AprilTagConfig: Codable, Equatable, Sendable {
     var tagFamilyName: String = "tag16h5" // Long distance / fast shutter
-    var staleTimeout: CFAbsoluteTime = 0.30 // Missing > 0.30s -> Closed
+    var staleTimeout: CFAbsoluteTime = 2.0 // Missing > timeout -> Closed
     var sampleInterval: CFAbsoluteTime = 0.0 // 0.0 = every single camera frame
+
+    static let staleTimeoutRange = 0.10...5.0
+    static let staleTimeoutStep = 0.10
 
     init(
         tagFamilyName: String = "tag16h5",
-        staleTimeout: CFAbsoluteTime = 0.30,
+        staleTimeout: CFAbsoluteTime = 2.0,
         sampleInterval: CFAbsoluteTime = 0.0
     ) {
         self.tagFamilyName = tagFamilyName

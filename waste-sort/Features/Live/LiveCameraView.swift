@@ -69,7 +69,8 @@ struct LiveCameraView: View {
                         dwellFrames: zoneStore.dwellFrames,
                         reacquireGrace: zoneStore.reacquireGrace,
                         aprilTagEnabled: aprilTagStore.isEnabled,
-                        aprilTagBindings: aprilTagStore.bindings
+                        aprilTagBindings: aprilTagStore.bindings,
+                        aprilTagStaleTimeout: aprilTagStore.staleTimeout
                     ) { result, tracked, zoneFrame, tagFrame in
                         if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                             fps = measured
@@ -330,6 +331,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     var reacquireGrace: Double
     var aprilTagEnabled: Bool
     var aprilTagBindings: [UUID: Int]
+    var aprilTagStaleTimeout: Double
     var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
 
     func makeCoordinator() -> Coordinator {
@@ -343,6 +345,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             reacquireGrace: reacquireGrace,
             aprilTagEnabled: aprilTagEnabled,
             aprilTagBindings: aprilTagBindings,
+            aprilTagStaleTimeout: aprilTagStaleTimeout,
             onDetection: onDetection
         )
     }
@@ -435,6 +438,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         coordinator.zones = zones
         coordinator.depositDetector.requiredDwellFrames = dwellFrames
         coordinator.depositDetector.reacquireGrace = reacquireGrace
+        coordinator.aprilTagStaleTimeout = aprilTagStaleTimeout
     }
 
     private func hideDeveloperChrome(_ view: YOLOView) {
@@ -465,6 +469,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         var zones: [DropZone]
         var aprilTagEnabled: Bool
         var aprilTagBindings: [UUID: Int]
+        var aprilTagStaleTimeout: Double
         weak var yoloView: YOLOView?
         let tracker = DetectionTracker()
         let depositDetector = ZoneDepositDetector()
@@ -488,6 +493,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             reacquireGrace: Double,
             aprilTagEnabled: Bool,
             aprilTagBindings: [UUID: Int],
+            aprilTagStaleTimeout: Double,
             onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
         ) {
             self.settings = settings
@@ -497,6 +503,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             self.zones = zones
             self.aprilTagEnabled = aprilTagEnabled
             self.aprilTagBindings = aprilTagBindings
+            self.aprilTagStaleTimeout = aprilTagStaleTimeout
             self.onDetection = onDetection
             depositDetector.requiredDwellFrames = dwellFrames
             depositDetector.reacquireGrace = reacquireGrace
@@ -527,7 +534,11 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             let tracked = tracker.update(raw)
             let currentZones = zones
             let tagFrame = aprilTagEnabled
-                ? aprilTagBinDetector.update(zones: currentZones, tagBindings: aprilTagBindings)
+                ? aprilTagBinDetector.update(
+                    zones: currentZones,
+                    tagBindings: aprilTagBindings,
+                    config: AprilTagConfig(staleTimeout: aprilTagStaleTimeout)
+                )
                 : AprilTagStatusFrame()
             depositDetector.binOpenState = FrameBinOpenState(tagFrame: tagFrame, zones: currentZones)
             let zoneFrame = depositDetector.update(tracks: tracked, zones: currentZones)

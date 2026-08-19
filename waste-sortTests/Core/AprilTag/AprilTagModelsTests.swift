@@ -79,7 +79,7 @@ struct AprilTagModelsTests {
     func aprilTagConfig() {
         let standard = AprilTagConfig.standard
         #expect(standard.tagFamilyName == "tag16h5")
-        #expect(standard.staleTimeout == 0.30)
+        #expect(standard.staleTimeout == 2.0)
         #expect(standard.sampleInterval == 0.0)
 
         let custom = AprilTagConfig(tagFamilyName: "tag36h11", staleTimeout: 0.50, sampleInterval: 0.1)

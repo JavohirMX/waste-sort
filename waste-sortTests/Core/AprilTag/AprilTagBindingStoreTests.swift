@@ -13,6 +13,7 @@ struct AprilTagBindingStoreTests {
         #expect(store.bindings.isEmpty)
         #expect(store.isEnabled == true)
         #expect(store.showDebugOverlay == false)
+        #expect(store.staleTimeout == 2.0)
     }
 
     @Test("Persisting tag ID bindings")
@@ -50,5 +51,16 @@ struct AprilTagBindingStoreTests {
 
         #expect(store.bindings[activeZone] == 0)
         #expect(store.bindings[staleZone] == nil)
+    }
+
+    @Test("Persisting closed delay")
+    @MainActor
+    func persistStaleTimeout() {
+        let testDefaults = UserDefaults(suiteName: "test.apriltag.timeout.\(UUID())")!
+        let store = AprilTagBindingStore(defaults: testDefaults)
+        store.staleTimeout = 1.4
+
+        let reloadedStore = AprilTagBindingStore(defaults: testDefaults)
+        #expect(reloadedStore.staleTimeout == 1.4)
     }
 }

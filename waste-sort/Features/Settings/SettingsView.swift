@@ -198,13 +198,6 @@ struct SettingsView: View {
         Section {
             Toggle("Show zones", isOn: $settings.showZoneOverlay)
 
-            ForEach(zoneStore.zones) { zone in
-                ZoneSettingsRow(zone: zone) { zoneStore.update($0) }
-            }
-            .onDelete { offsets in
-                for index in offsets { zoneStore.remove(id: zoneStore.zones[index].id) }
-            }
-
             SettingsIntSliderRow(
                 title: "Dwell frames",
                 help: "How many frames the model must actually see an item inside a zone before it can be counted. Frames where the box is frozen after a lost detection do not count. Higher = fewer accidental counts when something passes over a bin.",
@@ -233,14 +226,10 @@ struct SettingsView: View {
             }
             .disabled(zoneStore.zones.isEmpty)
 
-            Button("Add zone") { zoneStore.addZone() }
-
             Button("Reset zones", role: .destructive) { showZoneResetConfirm = true }
         } header: {
             Text("Zones")
                 .foregroundStyle(BinGuide.cleanInorganic.color)
-        } footer: {
-            Text("Draw a zone over each real bin. With Show zones on, a zone stays invisible until something is in it: dashed while an item is inside, tighter dashes once it has dwelt long enough, filled faintly while a vanished item waits out the reacquire window, then filled solid for a moment when it is recorded. Turn it off to hide those overlays; items are still recorded, and Edit zones on camera still shows the outlines.\n\nAn item is recorded only if it was seen outside the zones at some point, stayed inside one for the dwell frames above, and then stayed gone for the reacquire window. Tracking survives dropouts and relabelling, so an item that blinks and comes back inside the zone still counts — unlike one that was never tracked and simply appeared there, which is read as waste already in the bin.")
         }
         .confirmationDialog(
             "Reset zones to defaults?",
@@ -264,6 +253,15 @@ struct SettingsView: View {
 
             if aprilTagStore.isEnabled {
                 Toggle("Show debug overlay", isOn: $aprilTagStore.showDebugOverlay)
+
+                SettingsSliderRow(
+                    title: "Closed delay",
+                    help: "How long a tag can be missing before the bin is marked closed. Lower = lids register closed sooner; higher = more tolerant of brief dropouts.",
+                    valueText: String(format: "%.1fs", aprilTagStore.staleTimeout),
+                    value: $aprilTagStore.staleTimeout,
+                    range: AprilTagConfig.staleTimeoutRange,
+                    step: AprilTagConfig.staleTimeoutStep
+                )
 
                 if !zoneStore.zones.isEmpty {
                     ForEach(zoneStore.zones) { zone in
@@ -296,7 +294,7 @@ struct SettingsView: View {
             Text("AprilTag Openness")
                 .foregroundStyle(BinGuide.organic.color)
         } footer: {
-            Text("Uses camera to detect when bins are physically opened via inside-mounted tag16h5 AprilTags. When missing for >0.30s, the bin is marked closed.")
+            Text("Uses camera to detect when bins are physically opened via inside-mounted tag16h5 AprilTags. Closed delay is how long a tag can stay missing before the bin is marked closed.")
         }
     }
 
@@ -570,42 +568,6 @@ private struct SettingsIntSliderRow: View {
             range: Double(range.lowerBound)...Double(range.upperBound),
             step: 1
         )
-    }
-}
-
-private struct ZoneSettingsRow: View {
-    let zone: DropZone
-    var onChange: (DropZone) -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: zone.bin.symbolName)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 26, height: 26)
-                .background(zone.bin.color, in: Circle())
-
-            TextField(
-                "Zone name",
-                text: Binding(
-                    get: { zone.name },
-                    set: { var copy = zone; copy.name = $0; onChange(copy) }
-                )
-            )
-
-            Picker(
-                "",
-                selection: Binding(
-                    get: { zone.binID },
-                    set: { var copy = zone; copy.binID = $0; onChange(copy) }
-                )
-            ) {
-                ForEach(BinGuide.all) { bin in
-                    Text(bin.displayName).tag(bin.id)
-                }
-            }
-            .labelsHidden()
-        }
     }
 }
 

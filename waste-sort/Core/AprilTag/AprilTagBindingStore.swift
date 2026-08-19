@@ -14,6 +14,9 @@ final class AprilTagBindingStore: ObservableObject {
     @Published var showDebugOverlay: Bool {
         didSet { defaults.set(showDebugOverlay, forKey: Keys.debug) }
     }
+    @Published var staleTimeout: Double {
+        didSet { defaults.set(staleTimeout, forKey: Keys.staleTimeout) }
+    }
 
     private let defaults: UserDefaults
 
@@ -21,6 +24,7 @@ final class AprilTagBindingStore: ObservableObject {
         static let bindings = "apriltag.bindings"
         static let enabled = "apriltag.enabled"
         static let debug = "apriltag.debug"
+        static let staleTimeout = "apriltag.staleTimeout"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -33,6 +37,11 @@ final class AprilTagBindingStore: ObservableObject {
         }
         self.isEnabled = defaults.object(forKey: Keys.enabled) != nil ? defaults.bool(forKey: Keys.enabled) : true
         self.showDebugOverlay = defaults.bool(forKey: Keys.debug)
+        if defaults.object(forKey: Keys.staleTimeout) != nil {
+            staleTimeout = defaults.double(forKey: Keys.staleTimeout)
+        } else {
+            staleTimeout = AprilTagConfig.standard.staleTimeout
+        }
     }
 
     func setTagID(_ tagID: Int, for zoneID: UUID) {
