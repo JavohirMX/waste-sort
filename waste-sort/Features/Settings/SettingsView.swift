@@ -370,6 +370,22 @@ struct SettingsView: View {
                 step: 0.05
             )
             SettingsSliderRow(
+                title: "Class-change overlap",
+                help: "How much a relabelled box must overlap to stay the same item. Cannot be tighter than Same-item overlap.",
+                valueText: decimal(settings.crossClassIou),
+                value: $settings.crossClassIou,
+                range: 0.1...0.9,
+                step: 0.05
+            )
+            SettingsSliderRow(
+                title: "Label stickiness",
+                help: "How long a new bin must lead (by confidence) before the label changes. Higher = less flicker, slower to correct.",
+                valueText: String(format: "%.2f s", settings.classLockWindow),
+                value: $settings.classLockWindow,
+                range: 0.10...1.00,
+                step: 0.05
+            )
+            SettingsSliderRow(
                 title: "Smoothing",
                 help: "How quickly boxes follow movement. Higher = snappier. Lower = smoother but laggy.",
                 valueText: decimal(settings.emaAlpha),
@@ -397,7 +413,7 @@ struct SettingsView: View {
             Text("Live tracking")
                 .foregroundStyle(BinGuide.cleanInorganic.color)
         } footer: {
-            Text("These only affect the camera overlay.")
+            Text("These only affect the camera overlay. Throw scoring still uses a lifetime vote of the raw model class.")
         }
     }
 

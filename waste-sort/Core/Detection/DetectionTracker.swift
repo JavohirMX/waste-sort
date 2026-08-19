@@ -15,6 +15,7 @@ struct TrackedDetection: Identifiable, Equatable, Sendable {
     let id: Int
     let classKey: String
     let className: String
+    /// Last confidence observed for the locked class (not the current YOLO challenger).
     let conf: Float
     /// Inflated display rect in normalized coordinates.
     let displayXywhn: CGRect
@@ -22,12 +23,20 @@ struct TrackedDetection: Identifiable, Equatable, Sendable {
     /// comes from a real detection this frame; anything higher means it is frozen in
     /// place, still drawn but no longer evidence that the object is there.
     var misses: Int = 0
+    /// This frame's YOLO class. Empty means the same as `classKey`.
+    var rawClassKey: String = ""
+    var rawConf: Float = 0
 
     var isCoasting: Bool { misses > 0 }
+
+    var observedClassKey: String { rawClassKey.isEmpty ? classKey : rawClassKey }
+
+    var isClassPending: Bool { !rawClassKey.isEmpty && rawClassKey != classKey }
 }
 
-/// Associates per-frame detections across time with EMA box smoothing and sticky class labels.
-/// Unmatched tracks briefly freeze in place (no velocity coast on display) then drop.
+/// Associates per-frame detections across time with EMA box smoothing and a time-window
+/// confidence vote for the overlay label. Unmatched tracks briefly freeze in place
+/// (no velocity coast on display) then drop.
 final class DetectionTracker {
     var iouThreshold: CGFloat = 0.3
     var confirmHits: Int = 2
@@ -39,17 +48,26 @@ final class DetectionTracker {
     /// Velocity multiplier applied on each unmatched frame.
     var missVelocityDecay: CGFloat = 0.25
     /// Overlap required to keep the same track when YOLO changes class.
+    /// Capped at `iouThreshold` so a relabel cannot fall into a dead zone.
     var crossClassIouThreshold: CGFloat = CGFloat(WasteSortConfig.defaultCrossClassIou)
-    /// Consecutive disagreeing frames before the emitted bin label switches.
-    var classSwitchHits: Int = WasteSortConfig.defaultClassSwitchHits
+    /// Wall-clock window the challenger class must lead (by summed confidence) before
+    /// the overlay label switches.
+    var classLockWindow: CFTimeInterval = WasteSortConfig.defaultClassLockWindow
     /// Hide a younger confirmed track when it sits on top of an older one.
     var emitOverlapIou: CGFloat = 0.45
+
+    private struct ClassSample {
+        var t: CFAbsoluteTime
+        var classKey: String
+        var className: String
+        var conf: Float
+    }
 
     private struct Track {
         let id: Int
         var classKey: String
         var className: String
-        var conf: Float
+        var lockedConf: Float
         var xywhn: CGRect
         var displayXywhn: CGRect
         var predXywhn: CGRect
@@ -60,13 +78,15 @@ final class DetectionTracker {
         var confirmed: Bool
         var matched: Bool
         var t: CFAbsoluteTime
-        var pendingClassKey: String?
-        var pendingClassName: String
-        var pendingHits: Int
+        var samples: [ClassSample]
     }
 
     private var tracks: [Track] = []
     private var nextID = 1
+
+    private var crossClassIou: CGFloat {
+        min(crossClassIouThreshold, iouThreshold)
+    }
 
     func reset() {
         tracks.removeAll(keepingCapacity: true)
@@ -75,7 +95,9 @@ final class DetectionTracker {
 
     /// Updates tracks from the latest detections and returns confirmed (matched or frozen coast) tracks.
     func update(_ detections: [RawDetection], timestamp: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()) -> [TrackedDetection] {
-        let filtered = detections.filter { BinGuide.info(for: $0.className).id != "unknown" }
+        let filtered = detections
+            .filter { BinGuide.info(for: $0.className).id != "unknown" }
+            .sorted { $0.conf > $1.conf }
 
         for i in tracks.indices {
             let dt = max(timestamp - tracks[i].t, 1e-3)
@@ -98,7 +120,7 @@ final class DetectionTracker {
         }
         for (detIndex, det) in filtered.enumerated() {
             guard !assigned.contains(detIndex) else { continue }
-            guard let bestI = bestMatchIndex(for: det, sameClassOnly: false, iouMin: crossClassIouThreshold) else {
+            guard let bestI = bestMatchIndex(for: det, sameClassOnly: false, iouMin: crossClassIou) else {
                 continue
             }
             applyMatch(trackIndex: bestI, det: det, timestamp: timestamp)
@@ -106,15 +128,20 @@ final class DetectionTracker {
         }
 
         let leftover = filtered.indices.filter { !assigned.contains($0) }
-            .sorted { filtered[$0].conf > filtered[$1].conf }
         for detIndex in leftover {
             let det = filtered[detIndex]
             if overlapsExistingTrack(det) { continue }
+            let sample = ClassSample(
+                t: timestamp,
+                classKey: det.classKey,
+                className: det.className,
+                conf: det.conf
+            )
             let track = Track(
                 id: nextID,
                 classKey: det.classKey,
                 className: det.className,
-                conf: det.conf,
+                lockedConf: det.conf,
                 xywhn: det.xywhn,
                 displayXywhn: det.xywhn,
                 predXywhn: det.xywhn,
@@ -125,9 +152,7 @@ final class DetectionTracker {
                 confirmed: confirmHits <= 1,
                 matched: true,
                 t: timestamp,
-                pendingClassKey: nil,
-                pendingClassName: "",
-                pendingHits: 0
+                samples: [sample]
             )
             nextID += 1
             tracks.append(track)
@@ -150,19 +175,21 @@ final class DetectionTracker {
                 kept.append(track)
             }
         }
-        let visibleIDs = Set(suppressOverlapping(kept.filter(\.confirmed)).map(\.id))
-        tracks = kept.filter { !$0.confirmed || visibleIDs.contains($0.id) }
-        return tracks.filter(\.confirmed).map { emit($0) }
+        tracks = kept
+        return suppressOverlapping(tracks.filter(\.confirmed)).map { emit($0) }
     }
 
     private func emit(_ track: Track) -> TrackedDetection {
-        TrackedDetection(
+        let last = track.samples.last
+        return TrackedDetection(
             id: track.id,
             classKey: track.classKey,
             className: track.className,
-            conf: track.conf,
+            conf: track.lockedConf,
             displayXywhn: inflate(track.displayXywhn),
-            misses: track.misses
+            misses: track.misses,
+            rawClassKey: last?.classKey ?? track.classKey,
+            rawConf: last?.conf ?? track.lockedConf
         )
     }
 
@@ -207,41 +234,60 @@ final class DetectionTracker {
         )
 
         tracks[i].matched = true
-        tracks[i].hits += 1
         tracks[i].misses = 0
         tracks[i].vx = vx
         tracks[i].vy = vy
         tracks[i].xywhn = det.xywhn
         tracks[i].displayXywhn = ema(tracks[i].displayXywhn, det.xywhn)
-        tracks[i].conf = det.conf
         tracks[i].t = timestamp
-        if tracks[i].hits >= confirmHits {
-            tracks[i].confirmed = true
+        tracks[i].samples.append(
+            ClassSample(t: timestamp, classKey: det.classKey, className: det.className, conf: det.conf)
+        )
+        let cutoff = timestamp - classLockWindow
+        tracks[i].samples.removeAll { $0.t < cutoff }
+
+        if !tracks[i].confirmed {
+            if det.classKey == tracks[i].classKey {
+                tracks[i].hits += 1
+            } else {
+                tracks[i].classKey = det.classKey
+                tracks[i].className = det.className
+                tracks[i].hits = 1
+            }
+            tracks[i].lockedConf = det.conf
+            if tracks[i].hits >= confirmHits {
+                tracks[i].confirmed = true
+            }
+            return
         }
 
         if det.classKey == tracks[i].classKey {
-            tracks[i].pendingClassKey = nil
-            tracks[i].pendingHits = 0
-        } else if tracks[i].pendingClassKey == det.classKey {
-            tracks[i].pendingHits += 1
-            tracks[i].pendingClassName = det.className
-            if tracks[i].pendingHits >= classSwitchHits {
-                tracks[i].classKey = det.classKey
-                tracks[i].className = det.className
-                tracks[i].pendingClassKey = nil
-                tracks[i].pendingHits = 0
-            }
-        } else {
-            tracks[i].pendingClassKey = det.classKey
-            tracks[i].pendingClassName = det.className
-            tracks[i].pendingHits = 1
-            if classSwitchHits <= 1 {
-                tracks[i].classKey = det.classKey
-                tracks[i].className = det.className
-                tracks[i].pendingClassKey = nil
-                tracks[i].pendingHits = 0
-            }
+            tracks[i].lockedConf = det.conf
         }
+        guard let first = tracks[i].samples.first, let last = tracks[i].samples.last,
+              last.t - first.t >= classLockWindow
+        else { return }
+        applyVote(trackIndex: i)
+    }
+
+    private func applyVote(trackIndex i: Int) {
+        var weights: [String: Float] = [:]
+        var names: [String: String] = [:]
+        var lastConf: [String: Float] = [:]
+        for sample in tracks[i].samples {
+            weights[sample.classKey, default: 0] += sample.conf
+            names[sample.classKey] = sample.className
+            lastConf[sample.classKey] = sample.conf
+        }
+        let current = tracks[i].classKey
+        let currentWeight = weights[current] ?? 0
+        guard let best = weights.max(by: { a, b in
+            a.value == b.value ? a.key > b.key : a.value < b.value
+        }) else { return }
+        guard best.key != current, best.value > currentWeight else { return }
+        tracks[i].classKey = best.key
+        tracks[i].className = names[best.key] ?? tracks[i].className
+        tracks[i].lockedConf = lastConf[best.key] ?? tracks[i].lockedConf
     }
 
     private func ema(_ prev: CGRect, _ new: CGRect) -> CGRect {

@@ -13,7 +13,6 @@ struct DetectionTrackerTests {
         tracker.iouThreshold = 0.2
 
         let t0: CFAbsoluteTime = 100
-        // Small steps so IoU association keeps the same track.
         let moving = [
             detection(x: 0.30, y: 0.40),
             detection(x: 0.34, y: 0.40),
@@ -91,12 +90,14 @@ struct DetectionTrackerTests {
         }
 
         let flickered = tracker.update(
-            [detection(x: box.x, y: box.y, classKey: "residual")],
+            [detection(x: box.x, y: box.y, classKey: "residual", conf: 0.99)],
             timestamp: t0 + 0.20
         )
         #expect(flickered.count == 1)
         #expect(flickered[0].id == id)
         #expect(flickered[0].classKey == "organic")
+        #expect(flickered[0].rawClassKey == "residual")
+        #expect(flickered[0].conf < 0.99)
     }
 
     @Test func sustainedClassChangeSwitchesLabel() {
@@ -114,7 +115,7 @@ struct DetectionTrackerTests {
         #expect(confirmed[0].classKey == "organic")
 
         var last: [TrackedDetection] = []
-        for i in 1...tracker.classSwitchHits {
+        for i in 1...3 {
             last = tracker.update(
                 [detection(x: box.x, y: box.y, classKey: "residual")],
                 timestamp: t0 + CFAbsoluteTime(i) * 0.05
@@ -123,6 +124,7 @@ struct DetectionTrackerTests {
             #expect(last[0].id == id)
         }
         #expect(last[0].classKey == "residual")
+        #expect(last[0].rawClassKey == "residual")
     }
 
     @Test func pendingStreakResetsWhenStableClassReturns() {
@@ -147,9 +149,7 @@ struct DetectionTrackerTests {
 
         let sequence: [(CFAbsoluteTime, String)] = [
             (t0 + 0.10, "residual"),
-            (t0 + 0.15, "residual"),
-            (t0 + 0.20, "organic"),
-            (t0 + 0.25, "residual"),
+            (t0 + 0.15, "organic"),
         ]
         for (timestamp, classKey) in sequence {
             let emitted = tracker.update(
@@ -182,6 +182,7 @@ struct DetectionTrackerTests {
         #expect(rematched.count == 1)
         #expect(rematched[0].id == id)
         #expect(rematched[0].classKey == "organic")
+        #expect(rematched[0].misses == 0)
 
         let afterOneEmpty = tracker.update([], timestamp: t0 + 0.10)
         #expect(afterOneEmpty.count == 1)
@@ -246,7 +247,6 @@ struct DetectionTrackerTests {
         #expect(confirmed.count == 1)
         let id = confirmed[0].id
 
-        // Same-size boxes ~0.37 IoU (inside 0.35, well under a 0.5 gate).
         let shifted = tracker.update(
             [detection(x: 0.455, y: 0.40, size: 0.12, classKey: "organic")],
             timestamp: t0 + 0.05
@@ -254,6 +254,33 @@ struct DetectionTrackerTests {
         #expect(shifted.count == 1)
         #expect(shifted[0].id == id)
         #expect(shifted[0].classKey == "residual")
+    }
+
+    @Test func relabelAtTrackerIouKeepsIdAndVotes() {
+        let tracker = stickyTracker()
+        tracker.confirmHits = 1
+        tracker.iouThreshold = 0.3
+        tracker.crossClassIouThreshold = 0.35
+        let t0: CFAbsoluteTime = 85
+
+        let confirmed = tracker.update(
+            [detection(x: 0.40, y: 0.40, size: 0.12, classKey: "organic")],
+            timestamp: t0
+        )
+        #expect(confirmed.count == 1)
+        let id = confirmed[0].id
+
+        // Shift ~0.062 → IoU ~0.32, inside the old [0.30, 0.35) dead zone.
+        let relabel = tracker.update(
+            [detection(x: 0.462, y: 0.40, size: 0.12, classKey: "residual", conf: 0.88)],
+            timestamp: t0 + 0.05
+        )
+        #expect(relabel.count == 1)
+        #expect(relabel[0].id == id)
+        #expect(relabel[0].misses == 0)
+        #expect(relabel[0].classKey == "organic")
+        #expect(relabel[0].rawClassKey == "residual")
+        #expect(relabel[0].rawConf == 0.88)
     }
 
     @Test func firstFrameDualClassSpawnsSingleTrack() {
@@ -294,6 +321,74 @@ struct DetectionTrackerTests {
         #expect(residual?.id != organicID)
         #expect(frozenOrganic?.classKey == "organic")
     }
+
+    @Test func confirmingRequiresAgreeingClass() {
+        let tracker = stickyTracker()
+        tracker.confirmHits = 2
+        let t0: CFAbsoluteTime = 95
+        let box = (x: CGFloat(0.4), y: CGFloat(0.4))
+
+        #expect(
+            tracker.update(
+                [detection(x: box.x, y: box.y, classKey: "organic")],
+                timestamp: t0
+            ).isEmpty
+        )
+        #expect(
+            tracker.update(
+                [detection(x: box.x, y: box.y, classKey: "residual")],
+                timestamp: t0 + 0.05
+            ).isEmpty
+        )
+        let emitted = tracker.update(
+            [detection(x: box.x, y: box.y, classKey: "residual")],
+            timestamp: t0 + 0.10
+        )
+        #expect(emitted.count == 1)
+        #expect(emitted[0].classKey == "residual")
+    }
+
+    @Test func overlappingYoungerTrackReappearsWithSameID() {
+        let tracker = stickyTracker()
+        tracker.confirmHits = 1
+        tracker.emaAlpha = 1.0
+        tracker.maxSpeed = 8.0
+        tracker.iouThreshold = 0.15
+        tracker.crossClassIouThreshold = 0.15
+        let t0: CFAbsoluteTime = 110
+        let size: CGFloat = 0.20
+
+        func pair(residualX: CGFloat) -> [RawDetection] {
+            [
+                detection(x: 0.20, y: 0.40, size: size, classKey: "organic"),
+                detection(x: residualX, y: 0.40, size: size, classKey: "residual"),
+            ]
+        }
+
+        let confirmed = tracker.update(pair(residualX: 0.55), timestamp: t0)
+        #expect(confirmed.count == 2)
+        let organicID = confirmed.first { $0.classKey == "organic" }!.id
+        let residualID = confirmed.first { $0.classKey == "residual" }!.id
+
+        var t = t0 + 0.05
+        var residualX: CGFloat = 0.55
+        var overlapped: [TrackedDetection] = []
+        while residualX > 0.27 {
+            residualX -= 0.04
+            overlapped = tracker.update(pair(residualX: residualX), timestamp: t)
+            t += 0.05
+        }
+        #expect(overlapped.count == 1)
+        #expect(overlapped[0].id == organicID)
+
+        var separated: [TrackedDetection] = []
+        while residualX < 0.55 {
+            residualX += 0.04
+            separated = tracker.update(pair(residualX: residualX), timestamp: t)
+            t += 0.05
+        }
+        #expect(Set(separated.map(\.id)) == [organicID, residualID])
+    }
 }
 
 private func stickyTracker() -> DetectionTracker {
@@ -302,7 +397,7 @@ private func stickyTracker() -> DetectionTracker {
     tracker.boxInflate = 0
     tracker.iouThreshold = 0.3
     tracker.crossClassIouThreshold = 0.5
-    tracker.classSwitchHits = 3
+    tracker.classLockWindow = 0.10
     return tracker
 }
 

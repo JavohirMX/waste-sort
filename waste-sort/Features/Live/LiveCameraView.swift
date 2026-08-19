@@ -86,7 +86,7 @@ struct LiveCameraView: View {
                         }
 
                         var nextCounts: [String: Int] = [:]
-                        for track in tracked {
+                        for track in tracked where !track.isCoasting {
                             let binID = BinGuide.info(for: track.classKey).id
                             guard binID != BinGuide.unknown.id else { continue }
                             nextCounts[binID, default: 0] += 1
@@ -397,6 +397,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         coordinator.tracker.iouThreshold = CGFloat(settings.trackerIou)
         coordinator.tracker.confirmHits = settings.confirmHits
         coordinator.tracker.maxMisses = settings.maxMisses
+        coordinator.tracker.crossClassIouThreshold = CGFloat(settings.crossClassIou)
+        coordinator.tracker.classLockWindow = settings.classLockWindow
         coordinator.tracker.emaAlpha = CGFloat(settings.emaAlpha)
         coordinator.tracker.boxInflate = CGFloat(settings.boxInflate)
         coordinator.tracker.maxSpeed = CGFloat(settings.maxSpeed)
