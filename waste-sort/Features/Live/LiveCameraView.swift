@@ -463,6 +463,10 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             self.onDetection = onDetection
             depositDetector.requiredDwellFrames = dwellFrames
             depositDetector.reacquireGrace = reacquireGrace
+            // Placeholder lid signal: every bin reads open, so deposits behave exactly as
+            // they did before. This assignment is the whole wiring — when real lid detection
+            // lands it replaces this one line and nothing else in the deposit path moves.
+            depositDetector.binOpenState = AlwaysOpenBins()
         }
 
         func handle(_ result: YOLOResult) {
