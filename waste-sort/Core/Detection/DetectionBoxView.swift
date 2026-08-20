@@ -315,7 +315,7 @@ struct DetectionBoxOverlay: View {
     var useAspectFill: Bool = true
     var rotation: LivePreviewRotation = .zero
     var mirror: Bool = false
-    var showConfidence: Bool = false
+    var style: BoxOverlayStyle = .default
 
     var body: some View {
         ZStack {
@@ -326,7 +326,7 @@ struct DetectionBoxOverlay: View {
                         bin: BinGuide.info(for: track.classKey),
                         rect: rect,
                         confidence: track.conf,
-                        showConfidence: showConfidence,
+                        style: style,
                         isCoasting: track.isCoasting
                     )
                 }
@@ -351,8 +351,13 @@ struct DetectionBoxView: View {
     let bin: BinInfo
     let rect: CGRect
     var confidence: Float = 0
-    var showConfidence: Bool = false
+    var style: BoxOverlayStyle = .default
     var isCoasting: Bool = false
+
+    private var scale: CGFloat { style.badgeScale }
+    private var badgeSize: CGFloat { Theme.badgeSize * scale }
+    private var capsuleFontSize: CGFloat { 11 * scale }
+    private var iconOnlyFontSize: CGFloat { 12 * scale }
 
     var body: some View {
         RoundedRectangle(cornerRadius: Theme.boxCornerRadius, style: .continuous)
@@ -362,9 +367,12 @@ struct DetectionBoxView: View {
                     .strokeBorder(bin.color, lineWidth: Theme.boxStrokeWidth)
             }
             .frame(width: rect.width, height: rect.height)
-            .overlay(alignment: .topTrailing) {
-                categoryBadge
-                    .offset(x: Theme.badgeSize * 0.35, y: -Theme.badgeSize * 0.35)
+            .overlay(alignment: style.placement.alignment) {
+                if style.showsBadge {
+                    categoryBadge
+                        .fixedSize()
+                        .offset(style.placement.badgeOffset(distance: badgeSize * 0.35))
+                }
             }
             .position(x: rect.midX, y: rect.midY)
             .accessibilityHidden(true)
@@ -376,26 +384,38 @@ struct DetectionBoxView: View {
 
     @ViewBuilder
     private var categoryBadge: some View {
-        if showConfidence {
-            HStack(spacing: 4) {
-                Image(systemName: bin.symbolName)
-                    .font(.system(size: 11, weight: .bold))
-                Text(percentText)
-                    .font(.system(size: 11, weight: .bold).monospacedDigit())
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(bin.color, in: Capsule())
-        } else {
+        if style.isIconOnly {
             ZStack {
                 Circle()
                     .fill(bin.color)
-                    .frame(width: Theme.badgeSize, height: Theme.badgeSize)
+                    .frame(width: badgeSize, height: badgeSize)
                 Image(systemName: bin.symbolName)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: iconOnlyFontSize, weight: .bold))
                     .foregroundStyle(.white)
             }
+        } else {
+            HStack(spacing: 4 * scale) {
+                if style.showIcon {
+                    Image(systemName: bin.symbolName)
+                        .font(.system(size: capsuleFontSize, weight: .bold))
+                }
+                if style.showCategory {
+                    Text(bin.displayName)
+                        .font(.system(size: capsuleFontSize, weight: .bold))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                if style.showConfidence {
+                    Text(percentText)
+                        .font(.system(size: capsuleFontSize, weight: .bold).monospacedDigit())
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 7 * scale)
+            .padding(.vertical, 4 * scale)
+            .background(bin.color, in: Capsule())
         }
     }
 }

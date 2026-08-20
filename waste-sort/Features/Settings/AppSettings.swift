@@ -18,6 +18,11 @@ enum WasteSortConfig {
     static let defaultLiveRotation = LivePreviewRotation.oneEighty
     static let defaultLiveMirror = false
     static let defaultShowConfidence = false
+    static let defaultShowBoxIcon = true
+    static let defaultShowBoxCategory = false
+    static let defaultBoxLabelPlacement = BoxLabelPlacement.topTrailing
+    static let defaultBoxBadgeScale = 1.0
+    static let defaultHUDTextScale = 1.0
     static let defaultShowZoneOverlay = true
     static let defaultCTAStyle = CTAStyle.arrows
     static let defaultBrightness = 0.0
@@ -124,6 +129,21 @@ final class AppSettings: ObservableObject {
     @Published var showConfidence: Bool {
         didSet { persist(showConfidence, key: Keys.showConfidence) }
     }
+    @Published var showBoxIcon: Bool {
+        didSet { persist(showBoxIcon, key: Keys.showBoxIcon) }
+    }
+    @Published var showBoxCategory: Bool {
+        didSet { persist(showBoxCategory, key: Keys.showBoxCategory) }
+    }
+    @Published var boxLabelPlacement: BoxLabelPlacement {
+        didSet { persist(boxLabelPlacement.rawValue, key: Keys.boxLabelPlacement) }
+    }
+    @Published var boxBadgeScale: Double {
+        didSet { persist(boxBadgeScale, key: Keys.boxBadgeScale) }
+    }
+    @Published var hudTextScale: Double {
+        didSet { persist(hudTextScale, key: Keys.hudTextScale) }
+    }
     @Published var showZoneOverlay: Bool {
         didSet { persist(showZoneOverlay, key: Keys.showZoneOverlay) }
     }
@@ -154,6 +174,16 @@ final class AppSettings: ObservableObject {
 
     var selectedModel: WasteSortModel {
         WasteSortModel.from(resourceName: selectedModelName)
+    }
+
+    var boxOverlayStyle: BoxOverlayStyle {
+        BoxOverlayStyle(
+            showIcon: showBoxIcon,
+            showCategory: showBoxCategory,
+            showConfidence: showConfidence,
+            placement: boxLabelPlacement,
+            badgeScale: CGFloat(boxBadgeScale)
+        )
     }
 
     var runtime: RuntimeSettings {
@@ -203,6 +233,11 @@ final class AppSettings: ObservableObject {
         static let liveRotation = "settings.liveRotation"
         static let liveMirror = "settings.liveMirror"
         static let showConfidence = "settings.showConfidence"
+        static let showBoxIcon = "settings.showBoxIcon"
+        static let showBoxCategory = "settings.showBoxCategory"
+        static let boxLabelPlacement = "settings.boxLabelPlacement"
+        static let boxBadgeScale = "settings.boxBadgeScale"
+        static let hudTextScale = "settings.hudTextScale"
         static let showZoneOverlay = "settings.showZoneOverlay"
         static let ctaStyle = "settings.ctaStyle"
         static let brightness = "settings.brightness"
@@ -246,6 +281,21 @@ final class AppSettings: ObservableObject {
         )
         liveMirror = Self.loadBool(defaults, Keys.liveMirror, WasteSortConfig.defaultLiveMirror)
         showConfidence = Self.loadBool(defaults, Keys.showConfidence, WasteSortConfig.defaultShowConfidence)
+        showBoxIcon = Self.loadBool(defaults, Keys.showBoxIcon, WasteSortConfig.defaultShowBoxIcon)
+        showBoxCategory = Self.loadBool(
+            defaults,
+            Keys.showBoxCategory,
+            WasteSortConfig.defaultShowBoxCategory
+        )
+        boxLabelPlacement = BoxLabelPlacement(
+            rawValue: Self.loadString(
+                defaults,
+                Keys.boxLabelPlacement,
+                WasteSortConfig.defaultBoxLabelPlacement.rawValue
+            )
+        ) ?? WasteSortConfig.defaultBoxLabelPlacement
+        boxBadgeScale = Self.loadDouble(defaults, Keys.boxBadgeScale, WasteSortConfig.defaultBoxBadgeScale)
+        hudTextScale = Self.loadDouble(defaults, Keys.hudTextScale, WasteSortConfig.defaultHUDTextScale)
         showZoneOverlay = Self.loadBool(
             defaults,
             Keys.showZoneOverlay,
@@ -288,6 +338,11 @@ final class AppSettings: ObservableObject {
         liveRotation = WasteSortConfig.defaultLiveRotation
         liveMirror = WasteSortConfig.defaultLiveMirror
         showConfidence = WasteSortConfig.defaultShowConfidence
+        showBoxIcon = WasteSortConfig.defaultShowBoxIcon
+        showBoxCategory = WasteSortConfig.defaultShowBoxCategory
+        boxLabelPlacement = WasteSortConfig.defaultBoxLabelPlacement
+        boxBadgeScale = WasteSortConfig.defaultBoxBadgeScale
+        hudTextScale = WasteSortConfig.defaultHUDTextScale
         showZoneOverlay = WasteSortConfig.defaultShowZoneOverlay
         ctaStyle = WasteSortConfig.defaultCTAStyle
         autoRecordOnOpen = WasteSortConfig.defaultAutoRecordOnOpen

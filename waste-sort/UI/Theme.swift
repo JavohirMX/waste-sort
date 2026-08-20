@@ -33,3 +33,15 @@ enum Theme {
 
     static let categoryLabelFont = Font.system(size: 14, weight: .semibold)
 }
+
+private struct HUDTextScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1
+}
+
+extension EnvironmentValues {
+    /// Scales the three top-bar category names only.
+    var hudTextScale: CGFloat {
+        get { self[HUDTextScaleKey.self] }
+        set { self[HUDTextScaleKey.self] = newValue }
+    }
+}

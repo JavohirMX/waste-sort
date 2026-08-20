@@ -78,6 +78,7 @@ struct PhotoSortView: View {
                 reloadModel()
             }
         }
+        .environment(\.hudTextScale, CGFloat(settings.hudTextScale))
     }
 
     private var emptyState: some View {
@@ -147,7 +148,7 @@ struct PhotoSortView: View {
                                 imageSize: sourceImage.size,
                                 viewSize: geo.size,
                                 useAspectFill: false,
-                                showConfidence: settings.showConfidence
+                                style: settings.boxOverlayStyle
                             )
                         }
                     }

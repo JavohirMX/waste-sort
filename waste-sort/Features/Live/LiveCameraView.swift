@@ -152,7 +152,7 @@ struct LiveCameraView: View {
                         useAspectFill: true,
                         rotation: settings.liveRotation,
                         mirror: settings.liveMirror,
-                        showConfidence: settings.showConfidence
+                        style: settings.boxOverlayStyle
                     )
                     .allowsHitTesting(false)
 
@@ -212,6 +212,7 @@ struct LiveCameraView: View {
                 }
             }
         }
+        .environment(\.hudTextScale, CGFloat(settings.hudTextScale))
         .coordinateSpace(name: CTASpace.name)
         .overlay {
             if !zoneStore.isEditingZones, settings.ctaStyle == .dropdown {

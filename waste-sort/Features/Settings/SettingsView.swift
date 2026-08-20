@@ -337,12 +337,37 @@ struct SettingsView: View {
                     Text(style.displayName).tag(style)
                 }
             }
-            Toggle("Show confidence", isOn: $settings.showConfidence)
+            Toggle("Icon", isOn: $settings.showBoxIcon)
+            Toggle("Category", isOn: $settings.showBoxCategory)
+            Toggle("Confidence", isOn: $settings.showConfidence)
+            Picker("Placement", selection: $settings.boxLabelPlacement) {
+                ForEach(BoxLabelPlacement.allCases) { placement in
+                    Text(placement.displayName).tag(placement)
+                }
+            }
+            .disabled(!settings.boxOverlayStyle.showsBadge)
+            SettingsSliderRow(
+                title: "Box label size",
+                help: "Scales the icon and text on each detection box.",
+                valueText: "\(Int((settings.boxBadgeScale * 100).rounded()))%",
+                value: $settings.boxBadgeScale,
+                range: 0.75...2.0,
+                step: 0.05
+            )
+            .disabled(!settings.boxOverlayStyle.showsBadge)
+            SettingsSliderRow(
+                title: "Category size",
+                help: "Scales the three top-bar names and their icons together.",
+                valueText: "\(Int((settings.hudTextScale * 100).rounded()))%",
+                value: $settings.hudTextScale,
+                range: 0.75...3.0,
+                step: 0.05
+            )
         } header: {
             Text("Live overlay")
                 .foregroundStyle(BinGuide.organic.color)
         } footer: {
-            Text("Shown on the live camera when waste is detected. Choose one visual guide at a time. Confidence labels appear on each box as a percent.")
+            Text("Shown on the live camera when waste is detected. Choose one visual guide at a time. Box badges can show an icon, category name, and confidence percent; placement moves the badge around each box.")
         }
     }
 
