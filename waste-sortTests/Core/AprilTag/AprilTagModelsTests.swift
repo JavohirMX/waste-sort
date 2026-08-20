@@ -18,16 +18,27 @@ struct AprilTagModelsTests {
 
     @Test("BinOpenness initialization and equality")
     func binOpenness() {
-        let openness = BinOpenness(state: .open, confidence: 0.98, tagID: 1, lastSeenAt: 100.0)
+        let openness = BinOpenness(
+            state: .open,
+            confidence: 0.98,
+            tagID: 1,
+            matchedTagIDs: [1, 2],
+            boundTagIDs: [0, 1, 2],
+            lastSeenAt: 100.0
+        )
         #expect(openness.state == .open)
         #expect(openness.confidence == 0.98)
         #expect(openness.tagID == 1)
+        #expect(openness.matchedTagIDs == [1, 2])
+        #expect(openness.boundTagIDs == [0, 1, 2])
         #expect(openness.lastSeenAt == 100.0)
 
         let defaultOpenness = BinOpenness()
         #expect(defaultOpenness.state == .unknown)
         #expect(defaultOpenness.confidence == 0.0)
         #expect(defaultOpenness.tagID == nil)
+        #expect(defaultOpenness.matchedTagIDs.isEmpty)
+        #expect(defaultOpenness.boundTagIDs.isEmpty)
         #expect(defaultOpenness.lastSeenAt == 0.0)
     }
 
@@ -81,6 +92,10 @@ struct AprilTagModelsTests {
         #expect(standard.tagFamilyName == "tag16h5")
         #expect(standard.staleTimeout == 2.0)
         #expect(standard.sampleInterval == 0.0)
+        #expect(AprilTagConfig.tagsPerBinGroup == 3)
+        #expect(AprilTagConfig.defaultTagIDs(forIndex: 0) == [0, 1, 2])
+        #expect(AprilTagConfig.defaultTagIDs(forIndex: 1) == [3, 4, 5])
+        #expect(AprilTagConfig.defaultTagIDs(forIndex: 2) == [6, 7, 8])
 
         let custom = AprilTagConfig(tagFamilyName: "tag36h11", staleTimeout: 0.50, sampleInterval: 0.1)
         #expect(custom.tagFamilyName == "tag36h11")

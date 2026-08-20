@@ -9,6 +9,7 @@ struct AprilTagDebugOverlay: View {
     var viewSize: CGSize
     var rotation: LivePreviewRotation
     var mirror: Bool
+    var stats: AprilTagFrameStats?
 
     init(
         detectedTags: [TrackedAprilTag],
@@ -17,7 +18,8 @@ struct AprilTagDebugOverlay: View {
         imageSize: CGSize,
         viewSize: CGSize,
         rotation: LivePreviewRotation = .oneEighty,
-        mirror: Bool = false
+        mirror: Bool = false,
+        stats: AprilTagFrameStats? = nil
     ) {
         self.detectedTags = detectedTags
         self.statuses = statuses
@@ -26,12 +28,12 @@ struct AprilTagDebugOverlay: View {
         self.viewSize = viewSize
         self.rotation = rotation
         self.mirror = mirror
+        self.stats = stats
     }
 
+    @ViewBuilder
     var body: some View {
-        guard viewSize.width > 0, viewSize.height > 0 else { return AnyView(EmptyView()) }
-
-        return AnyView(
+        if viewSize.width > 0 && viewSize.height > 0 {
             ZStack {
                 // Draw detected AprilTag corner boxes
                 ForEach(detectedTags) { tag in
@@ -47,7 +49,7 @@ struct AprilTagDebugOverlay: View {
                         .stroke(Color.cyan, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
 
                         let center = toViewSpace(tag.center)
-                        Text("#\(tag.id)")
+                        Text("#\(tag.id) \(Int(tag.decisionMargin))")
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                             .foregroundStyle(.black)
                             .padding(.horizontal, 4)
@@ -65,7 +67,7 @@ struct AprilTagDebugOverlay: View {
                             Circle()
                                 .fill(status.state == .open ? Color.green : Color.red)
                                 .frame(width: 6, height: 6)
-                            Text(status.state == .open ? "OPEN" : "CLOSED")
+                            Text(statusBadgeText(for: status))
                                 .font(.system(size: 10, weight: .heavy, design: .monospaced))
                                 .foregroundStyle(.white)
                         }
@@ -75,9 +77,34 @@ struct AprilTagDebugOverlay: View {
                         .position(x: center.x, y: center.y - 20)
                     }
                 }
+                if let stats {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(stats.sourceWidth)x\(stats.sourceHeight)  \(Int(stats.detectionMilliseconds))ms")
+                        Text("decoded \(stats.rawCount)  accepted \(stats.acceptedCount)")
+                        Text("best margin \(stats.bestMargin.map { String(Int($0)) } ?? "-")")
+                        // Below ~3 px per tag16h5 cell (24 px across the tag) decoding is luck,
+                        // so this is the number to watch when placing or resizing tags.
+                        Text("tag px \(stats.smallestTagSidePixels.map { String(Int($0)) } ?? "-")")
+                    }
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 4))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(8)
+                }
             }
             .allowsHitTesting(false)
-        )
+        }
+    }
+
+    private func statusBadgeText(for status: BinOpenness) -> String {
+        guard status.state == .open else { return "CLOSED" }
+        if status.boundTagIDs.count > 1 {
+            return "OPEN (\(status.matchedTagIDs.count)/\(status.boundTagIDs.count))"
+        }
+        return "OPEN"
     }
 
     private func zoneCenter(_ zone: DropZone) -> CGPoint {
