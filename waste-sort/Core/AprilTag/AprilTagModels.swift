@@ -23,17 +23,23 @@ struct BinOpenness: Equatable, Sendable {
     var state: BinOpennessState = .unknown
     var confidence: Double = 0.0
     var tagID: Int?
+    var matchedTagIDs: [Int] = []
+    var boundTagIDs: [Int] = []
     var lastSeenAt: CFAbsoluteTime = 0.0
 
     init(
         state: BinOpennessState = .unknown,
         confidence: Double = 0.0,
         tagID: Int? = nil,
+        matchedTagIDs: [Int] = [],
+        boundTagIDs: [Int] = [],
         lastSeenAt: CFAbsoluteTime = 0.0
     ) {
         self.state = state
         self.confidence = confidence
-        self.tagID = tagID
+        self.tagID = tagID ?? matchedTagIDs.first
+        self.matchedTagIDs = matchedTagIDs.isEmpty ? (tagID.map { [$0] } ?? []) : matchedTagIDs
+        self.boundTagIDs = boundTagIDs
         self.lastSeenAt = lastSeenAt
     }
 }
@@ -69,14 +75,17 @@ struct AprilTagStatusFrame: Equatable, Sendable {
     var statuses: [UUID: BinOpenness] = [:]
     var detectedTags: [TrackedAprilTag] = []
     var timestamp: CFAbsoluteTime = 0.0
+    /// Diagnostics from the most recent detection pass, for the debug overlay. Nil when
+    /// AprilTag detection is off.
+    var detectorStats: AprilTagFrameStats?
 
-    var closedZoneIDs: Set<UUID> {
+    nonisolated var closedZoneIDs: Set<UUID> {
         Set(statuses.compactMap { zoneID, status in
             status.state == .closed ? zoneID : nil
         })
     }
 
-    var openZoneIDs: Set<UUID> {
+    nonisolated var openZoneIDs: Set<UUID> {
         Set(statuses.compactMap { zoneID, status in
             status.state == .open ? zoneID : nil
         })
@@ -85,11 +94,13 @@ struct AprilTagStatusFrame: Equatable, Sendable {
     init(
         statuses: [UUID: BinOpenness] = [:],
         detectedTags: [TrackedAprilTag] = [],
-        timestamp: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
+        timestamp: CFAbsoluteTime = CFAbsoluteTimeGetCurrent(),
+        detectorStats: AprilTagFrameStats? = nil
     ) {
         self.statuses = statuses
         self.detectedTags = detectedTags
         self.timestamp = timestamp
+        self.detectorStats = detectorStats
     }
 }
 
@@ -101,6 +112,12 @@ struct AprilTagConfig: Codable, Equatable, Sendable {
 
     static let staleTimeoutRange = 0.10...5.0
     static let staleTimeoutStep = 0.10
+    static let tagsPerBinGroup = 3
+
+    static func defaultTagIDs(forIndex index: Int) -> [Int] {
+        let start = index * tagsPerBinGroup
+        return (start..<(start + tagsPerBinGroup)).map { $0 }
+    }
 
     init(
         tagFamilyName: String = "tag16h5",

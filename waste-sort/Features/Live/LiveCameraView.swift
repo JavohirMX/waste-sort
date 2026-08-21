@@ -14,6 +14,7 @@ struct LiveCameraView: View {
     @State private var tracks: [TrackedDetection] = []
     @State private var detectedTags: [TrackedAprilTag] = []
     @State private var tagStatuses: [UUID: BinOpenness] = [:]
+    @State private var tagStats: AprilTagFrameStats?
     @State private var imageSize: CGSize = .zero
     @State private var fpsMonitor = FrameRateMonitor()
     @State private var showSettings = false
@@ -70,7 +71,8 @@ struct LiveCameraView: View {
                         reacquireGrace: zoneStore.reacquireGrace,
                         aprilTagEnabled: aprilTagStore.isEnabled,
                         aprilTagBindings: aprilTagStore.bindings,
-                        aprilTagStaleTimeout: aprilTagStore.staleTimeout
+                        aprilTagStaleTimeout: aprilTagStore.staleTimeout,
+                        aprilTagRangeProfile: aprilTagStore.rangeProfile
                     ) { result, tracked, zoneFrame, tagFrame in
                         if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                             fps = measured
@@ -79,6 +81,7 @@ struct LiveCameraView: View {
                         tracks = tracked
                         detectedTags = tagFrame.detectedTags
                         tagStatuses = tagFrame.statuses
+                        tagStats = tagFrame.detectorStats
                         if occupiedZoneIDs != zoneFrame.occupiedZoneIDs {
                             occupiedZoneIDs = zoneFrame.occupiedZoneIDs
                         }
@@ -133,7 +136,8 @@ struct LiveCameraView: View {
                             imageSize: imageSize,
                             viewSize: geo.size,
                             rotation: settings.liveRotation,
-                            mirror: settings.liveMirror
+                            mirror: settings.liveMirror,
+                            stats: tagStats
                         )
                     }
 
@@ -330,8 +334,9 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     var dwellFrames: Int
     var reacquireGrace: Double
     var aprilTagEnabled: Bool
-    var aprilTagBindings: [UUID: Int]
+    var aprilTagBindings: [UUID: [Int]]
     var aprilTagStaleTimeout: Double
+    var aprilTagRangeProfile: AprilTagRangeProfile
     var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
 
     func makeCoordinator() -> Coordinator {
@@ -346,6 +351,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagEnabled: aprilTagEnabled,
             aprilTagBindings: aprilTagBindings,
             aprilTagStaleTimeout: aprilTagStaleTimeout,
+            aprilTagRangeProfile: aprilTagRangeProfile,
             onDetection: onDetection
         )
     }
@@ -379,6 +385,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         context.coordinator.recording = recording
         context.coordinator.aprilTagEnabled = aprilTagEnabled
         context.coordinator.aprilTagBindings = aprilTagBindings
+        context.coordinator.aprilTagRangeProfile = aprilTagRangeProfile
         applyThresholds(uiView, settings: settings)
         applyTracking(context.coordinator, settings: settings)
         applyZones(context.coordinator)
@@ -468,12 +475,22 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         var recording: RecordingController
         var zones: [DropZone]
         var aprilTagEnabled: Bool
-        var aprilTagBindings: [UUID: Int]
+        var aprilTagBindings: [UUID: [Int]]
         var aprilTagStaleTimeout: Double
+        var aprilTagRangeProfile: AprilTagRangeProfile = .far {
+            didSet {
+                guard oldValue != aprilTagRangeProfile else { return }
+                aprilTagPipeline.apply(tuning: aprilTagRangeProfile.tuning)
+                aprilTagPipeline.reset()
+                applyCaptureResolution(force: true)
+            }
+        }
         weak var yoloView: YOLOView?
         let tracker = DetectionTracker()
         let depositDetector = ZoneDepositDetector()
-        let aprilTagDetector = AprilTagDetector(familyName: "tag16h5")
+        let aprilTagPipeline = AprilTagFramePipeline(
+            detector: AprilTagDetector(familyName: "tag16h5", tuning: AprilTagRangeProfile.far.tuning)
+        )
         let aprilTagBinDetector = AprilTagBinStateDetector()
         private var cameraObservers: [NSObjectProtocol] = []
         private var applyWorkItem: DispatchWorkItem?
@@ -492,8 +509,9 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             dwellFrames: Int,
             reacquireGrace: Double,
             aprilTagEnabled: Bool,
-            aprilTagBindings: [UUID: Int],
+            aprilTagBindings: [UUID: [Int]],
             aprilTagStaleTimeout: Double,
+            aprilTagRangeProfile: AprilTagRangeProfile,
             onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
         ) {
             self.settings = settings
@@ -504,7 +522,9 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             self.aprilTagEnabled = aprilTagEnabled
             self.aprilTagBindings = aprilTagBindings
             self.aprilTagStaleTimeout = aprilTagStaleTimeout
+            self.aprilTagRangeProfile = aprilTagRangeProfile
             self.onDetection = onDetection
+            aprilTagPipeline.apply(tuning: aprilTagRangeProfile.tuning)
             depositDetector.requiredDwellFrames = dwellFrames
             depositDetector.reacquireGrace = reacquireGrace
         }
@@ -533,13 +553,16 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             }
             let tracked = tracker.update(raw)
             let currentZones = zones
-            let tagFrame = aprilTagEnabled
+            var tagFrame = aprilTagEnabled
                 ? aprilTagBinDetector.update(
                     zones: currentZones,
                     tagBindings: aprilTagBindings,
                     config: AprilTagConfig(staleTimeout: aprilTagStaleTimeout)
                 )
                 : AprilTagStatusFrame()
+            if aprilTagEnabled {
+                tagFrame.detectorStats = aprilTagPipeline.detector.lastFrameStats
+            }
             depositDetector.binOpenState = FrameBinOpenState(tagFrame: tagFrame, zones: currentZones)
             let zoneFrame = depositDetector.update(tracks: tracked, zones: currentZones)
             if recording.isRecording {
@@ -618,6 +641,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             }
 
             if YOLOViewCameraSwitcher.currentDeviceUniqueID(in: view) == device.uniqueID {
+                applyCaptureResolution()
                 registerCaptureSessionIfNeeded()
                 applyCaptureControlsIfNeeded()
                 installFrameColorProxyIfNeeded()
@@ -626,6 +650,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
 
             let ok = YOLOViewCameraSwitcher.switchTo(device, in: view)
             if ok {
+                applyCaptureResolution(force: true)
                 lastAppliedCaptureDeviceID = nil
                 registerCaptureSessionIfNeeded()
                 applyCaptureControlsIfNeeded()
@@ -644,10 +669,14 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             if frameColorProxy == nil {
                 frameColorProxy = VideoFrameColorProxy()
             }
+            // The tap copies luma here on the camera queue and detects on the pipeline's own
+            // queue. Running the pass inline would cost YOLO an inference frame per detection.
             frameColorProxy?.frameTap = { [weak self] pixelBuffer in
                 guard let self, self.aprilTagEnabled else { return }
-                let tags = self.aprilTagDetector.detect(in: pixelBuffer)
-                self.aprilTagBinDetector.ingest(tags: tags)
+                self.aprilTagPipeline.submit(pixelBuffer)
+            }
+            aprilTagPipeline.onTags = { [weak self] tags, timestamp in
+                self?.aprilTagBinDetector.ingest(tags: tags, timestamp: timestamp)
             }
             frameColorProxy?.controls = settings.frameColor
             frameColorProxy?.install(on: view)
@@ -657,6 +686,29 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         func uninstallFrameColorProxy() {
             frameColorProxy?.uninstall()
             frameColorProxy = nil
+        }
+
+        /// Raises the session preset to whatever the range profile asks for.
+        ///
+        /// Set directly on the session rather than through `YOLOView.captureSessionPreset`,
+        /// whose setter tears the capture down and restarts it - which would drop the frame
+        /// colour proxy and the AprilTag tap along with it.
+        func applyCaptureResolution(force: Bool = false) {
+            guard let view = yoloView,
+                  let session = YOLOViewCameraSwitcher.captureSession(in: view)
+            else {
+                return
+            }
+            let wanted = aprilTagRangeProfile.captureSessionPresets
+            guard force || !wanted.contains(session.sessionPreset) else { return }
+            guard let preset = wanted.first(where: { session.canSetSessionPreset($0) }),
+                  session.sessionPreset != preset
+            else {
+                return
+            }
+            session.beginConfiguration()
+            session.sessionPreset = preset
+            session.commitConfiguration()
         }
 
         func applyCaptureControlsIfNeeded() {

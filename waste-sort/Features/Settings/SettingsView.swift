@@ -254,6 +254,17 @@ struct SettingsView: View {
             if aprilTagStore.isEnabled {
                 Toggle("Show debug overlay", isOn: $aprilTagStore.showDebugOverlay)
 
+                Picker("Detection range", selection: $aprilTagStore.rangeProfile) {
+                    ForEach(AprilTagRangeProfile.allCases) { profile in
+                        Text(profile.displayName).tag(profile)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(aprilTagStore.rangeProfile.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 SettingsSliderRow(
                     title: "Closed delay",
                     help: "How long a tag can be missing before the bin is marked closed. Lower = lids register closed sooner; higher = more tolerant of brief dropouts.",
@@ -274,15 +285,24 @@ struct SettingsView: View {
 
                             Text(zone.name)
                             Spacer()
-                            Picker("Tag", selection: Binding(
+                            Picker("Tags", selection: Binding(
                                 get: {
-                                    aprilTagStore.bindings[zone.id]
-                                        ?? (zoneStore.zones.firstIndex(where: { $0.id == zone.id }) ?? 0)
+                                    let index = zoneStore.zones.firstIndex(where: { $0.id == zone.id }) ?? 0
+                                    return aprilTagStore.tagIDs(for: zone.id, defaultIndex: index)
                                 },
-                                set: { aprilTagStore.setTagID($0, for: zone.id) }
+                                set: { aprilTagStore.setTagIDs($0, for: zone.id) }
                             )) {
-                                ForEach(0..<10) { tagID in
-                                    Text("Tag #\(tagID)").tag(tagID)
+                                Section("3-Tag Groups") {
+                                    ForEach(0..<max(4, zoneStore.zones.count + 1), id: \.self) { g in
+                                        let start = g * 3
+                                        Text("Group \(g + 1) (#\(start)–#\(start + 2))")
+                                            .tag([start, start + 1, start + 2])
+                                    }
+                                }
+                                Section("Single Tags") {
+                                    ForEach(0..<max(12, (zoneStore.zones.count + 1) * 3), id: \.self) { tagID in
+                                        Text("Single Tag #\(tagID)").tag([tagID])
+                                    }
                                 }
                             }
                             .pickerStyle(.menu)
@@ -294,7 +314,7 @@ struct SettingsView: View {
             Text("AprilTag Openness")
                 .foregroundStyle(BinGuide.organic.color)
         } footer: {
-            Text("Uses camera to detect when bins are physically opened via inside-mounted tag16h5 AprilTags. Closed delay is how long a tag can stay missing before the bin is marked closed.")
+            Text("Uses camera to detect when bins are physically opened via inside-mounted tag16h5 AprilTags. Detection range sets capture resolution and how hard the detector works per frame - raise it if tags near the bins go unseen, lower it if the frame rate drops. Closed delay is how long a tag can stay missing before the bin is marked closed.")
         }
     }
 
