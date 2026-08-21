@@ -397,6 +397,24 @@ struct SettingsView: View {
         }
     }
 
+    /// Kept out of the view body: as one concatenated literal in a `Text` it pushed the
+    /// type checker past its budget and failed the build.
+    private var confirmationFooter: String {
+        """
+        The detector keeps finding items as it does now. On top of that, each item is \
+        photographed and shown to the on-device Foundation model, and whatever it answers is \
+        locked in — the category stops changing for as long as that item stays on screen, and \
+        it is what gets recorded when the item is thrown away. Its box breathes while the \
+        model is thinking and flashes when the answer lands.
+
+        The verdict chip sits beside the last-deposit chip and shows the crop the model was \
+        actually given; tap it for every answer this session, including the ones that were \
+        not acted on.
+
+        \(confirmationAvailability.summary)
+        """
+    }
+
     @ViewBuilder
     private var confirmationSection: some View {
         Section {
@@ -407,19 +425,13 @@ struct SettingsView: View {
                     .foregroundStyle(confirmationAvailability.isReady ? .green : .secondary)
             }
 
-            Toggle("Show verdict log on Live", isOn: $settings.foundationVerdictLogEnabled)
+            Toggle("Show last verdict on Live", isOn: $settings.foundationVerdictLogEnabled)
                 .disabled(!settings.foundationConfirmationEnabled)
         } header: {
             Text("Category confirmation")
                 .foregroundStyle(BinGuide.cleanInorganic.color)
         } footer: {
-            Text(
-                "The detector keeps finding items as it does now. On top of that, each item is "
-                    + "photographed and shown to the on-device Foundation model, and whatever it "
-                    + "answers is locked in — the category stops changing for as long as that item "
-                    + "stays on screen. Its box breathes while the model is thinking and flashes "
-                    + "when the answer lands.\n\n\(confirmationAvailability.summary)"
-            )
+            Text(confirmationFooter)
         }
     }
 

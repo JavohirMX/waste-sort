@@ -26,6 +26,8 @@ struct LiveCameraView: View {
     @State private var settlingZoneIDs: Set<UUID> = []
     @State private var confirmationFrame = ConfirmationFrame()
     @State private var freshDepositID: UUID?
+    @State private var freshVerdictID: UUID?
+    @State private var showVerdicts = false
     @State private var showHistory = false
     @State private var segmentFrames: [String: CGRect] = [:]
 
@@ -87,6 +89,7 @@ struct LiveCameraView: View {
                         }
                         if !verdicts.isEmpty {
                             verdictLog.append(verdicts)
+                            flashVerdict()
                         }
                         detectedTags = tagFrame.detectedTags
                         tagStatuses = tagFrame.statuses
@@ -203,21 +206,6 @@ struct LiveCameraView: View {
                     .padding(.horizontal, Theme.hudInset)
                     .padding(.bottom, Theme.hudInset)
                 } else {
-                    if settings.foundationConfirmationEnabled, settings.foundationVerdictLogEnabled {
-                        FoundationVerdictStrip(
-                            records: verdictLog.records,
-                            onClear: { verdictLog.clear() }
-                        )
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, Theme.hudInset)
-                        .padding(.bottom, 10)
-                        .transition(.opacity)
-                        .animation(
-                            .easeOut(duration: Theme.animationDuration),
-                            value: verdictLog.records.first?.id
-                        )
-                    }
-
                     HStack(alignment: .bottom) {
                         if let last = history.events.first {
                             LastDepositChip(
@@ -228,6 +216,18 @@ struct LiveCameraView: View {
                             .transition(.move(edge: .leading).combined(with: .opacity))
                             .id(last.id)
                         }
+                        if settings.foundationConfirmationEnabled,
+                           settings.foundationVerdictLogEnabled,
+                           let verdict = verdictLog.records.first
+                        {
+                            LastVerdictChip(
+                                record: verdict,
+                                isFresh: freshVerdictID == verdict.id,
+                                onTap: { showVerdicts = true }
+                            )
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                            .id(verdict.id)
+                        }
                         Spacer(minLength: 0)
                         fpsBadge
                     }
@@ -235,7 +235,12 @@ struct LiveCameraView: View {
                         .spring(response: 0.35, dampingFraction: 0.7),
                         value: history.events.first?.id
                     )
+                    .animation(
+                        .spring(response: 0.35, dampingFraction: 0.7),
+                        value: verdictLog.records.first?.id
+                    )
                     .animation(.easeOut(duration: Theme.animationDuration), value: freshDepositID)
+                    .animation(.easeOut(duration: Theme.animationDuration), value: freshVerdictID)
                     .padding(.horizontal, Theme.hudInset)
                     .padding(.bottom, Theme.hudInset)
                 }
@@ -256,6 +261,10 @@ struct LiveCameraView: View {
             HistoryView()
                 .environmentObject(history)
                 .environmentObject(zoneStore)
+        }
+        .sheet(isPresented: $showVerdicts) {
+            VerdictHistoryView()
+                .environmentObject(verdictLog)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -284,6 +293,21 @@ struct LiveCameraView: View {
     }
 
     /// Flashes the receiving zone outline and pops the last-deposit chip.
+    /// Same beat as a deposit landing, minus the haptic — the model answers often enough
+    /// that buzzing every time would be noise.
+    private func flashVerdict() {
+        let latest = verdictLog.records.first?.id
+        withAnimation(.easeOut(duration: Theme.animationDuration)) {
+            freshVerdictID = latest
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(900))
+            withAnimation(.easeOut(duration: Theme.animationDuration)) {
+                if freshVerdictID == latest { freshVerdictID = nil }
+            }
+        }
+    }
+
     private func flash(_ deposits: [ZoneDeposit]) {
         let zoneIDs = Set(deposits.map(\.zoneID))
         let latest = history.events.first?.id

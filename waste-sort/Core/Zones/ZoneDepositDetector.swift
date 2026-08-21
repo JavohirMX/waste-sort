@@ -115,6 +115,8 @@ nonisolated final class ZoneDepositDetector {
         var classKey: String
         var className: String
         var conf: Float
+        /// Set once the on-device model has named this item.
+        var confirmedBinID: String?
     }
 
     /// The bin an object would be credited to if it never comes back.
@@ -132,6 +134,14 @@ nonisolated final class ZoneDepositDetector {
         /// Cumulative confidence per class, so a flicker to the wrong label does not
         /// outvote a steady reading.
         var classWeights: [String: (className: String, weight: Float, conf: Float)] = [:]
+        /// A Foundation-model confirmation, once one has been attached to this object.
+        ///
+        /// Not a vote. The tally below sums confidence over every frame, so an item seen for
+        /// a second before the model answers has already banked far more weight for the
+        /// detector's guess than the confirmation could ever outvote — and the model is
+        /// asked precisely because that guess is the thing in doubt. A confirmation
+        /// therefore replaces the tally outright.
+        var confirmed: (key: String, name: String, conf: Float)?
         /// Evidence the object is not simply waste already lying in a bin: it was seen
         /// outside every zone at some point, or it was first seen inside a *closed* one.
         var arrivedFromOutside = false
@@ -176,6 +186,9 @@ nonisolated final class ZoneDepositDetector {
             detectedFrames += 1
             lastSeenAt = time
             last = sighting
+            if sighting.confirmedBinID != nil {
+                confirmed = (sighting.classKey, sighting.className, sighting.conf)
+            }
             let existing = classWeights[sighting.classKey]
             classWeights[sighting.classKey] = (
                 className: sighting.className,
@@ -184,8 +197,10 @@ nonisolated final class ZoneDepositDetector {
             )
         }
 
-        /// The class with the most confidence behind it across the object's whole life.
+        /// What the item goes into the log as: the model's confirmation if there is one,
+        /// otherwise the class with the most confidence behind it across the object's life.
         var verdictClass: (key: String, name: String, conf: Float) {
+            if let confirmed { return confirmed }
             let best = classWeights.max { a, b in
                 a.value.weight == b.value.weight ? a.key < b.key : a.value.weight < b.value.weight
             }
@@ -244,7 +259,8 @@ nonisolated final class ZoneDepositDetector {
                 box: track.displayXywhn,
                 classKey: vote.classKey,
                 className: vote.className,
-                conf: vote.conf
+                conf: vote.conf,
+                confirmedBinID: track.confirmedBinID
             )
             let object = resolveObject(
                 for: track,
