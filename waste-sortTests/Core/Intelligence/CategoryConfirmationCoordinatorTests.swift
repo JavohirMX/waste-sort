@@ -335,6 +335,35 @@ struct CategoryConfirmationCoordinatorTests {
         #expect(h.confirmer.calls == 1)
     }
 
+    /// The case a fixed radius got wrong. An item is normally lost *while being carried*, so
+    /// the longer it was gone the further it will have travelled — and a carry towards a bin
+    /// during a half-second dropout covers far more than a hand's width.
+    @Test("an item carried during a long dropout is still the same item")
+    func verdictFollowsACarriedItem() async {
+        let h = Harness(answers: [Self.recyclable, Self.organic])
+        h.tick([track(id: 1, centerX: 0.3)], times: 2)
+        await h.settle()
+
+        h.tick([])
+        h.advance(0.5)
+        let reacquired = h.tick([track(id: 2, classKey: "organic", centerX: 0.58)])
+        #expect(reacquired.tracks.first?.classKey == BinGuide.cleanInorganic.id)
+        #expect(reacquired.frame.state(for: 2) == .confirmed)
+    }
+
+    @Test("the search window still has a ceiling, however long the gap")
+    func readoptionHasACeiling() async {
+        let h = Harness(answers: [Self.recyclable, Self.organic])
+        h.tick([track(id: 1, centerX: 0.2)], times: 2)
+        await h.settle()
+
+        h.tick([])
+        h.advance(1.2)
+        let stranger = h.tick([track(id: 2, classKey: "organic", centerX: 0.7)])
+        #expect(stranger.tracks.first?.classKey == "organic")
+        #expect(stranger.frame.state(for: 2) != .confirmed)
+    }
+
     @Test("a different item appearing elsewhere does not inherit the verdict")
     func verdictDoesNotTransferAcrossTheFrame() async {
         let h = Harness(answers: [Self.recyclable, Self.organic])

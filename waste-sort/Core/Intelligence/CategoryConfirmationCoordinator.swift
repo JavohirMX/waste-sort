@@ -28,10 +28,20 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
     /// Detected frames a track needs before it is asked about, so the model is not handed a
     /// box that is still settling.
     var minimumTrackFrames = 3
-    /// How long a verdict waits to be re-adopted after its track disappears.
+    /// How long a verdict waits to be re-adopted after its track disappears. A shade longer
+    /// than `ZoneDepositDetector.reacquireGrace`, so this layer never gives up on an item
+    /// the deposit layer still considers the same object.
     var lostGrace: CFAbsoluteTime = 1.5
-    /// How far a new track may appear from where the lost one was and still inherit it.
-    var readoptRadius: CGFloat = 0.12
+    /// How far a new track may appear from where the lost one was and still inherit it, at
+    /// the instant it vanishes.
+    var readoptRadius: CGFloat = 0.10
+    /// Extra search radius per second missing. An item is usually lost *while being carried*,
+    /// so where it reappears depends on how long it was gone — a fixed radius drops exactly
+    /// the verdicts worth keeping. Matched to `ZoneDepositDetector` so the two layers agree
+    /// on what counts as the same item.
+    var readoptDriftPerSecond: CGFloat = 0.55
+    /// Ceiling, so a long dropout cannot claim a box on the far side of the frame.
+    var readoptMaxRadius: CGFloat = 0.35
     /// Pause before asking again about an item the model declined to name.
     var retryDelay: CFAbsoluteTime = 2.0
     /// Total asks per item before giving up on it.
@@ -125,7 +135,7 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
 
         for track in tracks {
             let center = CGPoint(x: track.displayXywhn.midX, y: track.displayXywhn.midY)
-            let entry = entries[track.id] ?? adopt(trackID: track.id, center: center)
+            let entry = entries[track.id] ?? adopt(trackID: track.id, center: center, at: now)
             entry.center = center
             // Only frames the model really saw count towards steadiness; a frozen box is
             // not evidence that the item is still sitting there.
@@ -175,15 +185,24 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
     }
 
     /// Starts an entry for a new track, inheriting a nearby parked verdict when there is one.
-    private func adopt(trackID: Int, center: CGPoint) -> Entry {
+    ///
+    /// Identity here is decided on position alone — deliberately class-blind, since the model
+    /// relabelling an item mid-carry is one of the things this layer exists to absorb. The
+    /// window each parked verdict is searched in widens with how long it has been missing.
+    private func adopt(trackID: Int, center: CGPoint, at now: CFAbsoluteTime) -> Entry {
         let entry = Entry(center: center)
         var bestIndex: Int?
-        var bestDistance = readoptRadius
+        var bestDistance = CGFloat.greatestFiniteMagnitude
         for (index, orphan) in orphans.enumerated() {
+            let elapsed = max(0, now - orphan.lostAt)
+            let limit = min(
+                readoptMaxRadius,
+                readoptRadius + readoptDriftPerSecond * CGFloat(elapsed)
+            )
             let dx = orphan.center.x - center.x
             let dy = orphan.center.y - center.y
             let distance = (dx * dx + dy * dy).squareRoot()
-            guard distance <= bestDistance else { continue }
+            guard distance <= limit, distance < bestDistance else { continue }
             bestDistance = distance
             bestIndex = index
         }
