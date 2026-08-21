@@ -245,6 +245,7 @@ struct LiveCameraView: View {
                 .environmentObject(history)
                 .environmentObject(binStyle)
                 .environmentObject(zoneStore)
+                .background(.clear)
                 .transition(.move(edge: .trailing))
                 .zIndex(1)
             }

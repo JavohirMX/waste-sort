@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Shared Liquid Glass chrome for Stats / Bin Settings floating controls.
 enum GlassChrome {
@@ -84,6 +85,74 @@ enum GlassChrome {
                 topTrailingRadius: 0,
                 style: .continuous
             )
+        }
+    }
+}
+
+/// Frosted backdrop that blurs whatever is behind it (the live camera when Stats is an overlay).
+struct CameraGlassBackdrop: View {
+    var body: some View {
+        ZStack {
+            CameraBlurView()
+            Theme.statsBackground.opacity(0.14)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+}
+
+/// UIKit blur samples the window compositor, including `AVCaptureVideoPreviewLayer`.
+private struct CameraBlurView: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialLight))
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {}
+}
+
+/// SwiftUI `NavigationStack` sits in an opaque `UINavigationController`. Clear it so glass can see the camera.
+struct ClearHostingBackground: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = HostingBackgroundClearView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        (uiView as? HostingBackgroundClearView)?.clearOpaqueAncestors()
+    }
+}
+
+private final class HostingBackgroundClearView: UIView {
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        clearOpaqueAncestors()
+    }
+
+    func clearOpaqueAncestors() {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let nav = current as? UINavigationController {
+                nav.view.backgroundColor = .clear
+                nav.view.isOpaque = false
+                nav.navigationBar.isTranslucent = true
+            }
+            responder = current.next
+        }
+
+        var view: UIView? = superview
+        var hops = 0
+        while let current = view, hops < 16, !(current is UIWindow) {
+            if !(current is UIVisualEffectView) {
+                current.backgroundColor = .clear
+                current.isOpaque = false
+            }
+            view = current.superview
+            hops += 1
         }
     }
 }

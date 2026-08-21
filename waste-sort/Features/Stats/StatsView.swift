@@ -66,84 +66,93 @@ struct StatsView: View {
     private var useMockDailyBars: Bool { settings.useMockStats && period == .daily }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Theme.statsBackground.ignoresSafeArea()
+        ZStack {
+            CameraGlassBackdrop()
 
-                GeometryReader { geo in
-                    let bottomReserve: CGFloat = 76
-                    let contentHeight = max(geo.size.height - bottomReserve, 400)
+            NavigationStack {
+                ZStack {
+                    ClearHostingBackground()
+                    GeometryReader { geo in
+                        let bottomReserve: CGFloat = 76
+                        let contentHeight = max(geo.size.height - bottomReserve, 400)
 
-                    VStack(alignment: .leading, spacing: isWide ? 22 : 16) {
-                        headerRow
+                        VStack(alignment: .leading, spacing: isWide ? 22 : 16) {
+                            headerRow
 
-                        periodPicker
+                            periodPicker
 
-                        if isWide && geo.size.width > 700 {
-                            landscapeBody(contentHeight: contentHeight)
-                        } else {
-                            ScrollView {
-                                VStack(spacing: 18) {
-                                    generatedCard
-                                        .frame(minHeight: 320)
-                                    binsFilledCard
-                                        .frame(minHeight: 300)
-                                    timelineCard
-                                        .frame(height: 360)
+                            if isWide && geo.size.width > 700 {
+                                landscapeBody(contentHeight: contentHeight)
+                            } else {
+                                ScrollView {
+                                    VStack(spacing: 18) {
+                                        generatedCard
+                                            .frame(minHeight: 320)
+                                        binsFilledCard
+                                            .frame(minHeight: 300)
+                                        timelineCard
+                                            .frame(height: 360)
+                                    }
+                                    .padding(.bottom, 24)
                                 }
-                                .padding(.bottom, 24)
                             }
                         }
+                        .padding(.horizontal, GlassChrome.pageInset)
+                        .padding(.top, 12)
+                        .padding(.bottom, bottomReserve)
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
                     }
-                    .padding(.horizontal, GlassChrome.pageInset)
-                    .padding(.top, 12)
-                    .padding(.bottom, bottomReserve)
-                    .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-                }
 
-                VStack {
-                    Spacer()
-                    HStack {
-                        dismissGlassButton
+                    VStack {
                         Spacer()
-                    }
-                    .padding(.bottom, Theme.hudInset)
-                }
-            }
-            .toolbar(.hidden, for: .navigationBar)
-            .overlay(alignment: .topTrailing) {
-                GlassChrome.glassCircleButton(
-                    systemName: "gearshape.fill",
-                    accessibilityLabel: "Bin Settings"
-                ) {
-                    showBinSettings = true
-                }
-                .padding(.top, 16)
-                .padding(.trailing, GlassChrome.pageInset)
-            }
-            .navigationDestination(isPresented: $showBinSettings) {
-                BinSettingsView()
-                    .environmentObject(binStyle)
-                    .environmentObject(zoneStore)
-                    .environmentObject(settings)
-            }
-            .sheet(isPresented: $showSiteNameEditor) {
-                SiteNameEditorSheet(
-                    siteNameDraft: $siteNameDraft,
-                    onCancel: { showSiteNameEditor = false },
-                    onSave: {
-                        let trimmed = siteNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmed.isEmpty {
-                            binStyle.siteName = trimmed
+                        HStack {
+                            dismissGlassButton
+                            Spacer()
                         }
-                        showSiteNameEditor = false
+                        .padding(.bottom, Theme.hudInset)
                     }
-                )
-                .presentationDetents([.height(260)])
-                .presentationDragIndicator(.visible)
+                }
+                .toolbar(.hidden, for: .navigationBar)
+                .toolbarBackground(.hidden, for: .navigationBar)
+                .overlay(alignment: .topTrailing) {
+                    GlassChrome.glassCircleButton(
+                        systemName: "gearshape.fill",
+                        accessibilityLabel: "Bin Settings"
+                    ) {
+                        showBinSettings = true
+                    }
+                    .padding(.top, 16)
+                    .padding(.trailing, GlassChrome.pageInset)
+                }
+                .navigationDestination(isPresented: $showBinSettings) {
+                    BinSettingsView()
+                        .environmentObject(binStyle)
+                        .environmentObject(zoneStore)
+                        .environmentObject(settings)
+                }
+                .sheet(isPresented: $showSiteNameEditor) {
+                    SiteNameEditorSheet(
+                        siteNameDraft: $siteNameDraft,
+                        onCancel: { showSiteNameEditor = false },
+                        onSave: {
+                            let trimmed = siteNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !trimmed.isEmpty {
+                                binStyle.siteName = trimmed
+                            }
+                            showSiteNameEditor = false
+                        }
+                    )
+                    .presentationDetents([.height(260)])
+                    .presentationDragIndicator(.visible)
+                }
+                .onAppear { configureSegmentedPickerAppearance() }
             }
-            .onAppear { configureSegmentedPickerAppearance() }
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .containerBackground(.clear, for: .navigation)
+            .background(.clear)
+            .background { ClearHostingBackground() }
         }
+        .background(.clear)
     }
 
     private var periodPicker: some View {
