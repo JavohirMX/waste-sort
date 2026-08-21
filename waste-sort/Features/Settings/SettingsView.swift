@@ -30,6 +30,12 @@ struct SettingsView: View {
                 liveTrackingSection
 
                 Section {
+                    Button("Show onboarding again") {
+                        settings.hasCompletedOnboarding = false
+                        dismiss()
+                    }
+                    .font(.system(.body, design: .default))
+
                     Button("Reset to defaults", role: .destructive) {
                         settings.resetToDefaults()
                     }

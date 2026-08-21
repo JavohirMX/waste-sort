@@ -16,6 +16,10 @@ struct waste_sortApp: App {
     @StateObject private var aprilTagStore = AprilTagBindingStore.shared
     @StateObject private var binStyle = BinStyleStore.shared
 
+    init() {
+        BrandFont.register()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

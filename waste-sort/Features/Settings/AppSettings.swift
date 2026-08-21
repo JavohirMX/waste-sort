@@ -34,6 +34,7 @@ enum WasteSortConfig {
     static let defaultAutoRecordOnOpen = false
     static let defaultShowFPS = false
     static let defaultUseMockStats = true
+    static let defaultHasCompletedOnboarding = false
 }
 
 /// Snapshot of tunable inference and tracking values, passed into Live camera updates.
@@ -179,6 +180,12 @@ final class AppSettings: ObservableObject {
     @Published var useMockStats: Bool {
         didSet { persist(useMockStats, key: Keys.useMockStats) }
     }
+    /// Gates the first-launch onboarding flow. Intentionally left out of `resetToDefaults()`
+    /// so restoring tuning values does not relaunch the tutorial — Settings offers a
+    /// dedicated "Show onboarding again" action instead.
+    @Published var hasCompletedOnboarding: Bool {
+        didSet { persist(hasCompletedOnboarding, key: Keys.hasCompletedOnboarding) }
+    }
 
     var selectedModel: WasteSortModel {
         WasteSortModel.from(resourceName: selectedModelName)
@@ -257,9 +264,12 @@ final class AppSettings: ObservableObject {
         static let autoRecordOnOpen = "settings.autoRecordOnOpen"
         static let showFPS = "settings.showFPS"
         static let useMockStats = "settings.useMockStats"
+        static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
     }
 
-    private init(defaults: UserDefaults = .standard) {
+    /// Internal rather than private so tests can inject their own defaults suite,
+    /// matching `AprilTagBindingStore`. Production code uses `AppSettings.shared`.
+    init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         confidence = Self.loadDouble(defaults, Keys.confidence, WasteSortConfig.defaultConfidence)
         iou = Self.loadDouble(defaults, Keys.iou, WasteSortConfig.defaultIou)
@@ -331,6 +341,11 @@ final class AppSettings: ObservableObject {
         )
         showFPS = Self.loadBool(defaults, Keys.showFPS, WasteSortConfig.defaultShowFPS)
         useMockStats = Self.loadBool(defaults, Keys.useMockStats, WasteSortConfig.defaultUseMockStats)
+        hasCompletedOnboarding = Self.loadBool(
+            defaults,
+            Keys.hasCompletedOnboarding,
+            WasteSortConfig.defaultHasCompletedOnboarding
+        )
     }
 
     func resetToDefaults() {
