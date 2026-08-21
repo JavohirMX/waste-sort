@@ -25,6 +25,16 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
     var isEnabled = false
     /// Shortest box side, in normalized image widths, worth cropping and sending.
     var minimumBoxSide: CGFloat = 0.05
+    /// Shortest crop side in real pixels. The normalized bar above says nothing about how
+    /// much detail there actually is — the same box is 96px at 720p and 288px at 4K — and a
+    /// thumbnail-sized crop is not worth a second of the model's time.
+    var minimumCropPixels = 96
+    /// How many frames of an item are looked at before one is sent.
+    ///
+    /// Somebody carrying an item past a camera produces mostly smeared frames and a few
+    /// clean ones. Sending whichever frame happened to be current when the slot opened is a
+    /// coin toss, so a short burst is measured and the sharpest one goes.
+    var candidateFrames = 6
     /// Detected frames a track needs before it is asked about, so the model is not handed a
     /// box that is still settling.
     var minimumTrackFrames = 3
@@ -101,6 +111,22 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
     /// else.
     private var inFlight: (trackID: Int, startedAt: CFAbsoluteTime)?
 
+    /// One measured look at an item.
+    private struct Candidate {
+        let crop: CGImage
+        let sharpness: Double
+        let detectorClassKey: String
+    }
+
+    /// The burst of frames currently being measured, before anything is sent.
+    private struct Gathering {
+        let trackID: Int
+        var samples = 0
+        var best: Candidate?
+    }
+
+    private var gathering: Gathering?
+
     init(service: CategoryConfirming) {
         self.service = service
     }
@@ -113,6 +139,7 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
         // A request already with the model is left to land on a track that no longer
         // exists, where `finish` drops it.
         inFlight = nil
+        gathering = nil
     }
 
     /// Folds locked verdicts into this frame's tracks and queues the next question.
@@ -155,7 +182,7 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
             }
         }
 
-        let request = nextRequest(tracks: tracks, at: now)
+        let plan = planSample(tracks: tracks, at: now)
         var states: [Int: TrackConfirmation] = [:]
         for track in tracks {
             guard let entry = entries[track.id] else { continue }
@@ -163,6 +190,8 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
                 states[track.id] = .confirmed
             } else if entry.isInFlight {
                 states[track.id] = .thinking
+            } else if isWaiting(entry, track: track, at: now) {
+                states[track.id] = .pending
             }
         }
 
@@ -174,11 +203,24 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
 
         lock.unlock()
 
-        if let request {
-            send(request, frameImage: frameImage)
+        // Cropping and measuring happen outside the lock: they are the expensive part, and
+        // the detection thread is the one paying for them.
+        if let plan {
+            takeSample(plan, frameImage: frameImage)
         }
 
         return (confirmed, ConfirmationFrame(states: states), records)
+    }
+
+    /// True when the layer intends to ask about this track but has not got to it yet, so the
+    /// overlay can show it as unsettled rather than as an ordinary box.
+    ///
+    /// Caller holds the lock.
+    private func isWaiting(_ entry: Entry, track: TrackedDetection, at now: CFAbsoluteTime) -> Bool {
+        entry.verdict == nil
+            && entry.attempts < maximumAttempts
+            && !track.isCoasting
+            && min(track.displayXywhn.width, track.displayXywhn.height) >= minimumBoxSide
     }
 
     /// Caller holds the lock.
@@ -266,15 +308,44 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
         let detectorClassKey: String
     }
 
-    /// The one track to ask about now: the biggest box that is eligible, because that is the
-    /// item being presented rather than something already in a bin.
-    private func nextRequest(tracks: [TrackedDetection], at now: CFAbsoluteTime) -> Request? {
+    /// One frame's worth of work for the burst currently being measured.
+    private struct Sample {
+        let request: Request
+        /// True on the last frame of the burst: whatever is best after this one is sent.
+        let isFinal: Bool
+    }
+
+    /// Decides what to look at this frame: continue the burst in progress, or start one on
+    /// the biggest eligible box — that being the item somebody is holding up rather than
+    /// something lying in a bin.
+    ///
+    /// Caller holds the lock.
+    private func planSample(tracks: [TrackedDetection], at now: CFAbsoluteTime) -> Sample? {
         if let inFlight, now - inFlight.startedAt > requestTimeout {
             // Took the slot back. The abandoned answer, if it ever lands, is ignored.
             entries[inFlight.trackID]?.isInFlight = false
             self.inFlight = nil
         }
         guard inFlight == nil else { return nil }
+
+        if let gathering {
+            // The burst follows its item. If the item is gone, send the best look so far
+            // rather than throwing the work away.
+            guard let track = tracks.first(where: { $0.id == gathering.trackID }),
+                  !track.isCoasting
+            else {
+                dispatchBest()
+                return nil
+            }
+            return Sample(
+                request: Request(
+                    trackID: track.id,
+                    box: track.displayXywhn,
+                    detectorClassKey: track.observedClassKey
+                ),
+                isFinal: gathering.samples + 1 >= candidateFrames
+            )
+        }
 
         var best: TrackedDetection?
         var bestArea: CGFloat = 0
@@ -296,35 +367,94 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
         }
 
         guard let best, let entry = entries[best.id] else { return nil }
+        // Marked busy for the whole burst, not just the model call: the overlay should show
+        // the item as being worked on from the moment we start looking at it.
         entry.isInFlight = true
         entry.attempts += 1
-        inFlight = (trackID: best.id, startedAt: now)
-        return Request(
-            trackID: best.id,
-            box: best.displayXywhn,
-            detectorClassKey: best.observedClassKey
+        gathering = Gathering(trackID: best.id)
+        return Sample(
+            request: Request(
+                trackID: best.id,
+                box: best.displayXywhn,
+                detectorClassKey: best.observedClassKey
+            ),
+            isFinal: candidateFrames <= 1
         )
     }
 
-    private func send(_ request: Request, frameImage: () -> CGImage?) {
-        guard let frame = frameImage(),
-              let crop = ItemCropper.crop(
-                  frame,
-                  to: request.box,
-                  padding: cropPadding,
-                  maximumSide: cropMaximumSide
-              )
-        else {
-            // No usable pixels this frame. Release the slot and let the next frame retry —
-            // this is not a refusal by the model, so it does not burn an attempt.
-            lock.lock()
-            entries[request.trackID]?.isInFlight = false
-            entries[request.trackID]?.attempts -= 1
-            if inFlight?.trackID == request.trackID { inFlight = nil }
+    /// Crops and measures one frame, then either keeps it as the best so far or sends it.
+    /// Runs without the lock held.
+    private func takeSample(_ sample: Sample, frameImage: () -> CGImage?) {
+        var candidate: Candidate?
+        if let frame = frameImage(),
+           let crop = ItemCropper.crop(
+               frame,
+               to: sample.request.box,
+               padding: cropPadding,
+               maximumSide: cropMaximumSide,
+               minimumSide: minimumCropPixels
+           )
+        {
+            candidate = Candidate(
+                crop: crop,
+                sharpness: ImageSharpness.score(crop),
+                detectorClassKey: sample.request.detectorClassKey
+            )
+        }
+
+        lock.lock()
+        // A reset or a timeout may have moved on while this frame was being measured.
+        guard gathering?.trackID == sample.request.trackID else {
             lock.unlock()
             return
         }
+        gathering?.samples += 1
+        if let candidate, candidate.sharpness > (gathering?.best?.sharpness ?? -1) {
+            gathering?.best = candidate
+        }
+        let ready = sample.isFinal || (gathering?.samples ?? 0) >= candidateFrames
+        guard ready else {
+            lock.unlock()
+            return
+        }
+        let outcome = takeGathered()
+        lock.unlock()
 
+        if let outcome {
+            send(outcome.candidate, trackID: outcome.trackID)
+        }
+    }
+
+    /// Ends the burst and hands back what to send, if anything. Caller holds the lock.
+    private func takeGathered() -> (trackID: Int, candidate: Candidate)? {
+        guard let gathering else { return nil }
+        self.gathering = nil
+
+        guard let best = gathering.best else {
+            // Every frame of the burst was unusable — too small a crop, or no pixels at all.
+            // That is not the model refusing, so it does not burn an attempt; but retrying
+            // on the very next frame would spin, since an item too small to crop stays too
+            // small, so it waits out the same pause a refusal does.
+            entries[gathering.trackID]?.isInFlight = false
+            entries[gathering.trackID]?.attempts -= 1
+            entries[gathering.trackID]?.nextAttemptAt = clock() + retryDelay
+            return nil
+        }
+        inFlight = (trackID: gathering.trackID, startedAt: clock())
+        return (gathering.trackID, best)
+    }
+
+    /// Sends the best look at an item whose burst was cut short. Caller holds the lock.
+    private func dispatchBest() {
+        guard let outcome = takeGathered() else { return }
+        // Deliberately dispatched while holding the lock: `dispatch` only enqueues, and the
+        // work itself takes the lock later, on another thread.
+        send(outcome.candidate, trackID: outcome.trackID)
+    }
+
+    private func send(_ candidate: Candidate, trackID: Int) {
+        let crop = candidate.crop
+        let detectorClassKey = candidate.detectorClassKey
         // Taken from the crop rather than the frame, so what the log shows is exactly what
         // the model was shown — including a badly placed box, which is what most surprising
         // answers turn out to be.
@@ -335,7 +465,8 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
             do {
                 let reading = try await service.read(image: crop)
                 self?.finish(
-                    request: request,
+                    trackID: trackID,
+                    detectorClassKey: detectorClassKey,
                     reading: reading,
                     failure: nil,
                     startedAt: startedAt,
@@ -343,7 +474,8 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
                 )
             } catch {
                 self?.finish(
-                    request: request,
+                    trackID: trackID,
+                    detectorClassKey: detectorClassKey,
                     reading: nil,
                     failure: String(describing: error),
                     startedAt: startedAt,
@@ -354,7 +486,8 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
     }
 
     private func finish(
-        request: Request,
+        trackID: Int,
+        detectorClassKey: String,
         reading: CategoryReading?,
         failure: String?,
         startedAt: CFAbsoluteTime,
@@ -366,12 +499,13 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
         let now = clock()
         // Only the current holder may free the slot. An answer that arrives after its
         // request timed out finds the slot already reassigned and leaves it alone.
-        if inFlight?.trackID == request.trackID { inFlight = nil }
+        if inFlight?.trackID == trackID { inFlight = nil }
 
         let accepted = accept(reading)
         pendingRecords.append(
             record(
-                for: request,
+                trackID: trackID,
+                detectorClassKey: detectorClassKey,
                 reading: reading,
                 accepted: accepted,
                 failure: failure,
@@ -380,7 +514,7 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
             )
         )
 
-        guard let entry = entries[request.trackID] else { return }
+        guard let entry = entries[trackID] else { return }
         entry.isInFlight = false
         if let accepted {
             entry.verdict = accepted
@@ -403,7 +537,8 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
     }
 
     private func record(
-        for request: Request,
+        trackID: Int,
+        detectorClassKey: String,
         reading: CategoryReading?,
         accepted: ConfirmedCategory?,
         failure: String?,
@@ -426,10 +561,10 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
         }
 
         return FoundationVerdictRecord(
-            trackID: request.trackID,
+            trackID: trackID,
             label: reading?.label ?? "",
             confidence: reading?.confidence ?? 0,
-            detectorClassKey: request.detectorClassKey,
+            detectorClassKey: detectorClassKey,
             latency: latency,
             outcome: outcome,
             thumbnail: thumbnail

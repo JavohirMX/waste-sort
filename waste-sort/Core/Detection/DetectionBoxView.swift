@@ -396,6 +396,16 @@ struct DetectionBoxView: View {
                     .strokeBorder(bin.color, style: strokeStyle)
             }
             .overlay {
+                // A second, inset line. Confirmed is the only state that draws it, so the
+                // difference from an ordinary box is one of kind rather than of weight —
+                // a heavier single border reads as "confirmed" long before it is.
+                if confirmation == .confirmed {
+                    RoundedRectangle(cornerRadius: Theme.boxCornerRadius - Theme.confirmedInnerInset, style: .continuous)
+                        .strokeBorder(bin.color.opacity(0.85), lineWidth: Theme.boxStrokeWidth * 0.6)
+                        .padding(Theme.confirmedInnerInset)
+                }
+            }
+            .overlay {
                 // The flare rides outside the box so it reads as the answer arriving rather
                 // than as the box itself changing size.
                 RoundedRectangle(cornerRadius: Theme.boxCornerRadius + Theme.confirmFlashSpread, style: .continuous)
@@ -414,18 +424,20 @@ struct DetectionBoxView: View {
         switch confirmation {
         case .confirmed:
             return Theme.confirmedFillOpacity
-        case .thinking:
+        case .thinking, .pending:
             return Theme.boxFillOpacity * 0.6
         case .idle:
             return Theme.boxFillOpacity
         }
     }
 
+    /// Solid means settled. Anything the confirmation layer still intends to act on is
+    /// dashed, so a box waiting its turn can never be read as one the model has answered.
     private var strokeStyle: StrokeStyle {
         switch confirmation {
         case .confirmed:
             return StrokeStyle(lineWidth: Theme.confirmedStrokeWidth)
-        case .thinking:
+        case .thinking, .pending:
             return StrokeStyle(lineWidth: Theme.boxStrokeWidth, dash: Theme.confirmThinkingDash)
         case .idle:
             return StrokeStyle(lineWidth: Theme.boxStrokeWidth)

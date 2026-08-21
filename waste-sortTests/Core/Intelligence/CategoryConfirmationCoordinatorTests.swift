@@ -11,6 +11,8 @@ private nonisolated final class StubConfirmer: CategoryConfirming, @unchecked Se
     /// Consumed in order; the last one repeats once the list runs out. A nil entry throws.
     var answers: [CategoryReading?]
     private(set) var calls = 0
+    /// Exactly what was handed over, so a test can check which frame won.
+    private(set) var receivedImages: [CGImage] = []
 
     init(answers: [CategoryReading?]) {
         self.answers = answers
@@ -18,6 +20,7 @@ private nonisolated final class StubConfirmer: CategoryConfirming, @unchecked Se
 
     func read(image: CGImage) async throws -> CategoryReading {
         defer { calls += 1 }
+        receivedImages.append(image)
         let answer = calls < answers.count ? answers[calls] : answers.last ?? nil
         guard let answer else { throw Boom() }
         return answer
@@ -71,19 +74,28 @@ struct CategoryConfirmationCoordinatorTests {
         let coordinator: CategoryConfirmationCoordinator
         let confirmer: StubConfirmer
 
+        /// Which picture the camera is "showing" right now.
+        enum Frame { case flat, sharp }
+        var frameKind: Frame = .sharp
+
         private let queue = WorkQueue()
         private let testClock = TestClock()
-        private let frameImage: CGImage?
+        private let flatFrame: CGImage?
+        private let sharpFrame: CGImage?
 
         init(answers: [CategoryReading?]) {
             confirmer = StubConfirmer(answers: answers)
             coordinator = CategoryConfirmationCoordinator(service: confirmer)
-            frameImage = Harness.makeFrame()
+            flatFrame = Harness.makeFrame(checkerSide: 0)
+            sharpFrame = Harness.makeFrame(checkerSide: 8)
 
             let queue = self.queue
             let clock = testClock
             coordinator.isEnabled = true
             coordinator.minimumTrackFrames = 2
+            // One look per request unless a test says otherwise, so the queueing scenarios
+            // stay about queueing.
+            coordinator.candidateFrames = 1
             coordinator.dispatch = { work in queue.append(work) }
             coordinator.clock = { clock.value }
         }
@@ -99,7 +111,7 @@ struct CategoryConfirmationCoordinatorTests {
             _ tracks: [TrackedDetection]
         ) -> (tracks: [TrackedDetection], frame: ConfirmationFrame, records: [FoundationVerdictRecord]) {
             advance(1.0 / 30.0)
-            let image = frameImage
+            let image = frameKind == .sharp ? sharpFrame : flatFrame
             let result = coordinator.update(
                 tracks: tracks,
                 frameImage: { image },
@@ -109,8 +121,14 @@ struct CategoryConfirmationCoordinatorTests {
             return result
         }
 
-        func tick(_ tracks: [TrackedDetection], times: Int) {
-            for _ in 0..<times { _ = tick(tracks) }
+        @discardableResult
+        func tick(
+            _ tracks: [TrackedDetection],
+            times: Int
+        ) -> (tracks: [TrackedDetection], frame: ConfirmationFrame, records: [FoundationVerdictRecord]) {
+            var last = tick(tracks)
+            for _ in 1..<max(1, times) { last = tick(tracks) }
+            return last
         }
 
         /// Every record the coordinator has handed out so far, in order.
@@ -123,12 +141,18 @@ struct CategoryConfirmationCoordinatorTests {
             }
         }
 
-        private static func makeFrame() -> CGImage? {
+        /// `checkerSide` 0 gives a flat field, which carries no detail at all; anything
+        /// larger gives a checkerboard, which carries plenty.
+        /// Sized like a real capture frame, so the pixel floor on crops behaves as it will
+        /// on the device rather than rejecting everything.
+        private static func makeFrame(checkerSide: Int) -> CGImage? {
+            let width = 1280
+            let height = 960
             guard let space = CGColorSpace(name: CGColorSpace.sRGB),
                   let context = CGContext(
                       data: nil,
-                      width: 640,
-                      height: 480,
+                      width: width,
+                      height: height,
                       bitsPerComponent: 8,
                       bytesPerRow: 0,
                       space: space,
@@ -136,7 +160,19 @@ struct CategoryConfirmationCoordinatorTests {
                   )
             else { return nil }
             context.setFillColor(gray: 0.5, alpha: 1)
-            context.fill(CGRect(x: 0, y: 0, width: 640, height: 480))
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+            if checkerSide > 0 {
+                context.setFillColor(gray: 0.05, alpha: 1)
+                for y in stride(from: 0, to: height, by: checkerSide) {
+                    for x in stride(from: 0, to: width, by: checkerSide) {
+                        guard (x / checkerSide + y / checkerSide).isMultiple(of: 2) else { continue }
+                        context.fill(
+                            CGRect(x: x, y: y, width: checkerSide, height: checkerSide)
+                        )
+                    }
+                }
+            }
             return context.makeImage()
         }
     }
@@ -187,7 +223,8 @@ struct CategoryConfirmationCoordinatorTests {
     func asksWhenSteady() async {
         let h = Harness(answers: [Self.organic])
         let first = h.tick([track()])
-        #expect(first.frame.state(for: 1) == .idle)
+        // Already visibly unsettled, so it can never be mistaken for a confirmed box.
+        #expect(first.frame.state(for: 1) == .pending)
         #expect(h.pendingRequests == 0)
 
         let second = h.tick([track()])
@@ -210,6 +247,73 @@ struct CategoryConfirmationCoordinatorTests {
     func coastingIsNotEvidence() async {
         let h = Harness(answers: [Self.organic])
         h.tick([track(misses: 1)], times: 6)
+        await h.settle()
+        #expect(h.confirmer.calls == 0)
+    }
+
+    // MARK: - Choosing a frame
+
+    /// Somebody carrying an item produces mostly smeared frames and a few clean ones.
+    /// Sending whichever was current when the slot opened is a coin toss.
+    @Test("the sharpest frame of the burst is the one that gets sent")
+    func sharpestFrameWins() async {
+        let h = Harness(answers: [Self.organic])
+        h.coordinator.candidateFrames = 5
+        h.frameKind = .flat
+        h.tick([track()], times: 2)
+        h.frameKind = .sharp
+        h.tick([track()])
+        h.frameKind = .flat
+        h.tick([track()], times: 4)
+        await h.settle()
+
+        #expect(h.confirmer.calls == 1)
+        let sent = h.confirmer.receivedImages.first
+        #expect(sent != nil)
+        // A flat crop scores essentially zero, so anything well above it is the checkerboard.
+        #expect(ImageSharpness.score(sent!) > 0.001)
+    }
+
+    @Test("a burst of blurred frames still sends the best of them")
+    func allBlurredStillSends() async {
+        let h = Harness(answers: [Self.organic])
+        h.coordinator.candidateFrames = 4
+        h.frameKind = .flat
+        h.tick([track()], times: 8)
+        await h.settle()
+        #expect(h.confirmer.calls == 1)
+    }
+
+    @Test("the burst measures several frames before the model is called once")
+    func burstIsMeasuredBeforeSending() async {
+        let h = Harness(answers: [Self.organic])
+        h.coordinator.candidateFrames = 5
+        h.tick([track()], times: 2)
+        // Started looking, but nothing has gone to the model yet.
+        #expect(h.pendingRequests == 0)
+        h.tick([track()], times: 4)
+        #expect(h.pendingRequests == 1)
+        await h.settle()
+        #expect(h.confirmer.calls == 1)
+    }
+
+    @Test("an item that leaves mid-burst is still asked about")
+    func vanishingMidBurstSendsWhatWeHave() async {
+        let h = Harness(answers: [Self.organic])
+        h.coordinator.candidateFrames = 8
+        h.tick([track()], times: 3)
+        #expect(h.pendingRequests == 0)
+        h.tick([])
+        await h.settle()
+        #expect(h.confirmer.calls == 1)
+    }
+
+    @Test("a crop too few pixels across is never sent")
+    func lowResolutionCropsAreSkipped() async {
+        let h = Harness(answers: [Self.organic])
+        // 0.2 of a 960px-tall frame is 192px; asking for 400 puts it out of reach.
+        h.coordinator.minimumCropPixels = 400
+        h.tick([track()], times: 10)
         await h.settle()
         #expect(h.confirmer.calls == 0)
     }
@@ -445,7 +549,32 @@ struct CategoryConfirmationCoordinatorTests {
         await h.settle()
         let result = h.tick([track(classKey: "residual")])
         #expect(result.tracks.first?.classKey == "residual")
-        #expect(result.frame.state(for: 1) == .idle)
+        // Still on the list to be asked again, so still shown as unsettled.
+        #expect(result.frame.state(for: 1) == .pending)
+    }
+
+    @Test("an item the layer has given up on goes back to looking ordinary")
+    func exhaustedItemsLookOrdinaryAgain() async {
+        let h = Harness(answers: [Self.unclear])
+        h.coordinator.retryDelay = 0
+        h.coordinator.maximumAttempts = 2
+        for _ in 0..<2 {
+            h.tick([track()], times: 2)
+            await h.settle()
+        }
+        #expect(h.tick([track()]).frame.state(for: 1) == .idle)
+    }
+
+    @Test("a queued item reads as pending while another is with the model")
+    func queuedItemsReadAsPending() async {
+        let h = Harness(answers: [Self.organic, Self.recyclable])
+        let both = [
+            track(id: 1, centerX: 0.3, side: 0.3),
+            track(id: 2, centerX: 0.7, side: 0.2),
+        ]
+        let result = h.tick(both, times: 2)
+        #expect(result.frame.state(for: 1) == .thinking)
+        #expect(result.frame.state(for: 2) == .pending)
     }
 
     // MARK: - The debug log

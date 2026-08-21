@@ -12,13 +12,17 @@ nonisolated enum ItemCropper {
     ///     context rather than cropped to its own edges.
     ///   - maximumSide: the crop is scaled down to this on its longer side. Bigger crops
     ///     cost time in the model without telling it anything more.
+    ///   - minimumSide: shortest side, in real pixels, worth returning at all. Nothing is
+    ///     ever upscaled to reach it — a crop below this carries no detail to recover, and
+    ///     enlarging it would only hide that from whoever looks at the log.
     /// - Returns: nil when there is nothing worth sending — an empty box, or a crop that
-    ///   lands off the frame or comes out only a few pixels across.
+    ///   lands off the frame or comes out too small to read.
     static func crop(
         _ image: CGImage,
         to box: CGRect,
         padding: CGFloat,
-        maximumSide: Int
+        maximumSide: Int,
+        minimumSide: Int = 0
     ) -> CGImage? {
         let width = CGFloat(image.width)
         let height = CGFloat(image.height)
@@ -35,8 +39,9 @@ nonisolated enum ItemCropper {
 
         guard !pixels.isNull else { return nil }
         let bounded = pixels.integral
-        guard bounded.width >= minimumCropSide,
-              bounded.height >= minimumCropSide,
+        let floor = max(CGFloat(minimumSide), minimumCropSide)
+        guard bounded.width >= floor,
+              bounded.height >= floor,
               let cropped = image.cropping(to: bounded)
         else { return nil }
 

@@ -41,6 +41,8 @@ enum Theme {
     /// glance across the room.
     static let confirmedStrokeWidth: CGFloat = boxStrokeWidth * 1.9
     static let confirmedFillOpacity: Double = 0.34
+    /// Gap between the outer border and the second line a confirmed box draws inside it.
+    static let confirmedInnerInset: CGFloat = 4
     /// One-shot flare at the moment the answer lands.
     static let confirmFlashDuration: TimeInterval = 0.5
     static let confirmFlashSpread: CGFloat = 10

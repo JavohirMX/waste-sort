@@ -21,11 +21,18 @@ nonisolated struct ConfirmedCategory: Equatable, Sendable {
 }
 
 /// What the confirmation layer is doing with one track, as the overlay needs to draw it.
+///
+/// The four cases exist to keep one promise legible on screen: **a plain box has not been
+/// confirmed.** Only `.confirmed` draws the double border, and anything the layer still
+/// intends to act on is visibly unsettled, so a box waiting its turn can never be mistaken
+/// for one the model has already answered.
 nonisolated enum TrackConfirmation: Equatable, Sendable {
-    /// Nothing in flight: either not eligible yet, or the model has been asked as often as
-    /// it is going to be.
+    /// The layer has nothing to say about this track — switched off, or it has been asked
+    /// as often as it is going to be. Drawn exactly as it was before the layer existed.
     case idle
-    /// A request for this track is with the model right now.
+    /// Eligible and queued, but the model is busy with something else.
+    case pending
+    /// Being looked at right now: either choosing a frame to send, or with the model.
     case thinking
     /// A verdict is locked in and will not change while the item stays on screen.
     case confirmed
