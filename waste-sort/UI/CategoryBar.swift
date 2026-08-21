@@ -12,6 +12,7 @@ struct CategorySegmentFramesKey: PreferenceKey {
 struct CategoryBar: View {
     let counts: [String: Int]
     var ctaStyle: CTAStyle = .off
+    @Environment(\.hudTextScale) private var hudTextScale
 
     var body: some View {
         HStack(spacing: 0) {
@@ -22,7 +23,8 @@ struct CategoryBar: View {
                     isDetected: detected,
                     isPulsing: ctaStyle == .pulseLabel && detected,
                     cornerIndex: index,
-                    cornerCount: BinGuide.all.count
+                    cornerCount: BinGuide.all.count,
+                    textScale: hudTextScale
                 )
                 .overlay(alignment: .trailing) {
                     if index < BinGuide.all.count - 1 {
@@ -69,16 +71,16 @@ private struct CategorySegment: View {
     let isPulsing: Bool
     let cornerIndex: Int
     let cornerCount: Int
+    var textScale: CGFloat = 1
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 8 * textScale) {
             Image(systemName: bin.symbolName)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 16 * textScale, weight: .semibold))
             Text(bin.displayName)
-                .font(Theme.categoryLabelFont)
+                .font(.system(size: 14 * textScale, weight: .semibold))
                 .tracking(0.6)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
         }
         .foregroundStyle(.white.opacity(isDetected ? 1.0 : 0.72))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
