@@ -32,6 +32,7 @@ enum WasteSortConfig {
     static let defaultFocusLocked = false
     static let defaultWhiteBalanceLocked = false
     static let defaultAutoRecordOnOpen = false
+    static let defaultHasCompletedOnboarding = false
 }
 
 /// Snapshot of tunable inference and tracking values, passed into Live camera updates.
@@ -171,6 +172,12 @@ final class AppSettings: ObservableObject {
     @Published var autoRecordOnOpen: Bool {
         didSet { persist(autoRecordOnOpen, key: Keys.autoRecordOnOpen) }
     }
+    /// Gates the first-launch onboarding flow. Intentionally left out of `resetToDefaults()`
+    /// so restoring tuning values does not relaunch the tutorial — Settings offers a
+    /// dedicated "Show onboarding again" action instead.
+    @Published var hasCompletedOnboarding: Bool {
+        didSet { persist(hasCompletedOnboarding, key: Keys.hasCompletedOnboarding) }
+    }
 
     var selectedModel: WasteSortModel {
         WasteSortModel.from(resourceName: selectedModelName)
@@ -247,9 +254,12 @@ final class AppSettings: ObservableObject {
         static let focusLocked = "settings.focusLocked"
         static let whiteBalanceLocked = "settings.whiteBalanceLocked"
         static let autoRecordOnOpen = "settings.autoRecordOnOpen"
+        static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
     }
 
-    private init(defaults: UserDefaults = .standard) {
+    /// Internal rather than private so tests can inject their own defaults suite,
+    /// matching `AprilTagBindingStore`. Production code uses `AppSettings.shared`.
+    init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         confidence = Self.loadDouble(defaults, Keys.confidence, WasteSortConfig.defaultConfidence)
         iou = Self.loadDouble(defaults, Keys.iou, WasteSortConfig.defaultIou)
@@ -318,6 +328,11 @@ final class AppSettings: ObservableObject {
             defaults,
             Keys.autoRecordOnOpen,
             WasteSortConfig.defaultAutoRecordOnOpen
+        )
+        hasCompletedOnboarding = Self.loadBool(
+            defaults,
+            Keys.hasCompletedOnboarding,
+            WasteSortConfig.defaultHasCompletedOnboarding
         )
     }
 
