@@ -3,8 +3,9 @@ import SwiftUI
 struct DetectionRow: View {
     let className: String
     let confidence: Float
+    @EnvironmentObject private var binStyle: BinStyleStore
 
-    private var bin: BinInfo { BinGuide.info(for: className) }
+    private var bin: BinInfo { binStyle.resolved(BinGuide.info(for: className)) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

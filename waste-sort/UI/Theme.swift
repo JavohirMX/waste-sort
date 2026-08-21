@@ -32,6 +32,7 @@ enum Theme {
     static let zoneArmedDash: [CGFloat] = [14, 5]
 
     static let categoryLabelFont = Font.system(size: 14, weight: .semibold)
+    static let statsBackground = Color(red: 245 / 255, green: 239 / 255, blue: 228 / 255)
 }
 
 private struct HUDTextScaleKey: EnvironmentKey {

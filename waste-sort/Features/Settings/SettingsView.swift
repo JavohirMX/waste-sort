@@ -7,6 +7,7 @@ struct SettingsView: View {
     @EnvironmentObject private var zoneStore: ZoneStore
     @EnvironmentObject private var history: ZoneEventHistoryStore
     @EnvironmentObject private var aprilTagStore: AprilTagBindingStore
+    @EnvironmentObject private var binStyle: BinStyleStore
     @Environment(\.dismiss) private var dismiss
     @State private var cameraOptions: [CameraOption] = CameraDeviceCatalog.availableOptions()
     @State private var showPhotoSort = false
@@ -60,10 +61,12 @@ struct SettingsView: View {
                 HistoryView()
                     .environmentObject(history)
                     .environmentObject(zoneStore)
+                    .environmentObject(binStyle)
             }
             .sheet(isPresented: $showPhotoSort) {
                 PhotoSortView()
                     .environmentObject(settings)
+                    .environmentObject(binStyle)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
@@ -277,13 +280,14 @@ struct SettingsView: View {
                 if !zoneStore.zones.isEmpty {
                     ForEach(zoneStore.zones) { zone in
                         HStack {
-                            Image(systemName: zone.bin.symbolName)
+                            let bin = binStyle.resolved(zone.bin)
+                            Image(systemName: bin.symbolName)
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(.white)
                                 .frame(width: 24, height: 24)
-                                .background(zone.bin.color, in: Circle())
+                                .background(bin.color, in: Circle())
 
-                            Text(zone.name)
+                            Text(bin.displayName)
                             Spacer()
                             Picker("Tags", selection: Binding(
                                 get: {
@@ -327,11 +331,15 @@ struct SettingsView: View {
                     .font(.system(.footnote, design: .default))
                     .foregroundStyle(.secondary)
             }
+            Toggle("Use mock stats data", isOn: $settings.useMockStats)
         } header: {
-            Text("History")
+            Text("History / Stats")
                 .foregroundStyle(BinGuide.organic.color)
         } footer: {
-            Text("Everything dropped into a zone, with counters and charts. Recorded whether or not a video recording is running.")
+            Text(
+                "Everything dropped into a zone, with counters and charts. Recorded whether or not a video recording is running. "
+                    + "Mock stats lets you preview the Stats page without real throws and does not change History or recordings."
+            )
         }
     }
 
@@ -383,11 +391,16 @@ struct SettingsView: View {
                 range: 0.75...3.0,
                 step: 0.05
             )
+            Toggle("Show FPS", isOn: $settings.showFPS)
         } header: {
             Text("Live overlay")
                 .foregroundStyle(BinGuide.organic.color)
         } footer: {
-            Text("Shown on the live camera when waste is detected. Choose one visual guide at a time. Box badges can show an icon, category name, and confidence percent; placement moves the badge around each box.")
+            Text(
+                "Shown on the live camera when waste is detected. Choose one visual guide at a time. "
+                    + "Box badges can show an icon, category name, and confidence percent; placement moves the badge around each box. "
+                    + "Show FPS draws a plain FPS label on the live camera, bottom left."
+            )
         }
     }
 
@@ -623,4 +636,5 @@ private struct SettingsIntSliderRow: View {
         .environmentObject(ZoneStore.shared)
         .environmentObject(ZoneEventHistoryStore.shared)
         .environmentObject(AprilTagBindingStore.shared)
+        .environmentObject(BinStyleStore.shared)
 }
