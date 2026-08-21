@@ -12,6 +12,8 @@ struct SettingsView: View {
     @State private var showPhotoSort = false
     @State private var showHistory = false
     @State private var showZoneResetConfirm = false
+    /// Sampled when the sheet opens: the model can finish downloading between visits.
+    @State private var confirmationAvailability = FoundationCategoryAvailability.current
 
     var body: some View {
         NavigationStack {
@@ -24,6 +26,7 @@ struct SettingsView: View {
                 historySection
                 photoSection
                 liveOverlaySection
+                confirmationSection
                 modelSection
                 detectionSection
                 liveTrackingSection
@@ -42,7 +45,10 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .onAppear { refreshCameras() }
+            .onAppear {
+                refreshCameras()
+                confirmationAvailability = .current
+            }
             .onReceive(
                 NotificationCenter.default.publisher(for: AVCaptureDevice.wasConnectedNotification)
             ) { _ in refreshCameras() }
@@ -388,6 +394,29 @@ struct SettingsView: View {
                 .foregroundStyle(BinGuide.organic.color)
         } footer: {
             Text("Shown on the live camera when waste is detected. Choose one visual guide at a time. Box badges can show an icon, category name, and confidence percent; placement moves the badge around each box.")
+        }
+    }
+
+    @ViewBuilder
+    private var confirmationSection: some View {
+        Section {
+            Toggle("Confirm with on-device model", isOn: $settings.foundationConfirmationEnabled)
+
+            LabeledContent("Status") {
+                Text(confirmationAvailability.isReady ? "Ready" : "Off")
+                    .foregroundStyle(confirmationAvailability.isReady ? .green : .secondary)
+            }
+        } header: {
+            Text("Category confirmation")
+                .foregroundStyle(BinGuide.cleanInorganic.color)
+        } footer: {
+            Text(
+                "The detector keeps finding items as it does now. On top of that, each item is "
+                    + "photographed and shown to the on-device Foundation model, and whatever it "
+                    + "answers is locked in — the category stops changing for as long as that item "
+                    + "stays on screen. Its box breathes while the model is thinking and flashes "
+                    + "when the answer lands.\n\n\(confirmationAvailability.summary)"
+            )
         }
     }
 

@@ -23,6 +23,7 @@ struct LiveCameraView: View {
     @State private var occupiedZoneIDs: Set<UUID> = []
     @State private var armedZoneIDs: Set<UUID> = []
     @State private var settlingZoneIDs: Set<UUID> = []
+    @State private var confirmationFrame = ConfirmationFrame()
     @State private var freshDepositID: UUID?
     @State private var showHistory = false
     @State private var segmentFrames: [String: CGRect] = [:]
@@ -72,13 +73,17 @@ struct LiveCameraView: View {
                         aprilTagEnabled: aprilTagStore.isEnabled,
                         aprilTagBindings: aprilTagStore.bindings,
                         aprilTagStaleTimeout: aprilTagStore.staleTimeout,
-                        aprilTagRangeProfile: aprilTagStore.rangeProfile
-                    ) { result, tracked, zoneFrame, tagFrame in
+                        aprilTagRangeProfile: aprilTagStore.rangeProfile,
+                        foundationConfirmationEnabled: settings.foundationConfirmationEnabled
+                    ) { result, tracked, zoneFrame, tagFrame, confirmed in
                         if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                             fps = measured
                         }
                         imageSize = result.orig_shape
                         tracks = tracked
+                        if confirmationFrame != confirmed {
+                            confirmationFrame = confirmed
+                        }
                         detectedTags = tagFrame.detectedTags
                         tagStatuses = tagFrame.statuses
                         tagStats = tagFrame.detectorStats
@@ -156,7 +161,8 @@ struct LiveCameraView: View {
                         useAspectFill: true,
                         rotation: settings.liveRotation,
                         mirror: settings.liveMirror,
-                        style: settings.boxOverlayStyle
+                        style: settings.boxOverlayStyle,
+                        confirmation: confirmationFrame
                     )
                     .allowsHitTesting(false)
 
@@ -338,7 +344,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     var aprilTagBindings: [UUID: [Int]]
     var aprilTagStaleTimeout: Double
     var aprilTagRangeProfile: AprilTagRangeProfile
-    var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
+    var foundationConfirmationEnabled: Bool
+    var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -353,6 +360,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagBindings: aprilTagBindings,
             aprilTagStaleTimeout: aprilTagStaleTimeout,
             aprilTagRangeProfile: aprilTagRangeProfile,
+            foundationConfirmationEnabled: foundationConfirmationEnabled,
             onDetection: onDetection
         )
     }
@@ -447,6 +455,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         coordinator.depositDetector.requiredDwellFrames = dwellFrames
         coordinator.depositDetector.reacquireGrace = reacquireGrace
         coordinator.aprilTagStaleTimeout = aprilTagStaleTimeout
+        coordinator.setConfirmationEnabled(foundationConfirmationEnabled)
     }
 
     private func hideDeveloperChrome(_ view: YOLOView) {
@@ -469,7 +478,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     }
 
     final class Coordinator {
-        var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
+        var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame) -> Void)?
         var settings: RuntimeSettings
         var preferredCameraID: String
         var selectedModelName: String
@@ -489,6 +498,10 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         weak var yoloView: YOLOView?
         let tracker = DetectionTracker()
         let depositDetector = ZoneDepositDetector()
+        let confirmation = CategoryConfirmationCoordinator(service: FoundationCategoryConfirmer())
+        /// Resolved once: the answer involves a `dlsym` sweep and a system model query, and
+        /// `applyZones` runs on every SwiftUI refresh — which is every detection frame.
+        private lazy var isConfirmationSupported = FoundationCategoryAvailability.current.isReady
         let aprilTagPipeline = AprilTagFramePipeline(
             detector: AprilTagDetector(familyName: "tag16h5", tuning: AprilTagRangeProfile.far.tuning)
         )
@@ -513,7 +526,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagBindings: [UUID: [Int]],
             aprilTagStaleTimeout: Double,
             aprilTagRangeProfile: AprilTagRangeProfile,
-            onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
+            foundationConfirmationEnabled: Bool,
+            onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame) -> Void)?
         ) {
             self.settings = settings
             self.preferredCameraID = preferredCameraID
@@ -528,6 +542,19 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagPipeline.apply(tuning: aprilTagRangeProfile.tuning)
             depositDetector.requiredDwellFrames = dwellFrames
             depositDetector.reacquireGrace = reacquireGrace
+            setConfirmationEnabled(foundationConfirmationEnabled)
+        }
+
+        /// The layer only runs when the operator asked for it *and* the device can actually
+        /// serve it. Turning it off drops every locked verdict, so the next frame is back to
+        /// the detector's own labels with nothing stale hanging around.
+        func setConfirmationEnabled(_ enabled: Bool) {
+            let wanted = enabled && isConfirmationSupported
+            guard confirmation.isEnabled != wanted else { return }
+            confirmation.isEnabled = wanted
+            if !wanted {
+                confirmation.reset()
+            }
         }
 
         func handle(_ result: YOLOResult) {
@@ -535,7 +562,9 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                 view.setConfidenceThreshold(settings.confidence)
                 view.setIouThreshold(settings.iou)
                 view.setNumItemsThreshold(settings.maxItems)
-                let shouldCapture = recording.shouldCaptureOriginalFrames
+                // The confirmation layer needs real pixels to crop, so it turns frame
+                // capture on for itself the same way recording does.
+                let shouldCapture = recording.shouldCaptureOriginalFrames || confirmation.isEnabled
                 if capturingOriginals != shouldCapture {
                     capturingOriginals = shouldCapture
                     YOLOViewPredictorAccess.setCapturesOriginalImage(shouldCapture, in: view)
@@ -552,7 +581,12 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                     xywhn: box.xywhn
                 )
             }
-            let tracked = tracker.update(raw)
+            // Everything downstream — boxes, the category bar, the CTA, deposits, the log —
+            // reads the confirmed labels, because a verdict nobody acts on is decoration.
+            let (tracked, confirmationFrame) = confirmation.update(
+                tracks: tracker.update(raw),
+                frameImage: { result.originalImage.flatMap(UprightFrameImage.cgImage(from:)) }
+            )
             let currentZones = zones
             var tagFrame = aprilTagEnabled
                 ? aprilTagBinDetector.update(
@@ -579,7 +613,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             // Zone results ride the existing main-thread hop so the @Published history
             // append never happens off-main.
             DispatchQueue.main.async {
-                self.onDetection?(result, tracked, zoneFrame, tagFrame)
+                self.onDetection?(result, tracked, zoneFrame, tagFrame, confirmationFrame)
             }
         }
 

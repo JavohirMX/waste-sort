@@ -235,12 +235,16 @@ nonisolated final class ZoneDepositDetector {
         let (continuing, fresh) = live.partitioned(by: { byTrackID[$0.id] != nil })
 
         for track in continuing + fresh {
+            // `vote` is this frame's raw detection normally, and the locked Foundation-model
+            // verdict once there is one — so a confirmed category reaches the deposit log
+            // rather than stopping at the overlay.
+            let vote = track.vote
             let sighting = Sighting(
                 center: CGPoint(x: track.displayXywhn.midX, y: track.displayXywhn.midY),
                 box: track.displayXywhn,
-                classKey: track.observedClassKey,
-                className: track.rawClassKey.isEmpty ? track.className : track.rawClassKey,
-                conf: track.rawConf > 0 ? track.rawConf : track.conf
+                classKey: vote.classKey,
+                className: vote.className,
+                conf: vote.conf
             )
             let object = resolveObject(
                 for: track,

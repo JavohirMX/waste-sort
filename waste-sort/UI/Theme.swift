@@ -31,6 +31,20 @@ enum Theme {
     /// Dwell met — dropping it now would be recorded.
     static let zoneArmedDash: [CGFloat] = [14, 5]
 
+    /// A box whose category the on-device model is still working on: dimmed, dashed, and
+    /// breathing, so it reads as "not settled yet" without competing with a real detection.
+    static let confirmThinkingDash: [CGFloat] = [7, 5]
+    static let confirmThinkingOpacity: Double = 0.40
+    static let confirmThinkingPulseAmount: Double = 0.35
+    static let confirmThinkingPulsePeriod: TimeInterval = 1.1
+    /// A confirmed box is heavier than a plain one, so a locked category is visible at a
+    /// glance across the room.
+    static let confirmedStrokeWidth: CGFloat = boxStrokeWidth * 1.9
+    static let confirmedFillOpacity: Double = 0.34
+    /// One-shot flare at the moment the answer lands.
+    static let confirmFlashDuration: TimeInterval = 0.5
+    static let confirmFlashSpread: CGFloat = 10
+
     static let categoryLabelFont = Font.system(size: 14, weight: .semibold)
 }
 

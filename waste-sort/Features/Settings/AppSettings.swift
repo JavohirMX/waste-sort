@@ -32,6 +32,7 @@ enum WasteSortConfig {
     static let defaultFocusLocked = false
     static let defaultWhiteBalanceLocked = false
     static let defaultAutoRecordOnOpen = false
+    static let defaultFoundationConfirmation = true
 }
 
 /// Snapshot of tunable inference and tracking values, passed into Live camera updates.
@@ -171,6 +172,10 @@ final class AppSettings: ObservableObject {
     @Published var autoRecordOnOpen: Bool {
         didSet { persist(autoRecordOnOpen, key: Keys.autoRecordOnOpen) }
     }
+    /// Ask the on-device Foundation model to confirm each item's category and lock it in.
+    @Published var foundationConfirmationEnabled: Bool {
+        didSet { persist(foundationConfirmationEnabled, key: Keys.foundationConfirmation) }
+    }
 
     var selectedModel: WasteSortModel {
         WasteSortModel.from(resourceName: selectedModelName)
@@ -247,6 +252,7 @@ final class AppSettings: ObservableObject {
         static let focusLocked = "settings.focusLocked"
         static let whiteBalanceLocked = "settings.whiteBalanceLocked"
         static let autoRecordOnOpen = "settings.autoRecordOnOpen"
+        static let foundationConfirmation = "settings.foundationConfirmation"
     }
 
     private init(defaults: UserDefaults = .standard) {
@@ -319,6 +325,11 @@ final class AppSettings: ObservableObject {
             Keys.autoRecordOnOpen,
             WasteSortConfig.defaultAutoRecordOnOpen
         )
+        foundationConfirmationEnabled = Self.loadBool(
+            defaults,
+            Keys.foundationConfirmation,
+            WasteSortConfig.defaultFoundationConfirmation
+        )
     }
 
     func resetToDefaults() {
@@ -346,6 +357,7 @@ final class AppSettings: ObservableObject {
         showZoneOverlay = WasteSortConfig.defaultShowZoneOverlay
         ctaStyle = WasteSortConfig.defaultCTAStyle
         autoRecordOnOpen = WasteSortConfig.defaultAutoRecordOnOpen
+        foundationConfirmationEnabled = WasteSortConfig.defaultFoundationConfirmation
         resetCaptureToDefaults()
     }
 
