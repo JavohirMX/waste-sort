@@ -4,20 +4,27 @@ import UIKit
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var recording: RecordingController
+    @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
-        LiveCameraView()
-            .onAppear { setIdleTimerDisabled(true) }
-            .onDisappear { setIdleTimerDisabled(false) }
-            .onChange(of: scenePhase) { _, phase in
-                setIdleTimerDisabled(phase == .active)
-                if phase != .active {
-                    recording.noteSceneBecameInactive()
-                    recording.flushAndSave()
-                } else {
-                    recording.considerAutoStart()
-                }
+        Group {
+            if settings.hasCompletedOnboarding {
+                LiveCameraView()
+            } else {
+                OnboardingFlow { settings.hasCompletedOnboarding = true }
             }
+        }
+        .onAppear { setIdleTimerDisabled(true) }
+        .onDisappear { setIdleTimerDisabled(false) }
+        .onChange(of: scenePhase) { _, phase in
+            setIdleTimerDisabled(phase == .active)
+            if phase != .active {
+                recording.noteSceneBecameInactive()
+                recording.flushAndSave()
+            } else {
+                recording.considerAutoStart()
+            }
+        }
     }
 
     private func setIdleTimerDisabled(_ disabled: Bool) {
@@ -29,4 +36,5 @@ struct ContentView: View {
     ContentView()
         .environmentObject(AppSettings.shared)
         .environmentObject(RecordingController.shared)
+        .environmentObject(BinStyleStore.shared)
 }

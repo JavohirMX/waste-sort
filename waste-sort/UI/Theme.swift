@@ -48,6 +48,20 @@ enum Theme {
     static let confirmFlashSpread: CGFloat = 10
 
     static let categoryLabelFont = Font.system(size: 14, weight: .semibold)
+    static let statsBackground = Color(red: 245 / 255, green: 239 / 255, blue: 228 / 255)
+
+    // MARK: - Onboarding
+
+    /// Page background across the onboarding flow.
+    static let onboardingBackground = Color(red: 243 / 255, green: 247 / 255, blue: 244 / 255)
+    /// The welcome screen's illustration panel sits on the grouped-background grey.
+    static let onboardingPanelBackground = Color(red: 242 / 255, green: 242 / 255, blue: 247 / 255)
+    /// `Accents/Green` from the design — the same value as `Color(.systemGreen)`.
+    static let onboardingAccent = Color(red: 52 / 255, green: 199 / 255, blue: 89 / 255)
+    /// Fill behind the two character illustrations.
+    static let onboardingBlob = Color(red: 240 / 255, green: 238 / 255, blue: 210 / 255)
+    static let onboardingCardCornerRadius: CGFloat = 20
+    static let onboardingSubtitleOpacity: Double = 0.6
 }
 
 private struct HUDTextScaleKey: EnvironmentKey {

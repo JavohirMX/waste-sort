@@ -6,6 +6,7 @@ struct ZoneEditBar: View {
     @Binding var selectedZoneID: UUID?
     var onReset: () -> Void
     var onDone: () -> Void
+    @EnvironmentObject private var binStyle: BinStyleStore
 
     @State private var showResetConfirm = false
 
@@ -19,9 +20,10 @@ struct ZoneEditBar: View {
                             selectedZoneID = nil
                         }
                         ForEach(zones) { zone in
+                            let bin = binStyle.resolved(zone.bin)
                             chip(
-                                title: zone.name,
-                                color: zone.bin.color,
+                                title: bin.displayName,
+                                color: bin.color,
                                 isSelected: selectedZoneID == zone.id
                             ) {
                                 selectedZoneID = zone.id

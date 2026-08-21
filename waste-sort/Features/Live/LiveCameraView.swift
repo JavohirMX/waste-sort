@@ -10,6 +10,7 @@ struct LiveCameraView: View {
     @EnvironmentObject private var history: ZoneEventHistoryStore
     @EnvironmentObject private var verdictLog: FoundationVerdictLog
     @EnvironmentObject private var aprilTagStore: AprilTagBindingStore
+    @EnvironmentObject private var binStyle: BinStyleStore
     @State private var counts: [String: Int] = [:]
     @State private var fps = 0
     @State private var tracks: [TrackedDetection] = []
@@ -19,6 +20,7 @@ struct LiveCameraView: View {
     @State private var imageSize: CGSize = .zero
     @State private var fpsMonitor = FrameRateMonitor()
     @State private var showSettings = false
+    @State private var showStats = false
     @State private var selectedZoneID: UUID?
     @State private var flashedZoneIDs: Set<UUID> = []
     @State private var occupiedZoneIDs: Set<UUID> = []
@@ -184,7 +186,11 @@ struct LiveCameraView: View {
             VStack(spacing: 0) {
                 // The top stays clear while calibrating so nothing covers a zone.
                 if !zoneStore.isEditingZones {
-                    CategoryBar(counts: counts, ctaStyle: settings.ctaStyle)
+                    CategoryBar(
+                        bins: binStyle.orderedBins,
+                        counts: counts,
+                        ctaStyle: settings.ctaStyle
+                    )
                         .frame(maxWidth: .infinity)
                         .padding(.top, Theme.categoryBarTopGap)
                 }
@@ -207,29 +213,38 @@ struct LiveCameraView: View {
                     .padding(.bottom, Theme.hudInset)
                 } else {
                     HStack(alignment: .bottom) {
-                        if let last = history.events.first {
-                            LastDepositChip(
-                                record: last,
-                                isFresh: freshDepositID == last.id,
-                                onTap: { showHistory = true }
-                            )
-                            .transition(.move(edge: .leading).combined(with: .opacity))
-                            .id(last.id)
+                        HStack(alignment: .bottom, spacing: 8) {
+                            if settings.showFPS {
+                                Text("\(fps) FPS")
+                                    .font(.system(.caption, design: .default).monospacedDigit())
+                                    .foregroundStyle(.white.opacity(0.7))
+                                    .accessibilityLabel("\(fps) frames per second")
+                            }
+                            if settings.showLastDepositOnLive, let last = history.events.first {
+                                LastDepositChip(
+                                    record: last,
+                                    isFresh: freshDepositID == last.id,
+                                    onTap: { showHistory = true }
+                                )
+                                .transition(.move(edge: .leading).combined(with: .opacity))
+                                .id(last.id)
+                            }
+                            if settings.foundationConfirmationEnabled,
+                               settings.foundationVerdictLogEnabled,
+                               let verdict = verdictLog.records.first
+                            {
+                                LastVerdictChip(
+                                    record: verdict,
+                                    isFresh: freshVerdictID == verdict.id,
+                                    onTap: { showVerdicts = true }
+                                )
+                                .transition(.move(edge: .leading).combined(with: .opacity))
+                                .id(verdict.id)
+                            }
                         }
-                        if settings.foundationConfirmationEnabled,
-                           settings.foundationVerdictLogEnabled,
-                           let verdict = verdictLog.records.first
-                        {
-                            LastVerdictChip(
-                                record: verdict,
-                                isFresh: freshVerdictID == verdict.id,
-                                onTap: { showVerdicts = true }
-                            )
-                            .transition(.move(edge: .leading).combined(with: .opacity))
-                            .id(verdict.id)
-                        }
+                        .padding(.leading, Theme.hudInset)
                         Spacer(minLength: 0)
-                        fpsBadge
+                        statsGlassButton
                     }
                     .animation(
                         .spring(response: 0.35, dampingFraction: 0.7),
@@ -241,7 +256,6 @@ struct LiveCameraView: View {
                     )
                     .animation(.easeOut(duration: Theme.animationDuration), value: freshDepositID)
                     .animation(.easeOut(duration: Theme.animationDuration), value: freshVerdictID)
-                    .padding(.horizontal, Theme.hudInset)
                     .padding(.bottom, Theme.hudInset)
                 }
             }
@@ -261,6 +275,7 @@ struct LiveCameraView: View {
             HistoryView()
                 .environmentObject(history)
                 .environmentObject(zoneStore)
+                .environmentObject(binStyle)
         }
         .sheet(isPresented: $showVerdicts) {
             VerdictHistoryView()
@@ -273,9 +288,27 @@ struct LiveCameraView: View {
                 .environmentObject(zoneStore)
                 .environmentObject(history)
                 .environmentObject(aprilTagStore)
+                .environmentObject(BinStyleStore.shared)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .overlay {
+            if showStats {
+                StatsView(onClose: {
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        showStats = false
+                    }
+                })
+                .environmentObject(settings)
+                .environmentObject(history)
+                .environmentObject(binStyle)
+                .environmentObject(zoneStore)
+                .background(.clear)
+                .transition(.move(edge: .trailing))
+                .zIndex(1)
+            }
+        }
+        .animation(.easeInOut(duration: 0.35), value: showStats)
     }
 
     private func moveCorner(zoneID: UUID, index: Int, point: CGPoint) {
@@ -292,7 +325,6 @@ struct LiveCameraView: View {
         zoneStore.update(zone)
     }
 
-    /// Flashes the receiving zone outline and pops the last-deposit chip.
     /// Same beat as a deposit landing, minus the haptic — the model answers often enough
     /// that buzzing every time would be noise.
     private func flashVerdict() {
@@ -308,6 +340,7 @@ struct LiveCameraView: View {
         }
     }
 
+    /// Flashes the receiving zone outline on a confirmed deposit.
     private func flash(_ deposits: [ZoneDeposit]) {
         let zoneIDs = Set(deposits.map(\.zoneID))
         let latest = history.events.first?.id
@@ -325,21 +358,31 @@ struct LiveCameraView: View {
         }
     }
 
-    private var fpsBadge: some View {
-        Text("\(fps) FPS")
-            .font(.system(.caption2, design: .default).weight(.semibold).monospacedDigit())
-            .foregroundStyle(.white.opacity(0.7))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(.black.opacity(0.35), in: Capsule())
-            .accessibilityLabel("\(fps) frames per second")
-            .accessibilityAction(named: "Open settings") {
-                showSettings = true
+    private var statsGlassButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.35)) {
+                showStats = true
             }
-            .onLongPressGesture {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                showSettings = true
+        } label: {
+            GlassChrome.edgeTabLabel(edge: .trailing) {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .bold))
+                    Image(systemName: "chart.bar.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                }
             }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Waste stats")
+        .accessibilityHint("Opens stats. Long press opens developer settings.")
+        .accessibilityAction(named: "Open developer settings") {
+            showSettings = true
+        }
+        .onLongPressGesture {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            showSettings = true
+        }
     }
 }
 

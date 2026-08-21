@@ -8,26 +8,27 @@ struct CategorySegmentFramesKey: PreferenceKey {
     }
 }
 
-/// Top 3-segment category bar. Segments light up when that bin is present in frame.
+/// Top category bar. Segments light up when that bin is present in frame.
 struct CategoryBar: View {
+    var bins: [BinInfo] = BinGuide.all
     let counts: [String: Int]
     var ctaStyle: CTAStyle = .off
     @Environment(\.hudTextScale) private var hudTextScale
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(Array(BinGuide.all.enumerated()), id: \.element.id) { index, bin in
+            ForEach(Array(bins.enumerated()), id: \.element.id) { index, bin in
                 let detected = CategoryPresence.isDetected(binID: bin.id, counts: counts)
                 CategorySegment(
                     bin: bin,
                     isDetected: detected,
                     isPulsing: ctaStyle == .pulseLabel && detected,
                     cornerIndex: index,
-                    cornerCount: BinGuide.all.count,
+                    cornerCount: bins.count,
                     textScale: hudTextScale
                 )
                 .overlay(alignment: .trailing) {
-                    if index < BinGuide.all.count - 1 {
+                    if index < bins.count - 1 {
                         Rectangle()
                             .fill(Color.white.opacity(0.18))
                             .frame(width: 1)
@@ -57,7 +58,7 @@ struct CategoryBar: View {
     }
 
     private var accessibilityLabel: String {
-        BinGuide.all.map { bin in
+        bins.map { bin in
             let state = CategoryPresence.isDetected(binID: bin.id, counts: counts) ? "detected" : "not detected"
             return "\(bin.displayName) \(state)"
         }

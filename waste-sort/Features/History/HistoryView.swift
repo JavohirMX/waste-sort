@@ -4,6 +4,7 @@ import SwiftUI
 struct HistoryView: View {
     @EnvironmentObject private var history: ZoneEventHistoryStore
     @EnvironmentObject private var zoneStore: ZoneStore
+    @EnvironmentObject private var binStyle: BinStyleStore
     @State private var showClearConfirm = false
     @State private var exportURL: URL?
 
@@ -109,6 +110,9 @@ struct HistoryView: View {
 
 private struct HistoryRow: View {
     let event: ZoneEventRecord
+    @EnvironmentObject private var binStyle: BinStyleStore
+
+    private var bin: BinInfo { binStyle.resolved(event.bin) }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -118,13 +122,13 @@ private struct HistoryRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Image(systemName: event.bin.symbolName)
+                    Image(systemName: bin.symbolName)
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.white)
                         .padding(4)
-                        .background(event.bin.color, in: Circle())
+                        .background(bin.color, in: Circle())
 
-                    Text(event.bin.displayName)
+                    Text(bin.displayName)
                         .font(.system(.subheadline, design: .default).weight(.semibold))
 
                     Image(systemName: "arrow.right")
@@ -156,4 +160,5 @@ private struct HistoryRow: View {
     HistoryView()
         .environmentObject(ZoneEventHistoryStore.shared)
         .environmentObject(ZoneStore.shared)
+        .environmentObject(BinStyleStore.shared)
 }

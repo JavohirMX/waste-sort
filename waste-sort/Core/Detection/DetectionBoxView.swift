@@ -319,6 +319,7 @@ struct DetectionBoxOverlay: View {
     /// What the on-device confirmation layer is doing with each track. Empty when the layer
     /// is switched off, which draws exactly as it did before it existed.
     var confirmation: ConfirmationFrame = ConfirmationFrame()
+    @EnvironmentObject private var binStyle: BinStyleStore
 
     var body: some View {
         ZStack {
@@ -326,7 +327,7 @@ struct DetectionBoxOverlay: View {
                 let rect = mappedRect(for: track)
                 if rect.width > 1, rect.height > 1 {
                     DetectionBoxView(
-                        bin: BinGuide.info(for: track.classKey),
+                        bin: binStyle.resolved(BinGuide.info(for: track.classKey)),
                         rect: rect,
                         confidence: track.conf,
                         style: style,

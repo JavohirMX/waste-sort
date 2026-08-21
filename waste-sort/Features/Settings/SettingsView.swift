@@ -7,6 +7,7 @@ struct SettingsView: View {
     @EnvironmentObject private var zoneStore: ZoneStore
     @EnvironmentObject private var history: ZoneEventHistoryStore
     @EnvironmentObject private var aprilTagStore: AprilTagBindingStore
+    @EnvironmentObject private var binStyle: BinStyleStore
     @Environment(\.dismiss) private var dismiss
     @State private var cameraOptions: [CameraOption] = CameraDeviceCatalog.availableOptions()
     @State private var showPhotoSort = false
@@ -32,6 +33,12 @@ struct SettingsView: View {
                 liveTrackingSection
 
                 Section {
+                    Button("Show onboarding again") {
+                        settings.hasCompletedOnboarding = false
+                        dismiss()
+                    }
+                    .font(.system(.body, design: .default))
+
                     Button("Reset to defaults", role: .destructive) {
                         settings.resetToDefaults()
                     }
@@ -66,10 +73,12 @@ struct SettingsView: View {
                 HistoryView()
                     .environmentObject(history)
                     .environmentObject(zoneStore)
+                    .environmentObject(binStyle)
             }
             .sheet(isPresented: $showPhotoSort) {
                 PhotoSortView()
                     .environmentObject(settings)
+                    .environmentObject(binStyle)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
@@ -283,13 +292,14 @@ struct SettingsView: View {
                 if !zoneStore.zones.isEmpty {
                     ForEach(zoneStore.zones) { zone in
                         HStack {
-                            Image(systemName: zone.bin.symbolName)
+                            let bin = binStyle.resolved(zone.bin)
+                            Image(systemName: bin.symbolName)
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(.white)
                                 .frame(width: 24, height: 24)
-                                .background(zone.bin.color, in: Circle())
+                                .background(bin.color, in: Circle())
 
-                            Text(zone.name)
+                            Text(bin.displayName)
                             Spacer()
                             Picker("Tags", selection: Binding(
                                 get: {
@@ -333,11 +343,15 @@ struct SettingsView: View {
                     .font(.system(.footnote, design: .default))
                     .foregroundStyle(.secondary)
             }
+            Toggle("Use mock stats data", isOn: $settings.useMockStats)
         } header: {
-            Text("History")
+            Text("History / Stats")
                 .foregroundStyle(BinGuide.organic.color)
         } footer: {
-            Text("Everything dropped into a zone, with counters and charts. Recorded whether or not a video recording is running.")
+            Text(
+                "Everything dropped into a zone, with counters and charts. Recorded whether or not a video recording is running. "
+                    + "Mock stats lets you preview the Stats page without real throws and does not change History or recordings."
+            )
         }
     }
 
@@ -389,11 +403,18 @@ struct SettingsView: View {
                 range: 0.75...3.0,
                 step: 0.05
             )
+            Toggle("Show FPS", isOn: $settings.showFPS)
+            Toggle("Show last deposit on Live", isOn: $settings.showLastDepositOnLive)
         } header: {
             Text("Live overlay")
                 .foregroundStyle(BinGuide.organic.color)
         } footer: {
-            Text("Shown on the live camera when waste is detected. Choose one visual guide at a time. Box badges can show an icon, category name, and confidence percent; placement moves the badge around each box.")
+            Text(
+                "Shown on the live camera when waste is detected. Choose one visual guide at a time. "
+                    + "Box badges can show an icon, category name, and confidence percent; placement moves the badge around each box. "
+                    + "Show FPS draws a plain FPS label on the live camera, bottom left. "
+                    + "The last-deposit chip is a developer overlay; tap it for this session's deposits. History also lives in Stats."
+            )
         }
     }
 
@@ -407,7 +428,7 @@ struct SettingsView: View {
         it is what gets recorded when the item is thrown away. Its box breathes while the \
         model is thinking and flashes when the answer lands.
 
-        The verdict chip sits beside the last-deposit chip and shows the crop the model was \
+        When "Show last verdict on Live" is on, a chip shows the crop the model was \
         actually given; tap it for every answer this session, including the ones that were \
         not acted on.
 
@@ -667,4 +688,5 @@ private struct SettingsIntSliderRow: View {
         .environmentObject(ZoneStore.shared)
         .environmentObject(ZoneEventHistoryStore.shared)
         .environmentObject(AprilTagBindingStore.shared)
+        .environmentObject(BinStyleStore.shared)
 }

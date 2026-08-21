@@ -30,6 +30,8 @@ struct ZoneOverlayView: View {
     var onMoveZone: ((UUID, [CGPoint]) -> Void)?
     var onSelectZone: ((UUID) -> Void)?
 
+    @EnvironmentObject private var binStyle: BinStyleStore
+
     /// Corner snapshot taken when a whole-zone drag begins, so the move never drifts.
     @State private var dragOrigin: [UUID: [CGPoint]] = [:]
 
@@ -123,14 +125,19 @@ struct ZoneOverlayView: View {
         }
     }
 
+    private func displayBin(for zone: DropZone) -> BinInfo {
+        binStyle.resolved(zone.bin)
+    }
+
     private func shape(for zone: DropZone, points: [CGPoint]) -> some View {
         let outline = path(points)
         let style = style(for: zone)
+        let bin = displayBin(for: zone)
 
         return ZStack {
-            outline.fill(zone.bin.color.opacity(style.fill))
+            outline.fill(bin.color.opacity(style.fill))
             outline.stroke(
-                zone.bin.color.opacity(style.stroke),
+                bin.color.opacity(style.stroke),
                 style: StrokeStyle(
                     lineWidth: style.lineWidth,
                     lineJoin: .round,
@@ -186,26 +193,28 @@ struct ZoneOverlayView: View {
         let center = points.reduce(CGPoint.zero) {
             CGPoint(x: $0.x + $1.x / CGFloat(points.count), y: $0.y + $1.y / CGFloat(points.count))
         }
+        let bin = displayBin(for: zone)
         return HStack(spacing: 5) {
-            Image(systemName: zone.bin.symbolName)
+            Image(systemName: bin.symbolName)
                 .font(.system(size: 11, weight: .bold))
-            Text(zone.name.uppercased())
+            Text(bin.displayName)
                 .font(.system(.caption2, design: .default).weight(.bold))
                 .lineLimit(1)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
-        .background(zone.bin.color.opacity(0.9), in: Capsule())
+        .background(bin.color.opacity(0.9), in: Capsule())
         .position(center)
         .allowsHitTesting(false)
     }
 
     private func handles(for zone: DropZone, points: [CGPoint]) -> some View {
-        ForEach(points.indices, id: \.self) { index in
+        let bin = displayBin(for: zone)
+        return ForEach(points.indices, id: \.self) { index in
             Circle()
                 .fill(.white)
-                .overlay { Circle().strokeBorder(zone.bin.color, lineWidth: 3) }
+                .overlay { Circle().strokeBorder(bin.color, lineWidth: 3) }
                 .frame(width: Theme.zoneHandleSize, height: Theme.zoneHandleSize)
                 .shadow(radius: 3)
                 .contentShape(Circle().inset(by: -Theme.zoneHandleSize * 0.5))
