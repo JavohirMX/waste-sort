@@ -32,6 +32,8 @@ enum WasteSortConfig {
     static let defaultFocusLocked = false
     static let defaultWhiteBalanceLocked = false
     static let defaultAutoRecordOnOpen = false
+    static let defaultShowFPS = false
+    static let defaultUseMockStats = true
     static let defaultHasCompletedOnboarding = false
 }
 
@@ -172,6 +174,12 @@ final class AppSettings: ObservableObject {
     @Published var autoRecordOnOpen: Bool {
         didSet { persist(autoRecordOnOpen, key: Keys.autoRecordOnOpen) }
     }
+    @Published var showFPS: Bool {
+        didSet { persist(showFPS, key: Keys.showFPS) }
+    }
+    @Published var useMockStats: Bool {
+        didSet { persist(useMockStats, key: Keys.useMockStats) }
+    }
     /// Gates the first-launch onboarding flow. Intentionally left out of `resetToDefaults()`
     /// so restoring tuning values does not relaunch the tutorial — Settings offers a
     /// dedicated "Show onboarding again" action instead.
@@ -254,6 +262,8 @@ final class AppSettings: ObservableObject {
         static let focusLocked = "settings.focusLocked"
         static let whiteBalanceLocked = "settings.whiteBalanceLocked"
         static let autoRecordOnOpen = "settings.autoRecordOnOpen"
+        static let showFPS = "settings.showFPS"
+        static let useMockStats = "settings.useMockStats"
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
     }
 
@@ -329,6 +339,8 @@ final class AppSettings: ObservableObject {
             Keys.autoRecordOnOpen,
             WasteSortConfig.defaultAutoRecordOnOpen
         )
+        showFPS = Self.loadBool(defaults, Keys.showFPS, WasteSortConfig.defaultShowFPS)
+        useMockStats = Self.loadBool(defaults, Keys.useMockStats, WasteSortConfig.defaultUseMockStats)
         hasCompletedOnboarding = Self.loadBool(
             defaults,
             Keys.hasCompletedOnboarding,
@@ -361,6 +373,8 @@ final class AppSettings: ObservableObject {
         showZoneOverlay = WasteSortConfig.defaultShowZoneOverlay
         ctaStyle = WasteSortConfig.defaultCTAStyle
         autoRecordOnOpen = WasteSortConfig.defaultAutoRecordOnOpen
+        showFPS = WasteSortConfig.defaultShowFPS
+        useMockStats = WasteSortConfig.defaultUseMockStats
         resetCaptureToDefaults()
     }
 

@@ -3,10 +3,11 @@ import SwiftUI
 struct CTADropdownOverlay: View {
     let activeBinIDs: Set<String>
     let segmentFrames: [String: CGRect]
+    @EnvironmentObject private var binStyle: BinStyleStore
 
     var body: some View {
         ZStack {
-            ForEach(BinGuide.all) { bin in
+            ForEach(binStyle.orderedBins) { bin in
                 if let frame = segmentFrames[bin.id] {
                     dropdownCard(for: bin)
                         .frame(width: max(frame.width - 12, 160), height: 72, alignment: .top)
@@ -46,13 +47,15 @@ struct CTAHighlightOverlay: View {
     let activeBinIDs: Set<String>
     let viewSize: CGSize
     let barBottom: CGFloat
+    @EnvironmentObject private var binStyle: BinStyleStore
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: activeBinIDs.isEmpty)) { context in
             let opacity = highlightOpacity(at: context.date)
-            let columnWidth = viewSize.width / CGFloat(max(BinGuide.all.count, 1))
+            let bins = binStyle.orderedBins
+            let columnWidth = viewSize.width / CGFloat(max(bins.count, 1))
             ZStack(alignment: .topLeading) {
-                ForEach(Array(BinGuide.all.enumerated()), id: \.element.id) { index, bin in
+                ForEach(Array(bins.enumerated()), id: \.element.id) { index, bin in
                     if activeBinIDs.contains(bin.id) {
                         Rectangle()
                             .fill(bin.color.opacity(opacity))
@@ -79,6 +82,7 @@ struct CTAHighlightOverlay: View {
 struct CTAArrowOverlay: View {
     let cues: [CTACue]
     let segmentFrames: [String: CGRect]
+    @EnvironmentObject private var binStyle: BinStyleStore
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: cues.isEmpty)) { context in
@@ -101,7 +105,7 @@ struct CTAArrowOverlay: View {
             let start = CGPoint(x: cue.displayRect.midX, y: cue.displayRect.minY)
             let end = CGPoint(x: frame.midX, y: frame.maxY)
             let samples = CTAArrowPath.samples(from: start, to: end, phase: phase)
-            let bin = BinGuide.bin(id: cue.binID)
+            let bin = binStyle.resolved(BinGuide.bin(id: cue.binID))
             ForEach(Array(samples.enumerated()), id: \.offset) { _, sample in
                 Image(systemName: "chevron.up")
                     .font(.system(size: sample.size, weight: .heavy))

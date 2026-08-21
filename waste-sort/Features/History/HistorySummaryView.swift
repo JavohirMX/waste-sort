@@ -4,6 +4,7 @@ import SwiftUI
 /// Counters and two small charts over the recorded deposits.
 struct HistorySummaryView: View {
     let events: [ZoneEventRecord]
+    @EnvironmentObject private var binStyle: BinStyleStore
 
     enum Range: String, CaseIterable, Identifiable {
         case today = "Today"
@@ -65,7 +66,7 @@ struct HistorySummaryView: View {
     }
 
     private var categorySlices: [CategorySlice] {
-        BinGuide.all.map { bin in
+        binStyle.orderedBins.map { bin in
             let matching = scoped.filter { $0.bin.id == bin.id }
             return CategorySlice(
                 bin: bin,

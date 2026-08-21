@@ -36,4 +36,5 @@ struct ContentView: View {
     ContentView()
         .environmentObject(AppSettings.shared)
         .environmentObject(RecordingController.shared)
+        .environmentObject(BinStyleStore.shared)
 }

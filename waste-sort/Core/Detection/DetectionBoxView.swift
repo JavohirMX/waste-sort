@@ -316,6 +316,7 @@ struct DetectionBoxOverlay: View {
     var rotation: LivePreviewRotation = .zero
     var mirror: Bool = false
     var style: BoxOverlayStyle = .default
+    @EnvironmentObject private var binStyle: BinStyleStore
 
     var body: some View {
         ZStack {
@@ -323,7 +324,7 @@ struct DetectionBoxOverlay: View {
                 let rect = mappedRect(for: track)
                 if rect.width > 1, rect.height > 1 {
                     DetectionBoxView(
-                        bin: BinGuide.info(for: track.classKey),
+                        bin: binStyle.resolved(BinGuide.info(for: track.classKey)),
                         rect: rect,
                         confidence: track.conf,
                         style: style,
