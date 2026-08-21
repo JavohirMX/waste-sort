@@ -33,6 +33,7 @@ enum WasteSortConfig {
     static let defaultWhiteBalanceLocked = false
     static let defaultAutoRecordOnOpen = false
     static let defaultFoundationConfirmation = true
+    static let defaultFoundationVerdictLog = false
 }
 
 /// Snapshot of tunable inference and tracking values, passed into Live camera updates.
@@ -176,6 +177,10 @@ final class AppSettings: ObservableObject {
     @Published var foundationConfirmationEnabled: Bool {
         didSet { persist(foundationConfirmationEnabled, key: Keys.foundationConfirmation) }
     }
+    /// Show the model's raw answers on Live, including the ones that were not acted on.
+    @Published var foundationVerdictLogEnabled: Bool {
+        didSet { persist(foundationVerdictLogEnabled, key: Keys.foundationVerdictLog) }
+    }
 
     var selectedModel: WasteSortModel {
         WasteSortModel.from(resourceName: selectedModelName)
@@ -253,6 +258,7 @@ final class AppSettings: ObservableObject {
         static let whiteBalanceLocked = "settings.whiteBalanceLocked"
         static let autoRecordOnOpen = "settings.autoRecordOnOpen"
         static let foundationConfirmation = "settings.foundationConfirmation"
+        static let foundationVerdictLog = "settings.foundationVerdictLog"
     }
 
     private init(defaults: UserDefaults = .standard) {
@@ -330,6 +336,11 @@ final class AppSettings: ObservableObject {
             Keys.foundationConfirmation,
             WasteSortConfig.defaultFoundationConfirmation
         )
+        foundationVerdictLogEnabled = Self.loadBool(
+            defaults,
+            Keys.foundationVerdictLog,
+            WasteSortConfig.defaultFoundationVerdictLog
+        )
     }
 
     func resetToDefaults() {
@@ -358,6 +369,7 @@ final class AppSettings: ObservableObject {
         ctaStyle = WasteSortConfig.defaultCTAStyle
         autoRecordOnOpen = WasteSortConfig.defaultAutoRecordOnOpen
         foundationConfirmationEnabled = WasteSortConfig.defaultFoundationConfirmation
+        foundationVerdictLogEnabled = WasteSortConfig.defaultFoundationVerdictLog
         resetCaptureToDefaults()
     }
 

@@ -406,6 +406,9 @@ struct SettingsView: View {
                 Text(confirmationAvailability.isReady ? "Ready" : "Off")
                     .foregroundStyle(confirmationAvailability.isReady ? .green : .secondary)
             }
+
+            Toggle("Show verdict log on Live", isOn: $settings.foundationVerdictLogEnabled)
+                .disabled(!settings.foundationConfirmationEnabled)
         } header: {
             Text("Category confirmation")
                 .foregroundStyle(BinGuide.cleanInorganic.color)

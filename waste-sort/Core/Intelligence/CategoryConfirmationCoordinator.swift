@@ -46,6 +46,9 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
     var retryDelay: CFAbsoluteTime = 2.0
     /// Total asks per item before giving up on it.
     var maximumAttempts = 3
+    /// Below this the model was hedging, and a hedge is not worth locking in. The reading is
+    /// still recorded, so the debug log shows the near misses rather than swallowing them.
+    var minimumConfidence = 0.5
     /// How long a request may be outstanding before the slot is taken back. A model that
     /// wedges would otherwise stall the whole layer silently and for good.
     var requestTimeout: CFAbsoluteTime = 20
@@ -53,6 +56,8 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
     var cropPadding: CGFloat = 0.15
     /// Longest side of the crop handed to the model. Bigger is slower, not better.
     var cropMaximumSide = 448
+    /// Longest side of the copy kept for the debug log.
+    var thumbnailMaximumSide = 96
 
     /// Injected so tests can advance time without sleeping.
     var clock: @Sendable () -> CFAbsoluteTime = { CFAbsoluteTimeGetCurrent() }
@@ -88,6 +93,9 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
 
     private var entries: [Int: Entry] = [:]
     private var orphans: [Orphan] = []
+    /// Finished readings waiting to be handed out. They ride the caller's existing hop to
+    /// the main thread rather than opening a second path of their own.
+    private var pendingRecords: [FoundationVerdictRecord] = []
     /// The single outstanding request, if any. Held as the track it belongs to rather than a
     /// bare flag so a late answer cannot free a slot that has since been handed to somebody
     /// else.
@@ -111,11 +119,13 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
     ///
     /// - Parameter frameImage: the full camera frame, fetched lazily because it is only
     ///   needed on the frames where a request is actually sent.
+    /// - Returns: the tracks with any locked category applied, the per-track state the
+    ///   overlay draws, and any readings that came back since the last call.
     func update(
         tracks: [TrackedDetection],
         frameImage: () -> CGImage?,
         timestamp: CFAbsoluteTime? = nil
-    ) -> (tracks: [TrackedDetection], frame: ConfirmationFrame) {
+    ) -> (tracks: [TrackedDetection], frame: ConfirmationFrame, records: [FoundationVerdictRecord]) {
         let now = timestamp ?? clock()
 
         lock.lock()
@@ -126,8 +136,9 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
                 entries.removeAll(keepingCapacity: true)
                 orphans.removeAll(keepingCapacity: true)
             }
+            let records = drainRecords()
             lock.unlock()
-            return (tracks, ConfirmationFrame())
+            return (tracks, ConfirmationFrame(), records)
         }
 
         retireVanishedTracks(stillPresent: Set(tracks.map(\.id)), at: now)
@@ -159,6 +170,7 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
             guard let verdict = entries[track.id]?.verdict else { return track }
             return apply(verdict, to: track)
         }
+        let records = drainRecords()
 
         lock.unlock()
 
@@ -166,7 +178,14 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
             send(request, frameImage: frameImage)
         }
 
-        return (confirmed, ConfirmationFrame(states: states))
+        return (confirmed, ConfirmationFrame(states: states), records)
+    }
+
+    /// Caller holds the lock.
+    private func drainRecords() -> [FoundationVerdictRecord] {
+        guard !pendingRecords.isEmpty else { return [] }
+        defer { pendingRecords.removeAll(keepingCapacity: true) }
+        return pendingRecords
     }
 
     // MARK: - Bookkeeping
@@ -243,6 +262,8 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
     private struct Request {
         let trackID: Int
         let box: CGRect
+        /// What the detector called it when the crop was taken, kept for the debug log.
+        let detectorClassKey: String
     }
 
     /// The one track to ask about now: the biggest box that is eligible, because that is the
@@ -278,7 +299,11 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
         entry.isInFlight = true
         entry.attempts += 1
         inFlight = (trackID: best.id, startedAt: now)
-        return Request(trackID: best.id, box: best.displayXywhn)
+        return Request(
+            trackID: best.id,
+            box: best.displayXywhn,
+            detectorClassKey: best.observedClassKey
+        )
     }
 
     private func send(_ request: Request, frameImage: () -> CGImage?) {
@@ -300,25 +325,114 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
             return
         }
 
+        // Taken from the crop rather than the frame, so what the log shows is exactly what
+        // the model was shown — including a badly placed box, which is what most surprising
+        // answers turn out to be.
+        let thumbnail = ItemCropper.downscaled(crop, maximumSide: thumbnailMaximumSide)
         let service = self.service
+        let startedAt = clock()
         dispatch { [weak self] in
-            let verdict = try? await service.confirm(image: crop)
-            self?.finish(trackID: request.trackID, verdict: verdict)
+            do {
+                let reading = try await service.read(image: crop)
+                self?.finish(
+                    request: request,
+                    reading: reading,
+                    failure: nil,
+                    startedAt: startedAt,
+                    thumbnail: thumbnail
+                )
+            } catch {
+                self?.finish(
+                    request: request,
+                    reading: nil,
+                    failure: String(describing: error),
+                    startedAt: startedAt,
+                    thumbnail: thumbnail
+                )
+            }
         }
     }
 
-    private func finish(trackID: Int, verdict: ConfirmedCategory?) {
+    private func finish(
+        request: Request,
+        reading: CategoryReading?,
+        failure: String?,
+        startedAt: CFAbsoluteTime,
+        thumbnail: CGImage?
+    ) {
         lock.lock()
         defer { lock.unlock() }
+
+        let now = clock()
         // Only the current holder may free the slot. An answer that arrives after its
         // request timed out finds the slot already reassigned and leaves it alone.
-        if inFlight?.trackID == trackID { inFlight = nil }
-        guard let entry = entries[trackID] else { return }
+        if inFlight?.trackID == request.trackID { inFlight = nil }
+
+        let accepted = accept(reading)
+        pendingRecords.append(
+            record(
+                for: request,
+                reading: reading,
+                accepted: accepted,
+                failure: failure,
+                latency: max(0, now - startedAt),
+                thumbnail: thumbnail
+            )
+        )
+
+        guard let entry = entries[request.trackID] else { return }
         entry.isInFlight = false
-        if let verdict {
-            entry.verdict = verdict
+        if let accepted {
+            entry.verdict = accepted
         } else {
-            entry.nextAttemptAt = clock() + retryDelay
+            entry.nextAttemptAt = now + retryDelay
         }
+    }
+
+    /// The one place that decides whether an answer is good enough to act on.
+    private func accept(_ reading: CategoryReading?) -> ConfirmedCategory? {
+        guard let reading,
+              let binID = reading.binID,
+              reading.confidence >= minimumConfidence
+        else { return nil }
+        return ConfirmedCategory(
+            binID: binID,
+            confidence: reading.confidence,
+            label: reading.label
+        )
+    }
+
+    private func record(
+        for request: Request,
+        reading: CategoryReading?,
+        accepted: ConfirmedCategory?,
+        failure: String?,
+        latency: TimeInterval,
+        thumbnail: CGImage?
+    ) -> FoundationVerdictRecord {
+        let outcome: FoundationVerdictRecord.Outcome
+        if let accepted {
+            outcome = .locked(binID: accepted.binID)
+        } else if let failure {
+            outcome = .failed(failure)
+        } else if let reading, reading.binID == nil {
+            outcome = .declined(reason: "model answered unclear")
+        } else if let reading {
+            outcome = .declined(
+                reason: String(format: "below %.2f confidence", minimumConfidence)
+            )
+        } else {
+            outcome = .failed("no answer")
+        }
+
+        return FoundationVerdictRecord(
+            trackID: request.trackID,
+            label: reading?.label ?? "",
+            confidence: reading?.confidence ?? 0,
+            detectorClassKey: request.detectorClassKey,
+            latency: latency,
+            outcome: outcome,
+            thumbnail: thumbnail
+        )
     }
 }

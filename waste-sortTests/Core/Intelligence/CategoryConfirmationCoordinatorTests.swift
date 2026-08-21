@@ -6,36 +6,43 @@ import Testing
 
 /// Answers whatever the test told it to, and counts how often it was asked.
 private nonisolated final class StubConfirmer: CategoryConfirming, @unchecked Sendable {
-    /// Consumed in order; the last one repeats once the list runs out.
-    var answers: [ConfirmedCategory?]
+    struct Boom: Error, Equatable {}
+
+    /// Consumed in order; the last one repeats once the list runs out. A nil entry throws.
+    var answers: [CategoryReading?]
     private(set) var calls = 0
 
-    init(answers: [ConfirmedCategory?]) {
+    init(answers: [CategoryReading?]) {
         self.answers = answers
     }
 
-    convenience init(always answer: ConfirmedCategory?) {
-        self.init(answers: [answer])
-    }
-
-    func confirm(image: CGImage) async throws -> ConfirmedCategory? {
+    func read(image: CGImage) async throws -> CategoryReading {
         defer { calls += 1 }
-        if calls < answers.count { return answers[calls] }
-        return answers.last ?? nil
+        let answer = calls < answers.count ? answers[calls] : answers.last ?? nil
+        guard let answer else { throw Boom() }
+        return answer
     }
 }
 
 @Suite("CategoryConfirmationCoordinator")
 struct CategoryConfirmationCoordinatorTests {
-    private static let organic = ConfirmedCategory(
+    private static let organic = CategoryReading(
         binID: BinGuide.organic.id,
-        confidence: 0.9,
-        label: "apple core"
+        label: "apple core",
+        confidence: 0.9
     )
-    private static let recyclable = ConfirmedCategory(
+    private static let recyclable = CategoryReading(
         binID: BinGuide.cleanInorganic.id,
-        confidence: 0.8,
-        label: "tin can"
+        label: "tin can",
+        confidence: 0.8
+    )
+    /// The model looked and would not name a bin.
+    private static let unclear = CategoryReading(binID: nil, label: "blurred", confidence: 0.9)
+    /// The model named a bin but hedged its way below the bar.
+    private static let hedged = CategoryReading(
+        binID: BinGuide.residual.id,
+        label: "maybe a wrapper",
+        confidence: 0.2
     )
 
     /// Holds the fake clock, so the coordinator and the test agree on "now" without either
@@ -68,7 +75,7 @@ struct CategoryConfirmationCoordinatorTests {
         private let testClock = TestClock()
         private let frameImage: CGImage?
 
-        init(answers: [ConfirmedCategory?]) {
+        init(answers: [CategoryReading?]) {
             confirmer = StubConfirmer(answers: answers)
             coordinator = CategoryConfirmationCoordinator(service: confirmer)
             frameImage = Harness.makeFrame()
@@ -88,19 +95,26 @@ struct CategoryConfirmationCoordinatorTests {
         }
 
         @discardableResult
-        func tick(_ tracks: [TrackedDetection]) -> (tracks: [TrackedDetection], frame: ConfirmationFrame) {
+        func tick(
+            _ tracks: [TrackedDetection]
+        ) -> (tracks: [TrackedDetection], frame: ConfirmationFrame, records: [FoundationVerdictRecord]) {
             advance(1.0 / 30.0)
             let image = frameImage
-            return coordinator.update(
+            let result = coordinator.update(
                 tracks: tracks,
                 frameImage: { image },
                 timestamp: testClock.value
             )
+            collectedRecords.append(contentsOf: result.records)
+            return result
         }
 
         func tick(_ tracks: [TrackedDetection], times: Int) {
             for _ in 0..<times { _ = tick(tracks) }
         }
+
+        /// Every record the coordinator has handed out so far, in order.
+        private(set) var collectedRecords: [FoundationVerdictRecord] = []
 
         /// Lets every queued model call finish.
         func settle() async {
@@ -394,7 +408,7 @@ struct CategoryConfirmationCoordinatorTests {
 
     @Test("an unclear answer is retried after a pause, then left alone")
     func unclearAnswersAreRetriedThenDropped() async {
-        let h = Harness(answers: [nil])
+        let h = Harness(answers: [Self.unclear])
         h.coordinator.retryDelay = 1.0
         h.coordinator.maximumAttempts = 3
 
@@ -414,7 +428,7 @@ struct CategoryConfirmationCoordinatorTests {
 
     @Test("an unclear answer is not retried before the pause is up")
     func unclearAnswersRespectTheRetryDelay() async {
-        let h = Harness(answers: [nil])
+        let h = Harness(answers: [Self.unclear])
         h.coordinator.retryDelay = 5.0
         h.tick([track()], times: 2)
         await h.settle()
@@ -426,12 +440,82 @@ struct CategoryConfirmationCoordinatorTests {
 
     @Test("an item the model declined keeps the detector's own label")
     func unclearLeavesTheDetectorAlone() async {
-        let h = Harness(answers: [nil])
+        let h = Harness(answers: [Self.unclear])
         h.tick([track(classKey: "residual")], times: 2)
         await h.settle()
         let result = h.tick([track(classKey: "residual")])
         #expect(result.tracks.first?.classKey == "residual")
         #expect(result.frame.state(for: 1) == .idle)
+    }
+
+    // MARK: - The debug log
+
+    @Test("an accepted answer is recorded with what the detector had said")
+    func lockedAnswerIsRecorded() async {
+        let h = Harness(answers: [Self.recyclable])
+        h.tick([track(classKey: "organic")], times: 2)
+        await h.settle()
+        h.tick([track(classKey: "organic")])
+
+        #expect(h.collectedRecords.count == 1)
+        let record = h.collectedRecords.first
+        #expect(record?.outcome == .locked(binID: BinGuide.cleanInorganic.id))
+        #expect(record?.label == "tin can")
+        #expect(record?.detectorClassKey == "organic")
+        #expect(record?.disagreesWithDetector == true)
+        #expect(record?.thumbnail != nil)
+    }
+
+    /// The two ways an answer gets thrown away look identical on screen, so the log has to
+    /// tell them apart — that is most of why it exists.
+    @Test("an unclear answer and a hedged one are recorded differently")
+    func declinedAnswersSayWhy() async {
+        let unclearRun = Harness(answers: [Self.unclear])
+        unclearRun.tick([track()], times: 2)
+        await unclearRun.settle()
+        unclearRun.tick([track()])
+        #expect(unclearRun.collectedRecords.first?.outcome == .declined(reason: "model answered unclear"))
+
+        let hedgedRun = Harness(answers: [Self.hedged])
+        hedgedRun.tick([track()], times: 2)
+        await hedgedRun.settle()
+        hedgedRun.tick([track()])
+        #expect(hedgedRun.collectedRecords.first?.outcome == .declined(reason: "below 0.50 confidence"))
+        #expect(hedgedRun.collectedRecords.first?.confidence == 0.2)
+    }
+
+    @Test("a call that throws is recorded rather than swallowed")
+    func failuresAreRecorded() async {
+        let h = Harness(answers: [nil])
+        h.tick([track()], times: 2)
+        await h.settle()
+        h.tick([track()])
+
+        #expect(h.collectedRecords.count == 1)
+        if case .failed = h.collectedRecords.first?.outcome {} else {
+            Issue.record("expected a failure record, got \(String(describing: h.collectedRecords.first?.outcome))")
+        }
+    }
+
+    @Test("records are handed out exactly once")
+    func recordsAreDrained() async {
+        let h = Harness(answers: [Self.organic])
+        h.tick([track()], times: 2)
+        await h.settle()
+
+        #expect(h.tick([track()]).records.count == 1)
+        #expect(h.tick([track()]).records.isEmpty)
+        #expect(h.collectedRecords.count == 1)
+    }
+
+    @Test("records still come through while the layer is being switched off")
+    func recordsSurviveBeingDisabled() async {
+        let h = Harness(answers: [Self.organic])
+        h.tick([track()], times: 2)
+        await h.settle()
+
+        h.coordinator.isEnabled = false
+        #expect(h.tick([track()]).records.count == 1)
     }
 
     // MARK: - Turning it off mid-flight

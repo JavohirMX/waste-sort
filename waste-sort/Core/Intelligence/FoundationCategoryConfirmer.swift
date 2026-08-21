@@ -75,20 +75,19 @@ nonisolated struct FoundationCategoryConfirmer: CategoryConfirming {
         case unavailable
     }
 
-    func confirm(image: CGImage) async throws -> ConfirmedCategory? {
+    func read(image: CGImage) async throws -> CategoryReading {
         #if canImport(FoundationModels)
         guard #available(iOS 27.0, *), FoundationModelsABI.supportsStructuredImagePrompt else {
             throw Failure.unavailable
         }
-        let verdict = try await FoundationImagePrompt.respond(
+        return try await FoundationImagePrompt.respond(
             instructions: WasteCategoryPrompt.instructions,
             ask: WasteCategoryPrompt.ask,
             imageLabel: WasteCategoryPrompt.imageLabel,
             image: image,
             generating: WasteCategoryVerdict.self,
             maximumResponseTokens: WasteCategoryPrompt.maximumResponseTokens
-        )
-        return verdict.confirmed(minimumConfidence: WasteCategoryPrompt.minimumConfidence)
+        ).reading
         #else
         throw Failure.unavailable
         #endif

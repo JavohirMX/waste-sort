@@ -33,14 +33,13 @@ struct WasteCategoryVerdict {
 
 @available(iOS 27.0, *)
 extension WasteCategoryVerdict {
-    /// `nil` for an answer not worth locking in — either the model said so, or it hedged
-    /// its way to a number that means it was guessing.
-    func confirmed(minimumConfidence: Double) -> ConfirmedCategory? {
-        guard let binID = bin.binID, confidence >= minimumConfidence else { return nil }
-        return ConfirmedCategory(
-            binID: binID,
-            confidence: min(max(confidence, 0), 1),
-            label: item.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Straight translation of what the model said. Whether it is good enough to act on is
+    /// decided upstream, so a hedged answer still reaches the debug log intact.
+    var reading: CategoryReading {
+        CategoryReading(
+            binID: bin.binID,
+            label: item.trimmingCharacters(in: .whitespacesAndNewlines),
+            confidence: min(max(confidence, 0), 1)
         )
     }
 }
@@ -92,9 +91,6 @@ nonisolated enum WasteCategoryPrompt {
 
     /// Enough for the small structured answer, and no more — the response is three fields.
     static let maximumResponseTokens = 96
-
-    /// Below this the model was hedging, and a hedge is not worth locking in.
-    static let minimumConfidence = 0.5
 
     private static func answerName(for bin: BinInfo) -> String {
         bin.id == BinGuide.cleanInorganic.id ? "recyclable" : bin.id

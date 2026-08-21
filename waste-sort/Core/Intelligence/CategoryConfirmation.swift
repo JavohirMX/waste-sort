@@ -1,14 +1,22 @@
 import CoreGraphics
 import Foundation
 
-/// A category the on-device model committed to for one item.
+/// What the model said about one item, before anyone decides whether to believe it.
+nonisolated struct CategoryReading: Equatable, Sendable {
+    /// A `BinGuide` id, or nil when the model answered "unclear".
+    let binID: String?
+    /// What the model called the item, in its own words. Log only.
+    let label: String
+    /// The model's own stated confidence. Self-reported by a language model, so useful for
+    /// a threshold and for the log, not calibrated like a detector score.
+    let confidence: Double
+}
+
+/// A category the on-device model committed to for one item, and that was accepted.
 nonisolated struct ConfirmedCategory: Equatable, Sendable {
     /// A `BinGuide` id — `organic`, `residual`, or `clean_inorganic`.
     let binID: String
-    /// The model's own stated confidence. Self-reported by a language model, so useful for
-    /// ordering and for the log, not calibrated like a detector score.
     let confidence: Double
-    /// What the model called the item, in its own words. Log only.
     let label: String
 }
 
@@ -35,12 +43,14 @@ nonisolated struct ConfirmationFrame: Equatable, Sendable {
     var confirmedCount: Int { states.values.filter { $0 == .confirmed }.count }
 }
 
-/// Classifies one cropped item image.
+/// Reads one cropped item image.
+///
+/// Reports what the model said and nothing more — whether an answer is good enough to lock
+/// is `CategoryConfirmationCoordinator`'s call, so that policy lives in one place and the
+/// rejected answers are still there to be logged.
 ///
 /// The live implementation talks to the on-device Foundation model; tests substitute their
 /// own so the queueing and locking rules can be exercised without a model.
 nonisolated protocol CategoryConfirming: Sendable {
-    /// - Returns: the category, or nil when the model looked and could not say. A nil is a
-    ///   real answer — it just is not one worth locking.
-    func confirm(image: CGImage) async throws -> ConfirmedCategory?
+    func read(image: CGImage) async throws -> CategoryReading
 }

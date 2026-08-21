@@ -48,7 +48,10 @@ nonisolated enum ItemCropper {
 
     /// Straight CoreGraphics redraw. CGImage to CGImage never flips — the row order follows
     /// the context's memory layout either way — so this is a pure resample.
-    private static func downscaled(_ image: CGImage, maximumSide: Int) -> CGImage? {
+    ///
+    /// Also used to make the debug log's thumbnails, which is why it is not private: keeping
+    /// forty full-size crops around to look at would cost tens of megabytes.
+    static func downscaled(_ image: CGImage, maximumSide: Int) -> CGImage? {
         let longest = max(image.width, image.height)
         guard maximumSide > 0, longest > maximumSide else { return image }
 
