@@ -316,6 +316,9 @@ struct DetectionBoxOverlay: View {
     var rotation: LivePreviewRotation = .zero
     var mirror: Bool = false
     var style: BoxOverlayStyle = .default
+    /// What the on-device confirmation layer is doing with each track. Empty when the layer
+    /// is switched off, which draws exactly as it did before it existed.
+    var confirmation: ConfirmationFrame = ConfirmationFrame()
     @EnvironmentObject private var binStyle: BinStyleStore
 
     var body: some View {
@@ -328,7 +331,8 @@ struct DetectionBoxOverlay: View {
                         rect: rect,
                         confidence: track.conf,
                         style: style,
-                        isCoasting: track.isCoasting
+                        isCoasting: track.isCoasting,
+                        confirmation: confirmation.state(for: track.id)
                     )
                 }
             }
@@ -354,6 +358,11 @@ struct DetectionBoxView: View {
     var confidence: Float = 0
     var style: BoxOverlayStyle = .default
     var isCoasting: Bool = false
+    /// What the on-device confirmation layer is doing with this item, if anything.
+    var confirmation: TrackConfirmation = .idle
+
+    /// Decays from 1 to 0 over `Theme.confirmFlashDuration` the moment a verdict lands.
+    @State private var flash: Double = 0
 
     private var scale: CGFloat { style.badgeScale }
     private var badgeSize: CGFloat { Theme.badgeSize * scale }
@@ -361,22 +370,87 @@ struct DetectionBoxView: View {
     private var iconOnlyFontSize: CGFloat { 12 * scale }
 
     var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: confirmation != .thinking)) { context in
+            box.opacity(thinkingOpacity(at: context.date))
+        }
+        .overlay(alignment: style.placement.alignment) {
+            if style.showsBadge {
+                categoryBadge
+                    .fixedSize()
+                    .offset(style.placement.badgeOffset(distance: badgeSize * 0.35))
+            }
+        }
+        .position(x: rect.midX, y: rect.midY)
+        .onChange(of: confirmation) { _, updated in
+            guard updated == .confirmed else { return }
+            flash = 1
+            withAnimation(.easeOut(duration: Theme.confirmFlashDuration)) { flash = 0 }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var box: some View {
         RoundedRectangle(cornerRadius: Theme.boxCornerRadius, style: .continuous)
-            .fill(bin.color.opacity(isCoasting ? Theme.boxFillOpacity * 0.5 : Theme.boxFillOpacity))
+            .fill(bin.color.opacity(fillOpacity))
             .overlay {
                 RoundedRectangle(cornerRadius: Theme.boxCornerRadius, style: .continuous)
-                    .strokeBorder(bin.color, lineWidth: Theme.boxStrokeWidth)
+                    .strokeBorder(bin.color, style: strokeStyle)
             }
-            .frame(width: rect.width, height: rect.height)
-            .overlay(alignment: style.placement.alignment) {
-                if style.showsBadge {
-                    categoryBadge
-                        .fixedSize()
-                        .offset(style.placement.badgeOffset(distance: badgeSize * 0.35))
+            .overlay {
+                // A second, inset line. Confirmed is the only state that draws it, so the
+                // difference from an ordinary box is one of kind rather than of weight —
+                // a heavier single border reads as "confirmed" long before it is.
+                if confirmation == .confirmed {
+                    RoundedRectangle(cornerRadius: Theme.boxCornerRadius - Theme.confirmedInnerInset, style: .continuous)
+                        .strokeBorder(bin.color.opacity(0.85), lineWidth: Theme.boxStrokeWidth * 0.6)
+                        .padding(Theme.confirmedInnerInset)
                 }
             }
-            .position(x: rect.midX, y: rect.midY)
-            .accessibilityHidden(true)
+            .overlay {
+                // The flare rides outside the box so it reads as the answer arriving rather
+                // than as the box itself changing size.
+                RoundedRectangle(cornerRadius: Theme.boxCornerRadius + Theme.confirmFlashSpread, style: .continuous)
+                    .stroke(bin.color, lineWidth: Theme.confirmedStrokeWidth)
+                    .blur(radius: Theme.confirmFlashSpread * 0.6)
+                    .padding(-Theme.confirmFlashSpread)
+                    .opacity(flash)
+                    .allowsHitTesting(false)
+            }
+            .frame(width: rect.width, height: rect.height)
+            .animation(.easeOut(duration: Theme.animationDuration), value: confirmation)
+    }
+
+    private var fillOpacity: Double {
+        if isCoasting { return Theme.boxFillOpacity * 0.5 }
+        switch confirmation {
+        case .confirmed:
+            return Theme.confirmedFillOpacity
+        case .thinking, .pending:
+            return Theme.boxFillOpacity * 0.6
+        case .idle:
+            return Theme.boxFillOpacity
+        }
+    }
+
+    /// Solid means settled. Anything the confirmation layer still intends to act on is
+    /// dashed, so a box waiting its turn can never be read as one the model has answered.
+    private var strokeStyle: StrokeStyle {
+        switch confirmation {
+        case .confirmed:
+            return StrokeStyle(lineWidth: Theme.confirmedStrokeWidth)
+        case .thinking, .pending:
+            return StrokeStyle(lineWidth: Theme.boxStrokeWidth, dash: Theme.confirmThinkingDash)
+        case .idle:
+            return StrokeStyle(lineWidth: Theme.boxStrokeWidth)
+        }
+    }
+
+    /// Same sine-wave breathing the CTA overlays use, so the two never fight visually.
+    private func thinkingOpacity(at date: Date) -> Double {
+        guard confirmation == .thinking else { return 1 }
+        let turns = date.timeIntervalSinceReferenceDate / Theme.confirmThinkingPulsePeriod
+        let wave = 0.5 + 0.5 * sin(turns * 2 * .pi)
+        return Theme.confirmThinkingOpacity + Theme.confirmThinkingPulseAmount * wave
     }
 
     private var percentText: String {

@@ -45,7 +45,8 @@ struct ZoneDepositDetectorTests {
         at point: CGPoint,
         misses: Int = 0,
         rawClassKey: String = "",
-        rawConf: Float = 0
+        rawConf: Float = 0,
+        confirmedBinID: String? = nil
     ) -> TrackedDetection {
         TrackedDetection(
             id: id,
@@ -55,7 +56,8 @@ struct ZoneDepositDetectorTests {
             displayXywhn: CGRect(x: point.x - 0.05, y: point.y - 0.05, width: 0.1, height: 0.1),
             misses: misses,
             rawClassKey: rawClassKey,
-            rawConf: rawConf
+            rawConf: rawConf,
+            confirmedBinID: confirmedBinID
         )
     }
 
@@ -66,7 +68,8 @@ struct ZoneDepositDetectorTests {
         centerY: CGFloat = 0.5,
         misses: Int = 0,
         rawClassKey: String = "",
-        rawConf: Float = 0
+        rawConf: Float = 0,
+        confirmedBinID: String? = nil
     ) -> TrackedDetection {
         track(
             id: id,
@@ -74,7 +77,8 @@ struct ZoneDepositDetectorTests {
             at: CGPoint(x: centerX, y: centerY),
             misses: misses,
             rawClassKey: rawClassKey,
-            rawConf: rawConf
+            rawConf: rawConf,
+            confirmedBinID: confirmedBinID
         )
     }
 
@@ -396,6 +400,44 @@ struct ZoneDepositDetectorTests {
         let result = c.tick([track(id: 1, centerX: 0.2), track(id: 2, centerX: 0.25)], times: 3)
         #expect(result.occupiedZoneIDs == [organicZone.id])
         #expect(c.waitOutGrace().count == 2)
+    }
+
+    // MARK: - Model confirmation
+
+    /// The tally sums confidence over every frame, so by the time the model answers the
+    /// detector's guess has banked far more weight than a confirmation could ever outvote.
+    /// A confirmation has to replace the tally, not join it — otherwise the lock shows on
+    /// the box and the log still records the guess.
+    @Test("a confirmed category beats a long run of detector frames")
+    func confirmationOverridesTheTally() {
+        let c = clock()
+        // Fifteen frames of the detector insisting on organic before the model answers.
+        c.tick([track(classKey: "organic", centerX: 0.5)], times: 15)
+        c.tick([track(classKey: "organic", centerX: 0.2)], times: 4)
+        c.tick(
+            [track(
+                classKey: BinGuide.cleanInorganic.id,
+                centerX: 0.2,
+                confirmedBinID: BinGuide.cleanInorganic.id
+            )],
+            times: 2
+        )
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.classKey == BinGuide.cleanInorganic.id)
+        // Into the organic zone, so a recyclable item is the wrong bin.
+        #expect(deposits.first?.isCorrect == false)
+    }
+
+    @Test("without a confirmation the tally still decides")
+    func tallyStillDecidesWhenUnconfirmed() {
+        let c = clock()
+        c.tick([track(classKey: "organic", centerX: 0.5)], times: 15)
+        c.tick([track(classKey: "organic", centerX: 0.2)], times: 4)
+        c.tick([track(classKey: "residual", centerX: 0.2)], times: 2)
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.classKey == "organic")
     }
 
     // MARK: - Bin contents

@@ -15,6 +15,7 @@ struct waste_sortApp: App {
     @StateObject private var history = ZoneEventHistoryStore.shared
     @StateObject private var aprilTagStore = AprilTagBindingStore.shared
     @StateObject private var binStyle = BinStyleStore.shared
+    @StateObject private var verdictLog = FoundationVerdictLog.shared
 
     init() {
         BrandFont.register()
@@ -29,6 +30,7 @@ struct waste_sortApp: App {
                 .environmentObject(history)
                 .environmentObject(aprilTagStore)
                 .environmentObject(binStyle)
+                .environmentObject(verdictLog)
         }
     }
 }
