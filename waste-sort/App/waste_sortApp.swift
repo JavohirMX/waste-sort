@@ -15,6 +15,10 @@ struct waste_sortApp: App {
     @StateObject private var history = ZoneEventHistoryStore.shared
     @StateObject private var aprilTagStore = AprilTagBindingStore.shared
 
+    init() {
+        BrandFont.register()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
