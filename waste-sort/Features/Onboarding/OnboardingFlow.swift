@@ -70,24 +70,24 @@ struct OnboardingFlow: View {
             finish()
             return
         }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        HapticsService.shared.fire(.lightTap)
         nav.go(to: next)
     }
 
     /// "Already set up" on the station page — skip the two mounting steps.
     private func skipSetup() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        HapticsService.shared.fire(.lightTap)
         nav.go(to: .allSet)
     }
 
     private func goBack() {
         guard nav.canGoBack else { return }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        HapticsService.shared.fire(.lightTap)
         nav.goBack()
     }
 
     private func finish() {
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        HapticsService.shared.fire(.mediumImpact)
         onFinish()
     }
 

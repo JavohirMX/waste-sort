@@ -410,6 +410,7 @@ struct SettingsView: View {
                 step: 0.05
             )
             Toggle("Show FPS", isOn: $settings.showFPS)
+            Toggle("Speak bin on deposit", isOn: $settings.voiceGuidanceEnabled)
         } header: {
             Text("Live overlay")
                 .foregroundStyle(BinGuide.organic.color)
@@ -417,7 +418,8 @@ struct SettingsView: View {
             Text(
                 "Shown on the live camera when waste is detected. Choose one visual guide at a time. "
                     + "Box badges can show an icon, category name, and confidence percent; placement moves the badge around each box. "
-                    + "Show FPS draws a plain FPS label on the live camera, bottom left."
+                    + "Show FPS draws a plain FPS label on the live camera, bottom left. "
+                    + "Voice guidance speaks which bin received a deposit - useful when the screen is hard to see from where you stand."
             )
         }
     }

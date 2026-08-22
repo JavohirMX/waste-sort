@@ -34,6 +34,7 @@ enum WasteSortConfig {
     static let defaultAutoRecordOnOpen = false
     static let defaultShowFPS = false
     static let defaultUseMockStats = true
+    static let defaultVoiceGuidanceEnabled = false
     static let defaultHasCompletedOnboarding = false
 }
 
@@ -180,6 +181,10 @@ final class AppSettings: ObservableObject {
     @Published var useMockStats: Bool {
         didSet { persist(useMockStats, key: Keys.useMockStats) }
     }
+    /// Spoken deposit confirmations for hands-free kiosk operation.
+    @Published var voiceGuidanceEnabled: Bool {
+        didSet { persist(voiceGuidanceEnabled, key: Keys.voiceGuidanceEnabled) }
+    }
     /// Gates the first-launch onboarding flow. Intentionally left out of `resetToDefaults()`
     /// so restoring tuning values does not relaunch the tutorial — Settings offers a
     /// dedicated "Show onboarding again" action instead.
@@ -264,6 +269,7 @@ final class AppSettings: ObservableObject {
         static let autoRecordOnOpen = "settings.autoRecordOnOpen"
         static let showFPS = "settings.showFPS"
         static let useMockStats = "settings.useMockStats"
+        static let voiceGuidanceEnabled = "settings.voiceGuidanceEnabled"
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
     }
 
@@ -341,6 +347,11 @@ final class AppSettings: ObservableObject {
         )
         showFPS = Self.loadBool(defaults, Keys.showFPS, WasteSortConfig.defaultShowFPS)
         useMockStats = Self.loadBool(defaults, Keys.useMockStats, WasteSortConfig.defaultUseMockStats)
+        voiceGuidanceEnabled = Self.loadBool(
+            defaults,
+            Keys.voiceGuidanceEnabled,
+            WasteSortConfig.defaultVoiceGuidanceEnabled
+        )
         hasCompletedOnboarding = Self.loadBool(
             defaults,
             Keys.hasCompletedOnboarding,
@@ -375,6 +386,7 @@ final class AppSettings: ObservableObject {
         autoRecordOnOpen = WasteSortConfig.defaultAutoRecordOnOpen
         showFPS = WasteSortConfig.defaultShowFPS
         useMockStats = WasteSortConfig.defaultUseMockStats
+        voiceGuidanceEnabled = WasteSortConfig.defaultVoiceGuidanceEnabled
         resetCaptureToDefaults()
     }
 

@@ -216,7 +216,7 @@ struct LiveCameraView: View {
                         if settings.showFPS {
                             Text("\(fps) FPS")
                                 .font(.system(.caption, design: .default).monospacedDigit())
-                                .foregroundStyle(.white.opacity(0.7))
+                                .foregroundStyle(.white.opacity(0.9))
                                 .accessibilityLabel("\(fps) frames per second")
                                 .padding(.leading, Theme.hudInset)
                         }
@@ -278,7 +278,7 @@ struct LiveCameraView: View {
         withAnimation(.easeOut(duration: Theme.animationDuration)) {
             flashedZoneIDs.formUnion(zoneIDs)
         }
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        announceAndVibrate(deposits)
         flashTask?.cancel()
         flashTask = Task {
             try? await Task.sleep(for: .milliseconds(900))
@@ -286,6 +286,23 @@ struct LiveCameraView: View {
             withAnimation(.easeOut(duration: Theme.animationDuration)) {
                 flashedZoneIDs.subtract(zoneIDs)
             }
+        }
+    }
+
+    /// Spoken + tactile confirmation per deposit; hands-free kiosks rely on this.
+    private func announceAndVibrate(_ deposits: [ZoneDeposit]) {
+        var announcedBins = Set<String>()
+        for deposit in deposits {
+            if deposit.isCorrect {
+                HapticsService.shared.fire(.depositCorrect(binID: deposit.zoneBinID))
+            } else {
+                HapticsService.shared.fire(.depositIncorrect)
+            }
+            guard settings.voiceGuidanceEnabled else { continue }
+            let bin = BinGuide.info(for: deposit.classKey)
+            guard bin != BinGuide.unknown, !announcedBins.contains(bin.id) else { continue }
+            announcedBins.insert(bin.id)
+            SpeechAnnouncer.shared.speak(GuidancePhrases.depositConfirmation(displayName: bin.displayName))
         }
     }
 
@@ -311,7 +328,7 @@ struct LiveCameraView: View {
             showSettings = true
         }
         .onLongPressGesture {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            HapticsService.shared.fire(.lightTap)
             showSettings = true
         }
     }

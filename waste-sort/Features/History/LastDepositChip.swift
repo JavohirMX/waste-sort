@@ -67,7 +67,7 @@ struct LastDepositChip: View {
             let relative = elapsed < 60 ? "just now" : record.timestamp.formatted(.relative(presentation: .numeric))
             return Text("\(record.zoneName) · \(relative)")
                 .font(.system(.caption2, design: .default))
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(.white.opacity(0.9))
                 .lineLimit(1)
         }
     }
