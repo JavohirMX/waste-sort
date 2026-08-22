@@ -76,7 +76,7 @@ nonisolated enum DetectionOverlayCompositor {
         let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: UIColor.white,
+            .foregroundColor: UIColor.white
         ]
         let textSize = (label as NSString).size(withAttributes: attributes)
         let padding = CGSize(width: fontSize * 0.45, height: fontSize * 0.22)
@@ -116,7 +116,7 @@ nonisolated enum DetectionOverlayCompositor {
         let font = UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .semibold)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: UIColor.white,
+            .foregroundColor: UIColor.white
         ]
         let textSize = (text as NSString).size(withAttributes: attributes)
         let padding = CGSize(width: fontSize * 0.55, height: fontSize * 0.28)

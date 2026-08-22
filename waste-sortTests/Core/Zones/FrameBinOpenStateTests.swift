@@ -31,7 +31,7 @@ struct FrameBinOpenStateTests {
     func closedZoneClosesBin() {
         let frame = AprilTagStatusFrame(statuses: [
             organicZone.id: BinOpenness(state: .closed, confidence: 0.98),
-            residualZone.id: BinOpenness(state: .open, confidence: 0.98),
+            residualZone.id: BinOpenness(state: .open, confidence: 0.98)
         ])
         let state = FrameBinOpenState(tagFrame: frame, zones: zones)
         #expect(!state.isOpen(binID: BinGuide.organic.id))
@@ -41,7 +41,7 @@ struct FrameBinOpenStateTests {
     @Test("unknown status is treated as open")
     func unknownIsOpen() {
         let frame = AprilTagStatusFrame(statuses: [
-            organicZone.id: BinOpenness(state: .unknown),
+            organicZone.id: BinOpenness(state: .unknown)
         ])
         let state = FrameBinOpenState(tagFrame: frame, zones: zones)
         #expect(state.isOpen(binID: BinGuide.organic.id))

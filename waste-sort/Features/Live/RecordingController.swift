@@ -88,7 +88,7 @@ final class RecordingController: NSObject, ObservableObject {
                 queue: .main
             ) { [weak self] _ in
                 self?.flushAndSave()
-            },
+            }
         ]
 
         _ = logStore.recoverLeftoverSessions()
@@ -586,7 +586,7 @@ final class RecordingController: NSObject, ObservableObject {
                 queue: .main
             ) { [weak self] _ in
                 self?.flushAndSave()
-            },
+            }
         ]
     }
 
@@ -612,8 +612,7 @@ final class RecordingController: NSObject, ObservableObject {
     private func applyFeedRotation(to connection: AVCaptureConnection, session: AVCaptureSession) {
         let baseAngle: CGFloat
         if let dataOut = session.outputs.compactMap({ $0 as? AVCaptureVideoDataOutput }).first,
-           let dataConn = dataOut.connection(with: .video)
-        {
+           let dataConn = dataOut.connection(with: .video) {
             baseAngle = dataConn.videoRotationAngle
         } else {
             baseAngle = 0
@@ -719,8 +718,7 @@ final class RecordingController: NSObject, ObservableObject {
                 let persisted = URL(fileURLWithPath: path)
                 if matching(persisted),
                    fm.fileExists(atPath: persisted.path),
-                   !urls.contains(where: { $0.path == persisted.path })
-                {
+                   !urls.contains(where: { $0.path == persisted.path }) {
                     urls.append(persisted)
                 }
             }
@@ -872,10 +870,9 @@ extension RecordingController: AVCaptureFileOutputRecordingDelegate {
         error: Error?
     ) {
         Task { @MainActor in
-            if (phase == .starting || phase == .recording),
+            if phase == .starting || phase == .recording,
                let current = outputURL,
-               current.path != outputFileURL.path
-            {
+               current.path != outputFileURL.path {
                 try? FileManager.default.removeItem(at: outputFileURL)
                 return
             }

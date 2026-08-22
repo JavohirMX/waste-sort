@@ -618,7 +618,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                     queue: .main
                 ) { [weak self] _ in
                     self?.applyPreferredCamera()
-                },
+                }
             ]
         }
 
@@ -736,8 +736,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             }
             let controls = settings.captureControls
             if lastAppliedCaptureDeviceID == device.uniqueID,
-               lastAppliedCaptureControls == controls
-            {
+               lastAppliedCaptureControls == controls {
                 return
             }
             CameraCaptureAdjuster.apply(controls, to: device)
@@ -746,7 +745,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         }
 
         func registerCaptureSessionIfNeeded() {
-            guard let view = yoloView else { return }
+            guard yoloView != nil else { return }
             // Defer so we never publish ObservableObject changes mid-view-update.
             DispatchQueue.main.async { [weak self] in
                 guard let self, let view = self.yoloView else { return }

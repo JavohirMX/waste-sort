@@ -61,7 +61,7 @@ struct AprilTagBindingStoreTests {
         let testDefaults = UserDefaults(suiteName: "test.apriltag.legacy.\(UUID())")!
         let zone1 = UUID()
         let legacyDict: [UUID: Int] = [zone1: 4]
-        let encoded = try! JSONEncoder().encode(legacyDict)
+        let encoded = try! JSONEncoder().encode(legacyDict) // swiftlint:disable:this force_try
         testDefaults.set(encoded, forKey: "apriltag.bindings")
 
         let store = AprilTagBindingStore(defaults: testDefaults)

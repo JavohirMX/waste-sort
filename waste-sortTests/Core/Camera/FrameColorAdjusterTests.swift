@@ -53,7 +53,7 @@ private func makeGrayBuffer(gray: UInt8, width: Int = 16, height: Int = 16) -> C
         [
             kCVPixelBufferIOSurfacePropertiesKey as String: [:] as CFDictionary,
             kCVPixelBufferCGImageCompatibilityKey as String: true,
-            kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
+            kCVPixelBufferCGBitmapContextCompatibilityKey as String: true
         ] as CFDictionary,
         &buffer
     )

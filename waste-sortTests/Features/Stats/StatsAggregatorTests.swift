@@ -51,7 +51,7 @@ struct StatsAggregatorTests {
         let events = [
             event(at: date(2026, 8, 21, 8), classKey: "organic", zoneBinID: "organic", isCorrect: true),
             event(at: date(2026, 8, 21, 16), classKey: "residual", zoneBinID: "organic", isCorrect: false),
-            event(at: date(2026, 8, 20, 12), classKey: "organic", zoneBinID: "organic", isCorrect: true),
+            event(at: date(2026, 8, 20, 12), classKey: "organic", zoneBinID: "organic", isCorrect: true)
         ]
         let snapshot = StatsAggregator.snapshot(
             events: events,
@@ -87,7 +87,7 @@ struct StatsAggregatorTests {
         let outside = week.start.addingTimeInterval(-3600)
         let events = [
             event(at: inside, classKey: "organic", zoneBinID: "organic", isCorrect: true),
-            event(at: outside, classKey: "residual", zoneBinID: "residual", isCorrect: true),
+            event(at: outside, classKey: "residual", zoneBinID: "residual", isCorrect: true)
         ]
         let snapshot = StatsAggregator.snapshot(
             events: events,
@@ -105,7 +105,7 @@ struct StatsAggregatorTests {
         let events = [
             event(at: date(2026, 8, 21, 10), classKey: "organic", zoneBinID: "organic", isCorrect: true),
             event(at: date(2026, 8, 21, 11), classKey: "organic", zoneBinID: "residual", isCorrect: false),
-            event(at: date(2026, 8, 21, 12), classKey: "residual", zoneBinID: "clean_inorganic", isCorrect: false),
+            event(at: date(2026, 8, 21, 12), classKey: "residual", zoneBinID: "clean_inorganic", isCorrect: false)
         ]
         let snapshot = StatsAggregator.snapshot(
             events: events,

@@ -443,7 +443,7 @@ nonisolated final class ZoneDepositDetector {
                 CGPoint(x: probe.minX, y: probe.minY),
                 CGPoint(x: probe.maxX, y: probe.minY),
                 CGPoint(x: probe.maxX, y: probe.maxY),
-                CGPoint(x: probe.minX, y: probe.maxY),
+                CGPoint(x: probe.minX, y: probe.maxY)
             ]
             let hit = approaching.first { zone in samples.contains(where: zone.contains) }
             if let hit {
@@ -483,7 +483,7 @@ nonisolated final class ZoneDepositDetector {
                 classesSeen: object.classWeights.count,
                 viaTrajectory: target.viaTrajectory,
                 binWasOpen: object.sawBinOpen
-            ),
+            )
         ]
     }
 }

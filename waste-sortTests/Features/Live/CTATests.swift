@@ -9,7 +9,7 @@ struct CTACueMapperTests {
     @Test func skipsUnknownClass() {
         let tracks = [
             track(id: 1, classKey: "organic", width: 0.3, height: 0.3),
-            track(id: 2, classKey: "mystery", width: 0.3, height: 0.3),
+            track(id: 2, classKey: "mystery", width: 0.3, height: 0.3)
         ]
         let cues = map(tracks)
         #expect(cues.map(\.id) == [1])
@@ -26,7 +26,7 @@ struct CTACueMapperTests {
                 conf: 0.9,
                 displayXywhn: CGRect(x: 0.5, y: 0.2, width: 0.3, height: 0.3),
                 misses: 1
-            ),
+            )
         ]
         let cues = map(tracks)
         #expect(cues.map(\.id) == [1])
@@ -36,7 +36,7 @@ struct CTACueMapperTests {
         let tracks = [
             track(id: 1, classKey: "organic", x: 0.1, y: 0.2, width: 0.2, height: 0.2),
             track(id: 2, classKey: "organic", x: 0.5, y: 0.4, width: 0.15, height: 0.18),
-            track(id: 3, classKey: "residual", x: 0.7, y: 0.3, width: 0.2, height: 0.25),
+            track(id: 3, classKey: "residual", x: 0.7, y: 0.3, width: 0.2, height: 0.25)
         ]
         let cues = map(tracks)
         #expect(cues.map(\.id) == [1, 2, 3])
@@ -47,7 +47,7 @@ struct CTACueMapperTests {
         let tracks = [
             track(id: 1, classKey: "organic", width: 0.2, height: 0.2),
             track(id: 2, classKey: "organic", width: 0.15, height: 0.15),
-            track(id: 3, classKey: "clean_inorganic", width: 0.2, height: 0.2),
+            track(id: 3, classKey: "clean_inorganic", width: 0.2, height: 0.2)
         ]
         let cues = map(tracks)
         #expect(CTACueMapper.activeBinIDs(from: cues) == ["organic", "clean_inorganic"])

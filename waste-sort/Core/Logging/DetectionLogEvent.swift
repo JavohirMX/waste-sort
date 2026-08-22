@@ -20,24 +20,30 @@ struct DetectionLogEvent: Codable, Equatable, Sendable {
     var fps: Int
     /// `first_seen` when a track is confirmed, `zone_deposit` when it is released in a zone.
     /// Optional so pre-upgrade JSONL still decodes during crash recovery.
-    var eventType: String? = nil
-    var zoneId: String? = nil
-    var zoneName: String? = nil
-    var zoneBin: String? = nil
-    var isCorrect: Bool? = nil
-    var dwellFrames: Int? = nil
+    var eventType: String?
+    var zoneId: String?
+    var zoneName: String?
+    var zoneBin: String?
+    var isCorrect: Bool?
+    var dwellFrames: Int?
     /// True when the item was credited by where it was heading rather than by dwelling
     /// inside the zone. `dwellFrames` is 0 for these.
-    var viaTrajectory: Bool? = nil
-    var rawClassKey: String? = nil
+    var viaTrajectory: Bool?
+    var rawClassKey: String?
 
     static let eventTypeFirstSeen = "first_seen"
     static let eventTypeZoneDeposit = "zone_deposit"
     static let eventTypeClassSwitch = "class_switch"
     static let eventTypeCoastStart = "coast_start"
 
-    static let csvHeader =
-        "timestamp,sessionId,sessionStartedAt,trackId,classKey,className,bin,confidence,model,confidenceThreshold,iouThreshold,cameraId,boxX,boxY,boxW,boxH,fps,eventType,zoneId,zoneName,zoneBin,isCorrect,dwellFrames,viaTrajectory,rawClassKey"
+    static let csvHeader = [
+        "timestamp", "sessionId", "sessionStartedAt", "trackId",
+        "classKey", "className", "bin", "confidence",
+        "model", "confidenceThreshold", "iouThreshold", "cameraId",
+        "boxX", "boxY", "boxW", "boxH", "fps", "eventType",
+        "zoneId", "zoneName", "zoneBin", "isCorrect", "dwellFrames",
+        "viaTrajectory", "rawClassKey"
+    ].joined(separator: ",")
 
     static let timestampFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -71,7 +77,7 @@ struct DetectionLogEvent: Codable, Equatable, Sendable {
             isCorrect.map { $0 ? "true" : "false" } ?? "",
             dwellFrames.map(String.init) ?? "",
             viaTrajectory.map { $0 ? "true" : "false" } ?? "",
-            escape(rawClassKey ?? ""),
+            escape(rawClassKey ?? "")
         ].joined(separator: ",")
     }
 

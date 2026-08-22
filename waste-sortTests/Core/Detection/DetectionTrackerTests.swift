@@ -16,7 +16,7 @@ struct DetectionTrackerTests {
         let moving = [
             detection(x: 0.30, y: 0.40),
             detection(x: 0.34, y: 0.40),
-            detection(x: 0.38, y: 0.40),
+            detection(x: 0.38, y: 0.40)
         ]
 
         var trackID: Int?
@@ -149,7 +149,7 @@ struct DetectionTrackerTests {
 
         let sequence: [(CFAbsoluteTime, String)] = [
             (t0 + 0.10, "residual"),
-            (t0 + 0.15, "organic"),
+            (t0 + 0.15, "organic")
         ]
         for (timestamp, classKey) in sequence {
             let emitted = tracker.update(
@@ -196,7 +196,7 @@ struct DetectionTrackerTests {
 
         let pair = [
             detection(x: 0.30, y: 0.40, size: 0.20, classKey: "organic"),
-            detection(x: 0.42, y: 0.40, size: 0.20, classKey: "residual"),
+            detection(x: 0.42, y: 0.40, size: 0.20, classKey: "residual")
         ]
         var ids: Set<Int> = []
         for i in 0..<2 {
@@ -225,7 +225,7 @@ struct DetectionTrackerTests {
         let dual = tracker.update(
             [
                 detection(x: box.x, y: box.y, classKey: "residual", conf: 0.9),
-                detection(x: box.x, y: box.y, classKey: "clean_inorganic", conf: 0.8),
+                detection(x: box.x, y: box.y, classKey: "clean_inorganic", conf: 0.8)
             ],
             timestamp: t0 + 0.05
         )
@@ -289,7 +289,7 @@ struct DetectionTrackerTests {
         let emitted = tracker.update(
             [
                 detection(x: 0.4, y: 0.4, classKey: "clean_inorganic", conf: 0.7),
-                detection(x: 0.4, y: 0.4, classKey: "residual", conf: 0.92),
+                detection(x: 0.4, y: 0.4, classKey: "residual", conf: 0.92)
             ],
             timestamp: 90
         )
@@ -361,7 +361,7 @@ struct DetectionTrackerTests {
         func pair(residualX: CGFloat) -> [RawDetection] {
             [
                 detection(x: 0.20, y: 0.40, size: size, classKey: "organic"),
-                detection(x: residualX, y: 0.40, size: size, classKey: "residual"),
+                detection(x: residualX, y: 0.40, size: size, classKey: "residual")
             ]
         }
 

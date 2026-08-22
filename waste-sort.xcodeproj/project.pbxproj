@@ -20,19 +20,11 @@
 			remoteGlobalIDString = 0965088E302BF08E00842337;
 			remoteInfo = "waste-sort";
 		};
-		096508A7302BF08F00842337 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 09650887302BF08E00842337 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 0965088E302BF08E00842337;
-			remoteInfo = "waste-sort";
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		0965088F302BF08E00842337 /* waste-sort.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "waste-sort.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		0965089C302BF08F00842337 /* waste-sortTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "waste-sortTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		096508A6302BF08F00842337 /* waste-sortUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "waste-sortUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -66,13 +58,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		096508A3302BF08F00842337 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -90,7 +75,6 @@
 			children = (
 				0965088F302BF08E00842337 /* waste-sort.app */,
 				0965089C302BF08F00842337 /* waste-sortTests.xctest */,
-				096508A6302BF08F00842337 /* waste-sortUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -146,26 +130,6 @@
 			productReference = 0965089C302BF08F00842337 /* waste-sortTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		096508A5302BF08F00842337 /* waste-sortUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 096508B6302BF08F00842337 /* Build configuration list for PBXNativeTarget "waste-sortUITests" */;
-			buildPhases = (
-				096508A2302BF08F00842337 /* Sources */,
-				096508A3302BF08F00842337 /* Frameworks */,
-				096508A4302BF08F00842337 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				096508A8302BF08F00842337 /* PBXTargetDependency */,
-			);
-			name = "waste-sortUITests";
-			packageProductDependencies = (
-			);
-			productName = "waste-sortUITests";
-			productReference = 096508A6302BF08F00842337 /* waste-sortUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -179,15 +143,11 @@
 					0965088E302BF08E00842337 = {
 						CreatedOnToolsVersion = 26.6;
 					};
-					0965089B302BF08F00842337 = {
-						CreatedOnToolsVersion = 26.6;
-						TestTargetID = 0965088E302BF08E00842337;
-					};
-					096508A5302BF08F00842337 = {
-						CreatedOnToolsVersion = 26.6;
-						TestTargetID = 0965088E302BF08E00842337;
-					};
+				0965089B302BF08F00842337 = {
+					CreatedOnToolsVersion = 26.6;
+					TestTargetID = 0965088E302BF08E00842337;
 				};
+			};
 			};
 			buildConfigurationList = 0965088A302BF08E00842337 /* Build configuration list for PBXProject "waste-sort" */;
 			developmentRegion = en;
@@ -209,7 +169,6 @@
 			targets = (
 				0965088E302BF08E00842337 /* waste-sort */,
 				0965089B302BF08F00842337 /* waste-sortTests */,
-				096508A5302BF08F00842337 /* waste-sortUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -223,13 +182,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0965089A302BF08F00842337 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		096508A4302BF08F00842337 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -253,13 +205,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		096508A2302BF08F00842337 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -267,11 +212,6 @@
 			isa = PBXTargetDependency;
 			target = 0965088E302BF08E00842337 /* waste-sort */;
 			targetProxy = 0965089D302BF08F00842337 /* PBXContainerItemProxy */;
-		};
-		096508A8302BF08F00842337 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 0965088E302BF08E00842337 /* waste-sort */;
-			targetProxy = 096508A7302BF08F00842337 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -517,46 +457,6 @@
 			};
 			name = Release;
 		};
-		096508B7302BF08F00842337 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = MBBD9BRZ67;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.javohirmx.sortlaUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = "waste-sort";
-			};
-			name = Debug;
-		};
-		096508B8302BF08F00842337 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = MBBD9BRZ67;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.javohirmx.sortlaUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = "waste-sort";
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -583,15 +483,6 @@
 			buildConfigurations = (
 				096508B4302BF08F00842337 /* Debug */,
 				096508B5302BF08F00842337 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		096508B6302BF08F00842337 /* Build configuration list for PBXNativeTarget "waste-sortUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				096508B7302BF08F00842337 /* Debug */,
-				096508B8302BF08F00842337 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

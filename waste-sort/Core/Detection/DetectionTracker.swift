@@ -49,7 +49,7 @@ final class DetectionTracker {
     var missVelocityDecay: CGFloat = 0.25
     /// Overlap required to keep the same track when YOLO changes class.
     /// Capped at `iouThreshold` so a relabel cannot fall into a dead zone.
-    var crossClassIouThreshold: CGFloat = CGFloat(WasteSortConfig.defaultCrossClassIou)
+    var crossClassIouThreshold = CGFloat(WasteSortConfig.defaultCrossClassIou)
     /// Wall-clock window the challenger class must lead (by summed confidence) before
     /// the overlay label switches.
     var classLockWindow: CFTimeInterval = WasteSortConfig.defaultClassLockWindow

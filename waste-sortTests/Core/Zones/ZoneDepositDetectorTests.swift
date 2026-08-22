@@ -191,7 +191,7 @@ struct ZoneDepositDetectorTests {
         let c = clock()
         let both = [
             track(id: 1, classKey: "organic", centerX: 0.2),
-            track(id: 2, classKey: "residual", centerX: 0.8),
+            track(id: 2, classKey: "residual", centerX: 0.8)
         ]
         c.tick([track(id: 1, centerX: 0.45), track(id: 2, centerX: 0.55)])
         c.tick(both, times: 3)
@@ -304,7 +304,7 @@ struct ZoneDepositDetectorTests {
         for miss in 2...3 {
             c.tick([
                 track(id: 1, classKey: "organic", centerX: 0.2, misses: miss),
-                track(id: 2, classKey: "residual", centerX: 0.2),
+                track(id: 2, classKey: "residual", centerX: 0.2)
             ])
         }
         // The old track is finally dropped and only the new one continues.
@@ -366,7 +366,7 @@ struct ZoneDepositDetectorTests {
         // Same frame: old id frozen, new id already live.
         c.tick([
             track(id: 1, classKey: "organic", centerX: 0.2, misses: 1),
-            track(id: 2, classKey: "residual", centerX: 0.2),
+            track(id: 2, classKey: "residual", centerX: 0.2)
         ])
         c.tick([track(id: 2, classKey: "residual", centerX: 0.2)], times: 2)
         let deposits = c.waitOutGrace()
@@ -560,7 +560,7 @@ struct ZoneDepositDetectorTests {
     func rawClassOutvotesLockedLabel() {
         let c = clock(dwell: 3)
         c.tick([
-            track(classKey: "organic", centerX: 0.5, rawClassKey: "residual", rawConf: 0.95),
+            track(classKey: "organic", centerX: 0.5, rawClassKey: "residual", rawConf: 0.95)
         ])
         c.tick(
             [track(classKey: "organic", centerX: 0.2, rawClassKey: "residual", rawConf: 0.95)],

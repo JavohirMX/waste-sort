@@ -54,8 +54,7 @@ final class ZoneStore: ObservableObject {
         self.defaults = defaults
 
         if let data = defaults.data(forKey: Keys.zones),
-           let decoded = try? JSONDecoder().decode([DropZone].self, from: data)
-        {
+           let decoded = try? JSONDecoder().decode([DropZone].self, from: data) {
             zones = decoded
         } else {
             zones = DropZone.defaults(

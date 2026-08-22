@@ -101,7 +101,7 @@ nonisolated enum DetectionGeometry {
             rect.origin,
             CGPoint(x: rect.maxX, y: rect.minY),
             CGPoint(x: rect.maxX, y: rect.maxY),
-            CGPoint(x: rect.minX, y: rect.maxY),
+            CGPoint(x: rect.minX, y: rect.maxY)
         ].map(transform)
         let xs = corners.map(\.x)
         let ys = corners.map(\.y)

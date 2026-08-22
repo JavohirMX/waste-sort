@@ -60,7 +60,7 @@ nonisolated struct DropZone: Codable, Identifiable, Equatable, Sendable {
             CGPoint(x: rect.minX, y: rect.minY),
             CGPoint(x: rect.maxX, y: rect.minY),
             CGPoint(x: rect.maxX, y: rect.maxY),
-            CGPoint(x: rect.minX, y: rect.maxY),
+            CGPoint(x: rect.minX, y: rect.maxY)
         ]
     }
 

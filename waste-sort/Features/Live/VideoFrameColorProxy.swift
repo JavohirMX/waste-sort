@@ -122,8 +122,7 @@ final class VideoFrameColorProxy: NSObject, AVCaptureVideoDataOutputSampleBuffer
             processedPreviewLayer.removeFromSuperlayer()
             let insertIndex: UInt32
             if let preview = nativePreviewLayer ?? YOLOViewPredictorAccess.videoCapture(in: view)?.previewLayer,
-               let previewIndex = view.layer.sublayers?.firstIndex(of: preview)
-            {
+               let previewIndex = view.layer.sublayers?.firstIndex(of: preview) {
                 insertIndex = UInt32(previewIndex + 1)
             } else {
                 insertIndex = 1

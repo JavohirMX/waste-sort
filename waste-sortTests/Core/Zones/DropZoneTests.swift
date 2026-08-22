@@ -37,7 +37,7 @@ struct DropZoneTests {
                 CGPoint(x: 0.0, y: 0.0),
                 CGPoint(x: 1.0, y: 0.0),
                 CGPoint(x: 0.5, y: 0.5),
-                CGPoint(x: 0.0, y: 1.0),
+                CGPoint(x: 0.0, y: 1.0)
             ]
         )
         #expect(zone.contains(CGPoint(x: 0.2, y: 0.2)))

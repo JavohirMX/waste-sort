@@ -58,8 +58,7 @@ struct SettingsView: View {
             ) { _ in
                 refreshCameras()
                 if settings.preferredCameraID != CameraPreference.autoID,
-                   !cameraOptions.contains(where: { $0.id == settings.preferredCameraID })
-                {
+                   !cameraOptions.contains(where: { $0.id == settings.preferredCameraID }) {
                     settings.preferredCameraID = CameraPreference.autoID
                 }
             }
@@ -127,8 +126,7 @@ struct SettingsView: View {
             }
             .onChange(of: settings.preferredCameraID) { _, newValue in
                 if newValue != CameraPreference.autoID,
-                   !cameraOptions.contains(where: { $0.id == newValue })
-                {
+                   !cameraOptions.contains(where: { $0.id == newValue }) {
                     settings.preferredCameraID = CameraPreference.autoID
                 }
             }
@@ -209,7 +207,11 @@ struct SettingsView: View {
 
             SettingsIntSliderRow(
                 title: "Dwell frames",
-                help: "How many frames the model must actually see an item inside a zone before it can be counted. Frames where the box is frozen after a lost detection do not count. Higher = fewer accidental counts when something passes over a bin.",
+                help: """
+                    How many frames the model must actually see an item inside a zone before it can be counted. \
+                    Frames where the box is frozen after a lost detection do not count. \
+                    Higher = fewer accidental counts when something passes over a bin.
+                    """,
                 value: Binding(
                     get: { zoneStore.dwellFrames },
                     set: { zoneStore.dwellFrames = $0 }
@@ -219,7 +221,11 @@ struct SettingsView: View {
 
             SettingsSliderRow(
                 title: "Reacquire window",
-                help: "How long an item that vanishes is given to reappear before it is judged. The model blinks and relabels constantly; anything that comes back inside this window is the same item continuing, not a throw. Also the delay between a real throw and it showing up in History.",
+                help: """
+                    How long an item that vanishes is given to reappear before it is judged. The model blinks and relabels constantly; \
+                    anything that comes back inside this window is the same item continuing, not a throw. \
+                    Also the delay between a real throw and it showing up in History.
+                    """,
                 valueText: String(format: "%.1fs", zoneStore.reacquireGrace),
                 value: Binding(
                     get: { zoneStore.reacquireGrace },
@@ -324,7 +330,13 @@ struct SettingsView: View {
             Text("AprilTag Openness")
                 .foregroundStyle(BinGuide.organic.color)
         } footer: {
-            Text("Uses camera to detect when bins are physically opened via inside-mounted tag16h5 AprilTags. Detection range sets capture resolution and how hard the detector works per frame - raise it if tags near the bins go unseen, lower it if the frame rate drops. Closed delay is how long a tag can stay missing before the bin is marked closed.")
+            Text(
+                """
+                Uses camera to detect when bins are physically opened via inside-mounted tag16h5 AprilTags. \
+                Detection range sets capture resolution and how hard the detector works per frame - raise it if tags near the bins go unseen, \
+                lower it if the frame rate drops. Closed delay is how long a tag can stay missing before the bin is marked closed.
+                """
+            )
         }
     }
 
@@ -534,8 +546,11 @@ struct SettingsView: View {
         guard recording.hasLiveSession else {
             return "The live camera must be running before you can start a recording."
         }
-        let saves =
-            "Saves a raw clip to Photos, an overlay clip (boxes, labels, timestamps) to Photos and Files, and a detection CSV to Files (On My iPad/iPhone → Sortla). Records the camera feed only for the raw clip. Saves if you stop, or if the app is backgrounded or closed."
+        let saves = """
+            Saves a raw clip to Photos, an overlay clip (boxes, labels, timestamps) to Photos and Files, \
+            and a detection CSV to Files (On My iPad/iPhone → Sortla). Records the camera feed only for the raw clip. \
+            Saves if you stop, or if the app is backgrounded or closed.
+            """
         if settings.autoRecordOnOpen {
             return "Starts automatically when the app opens or returns to the foreground. \(saves)"
         }

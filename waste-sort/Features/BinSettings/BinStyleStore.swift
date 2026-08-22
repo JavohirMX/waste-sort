@@ -106,8 +106,7 @@ final class BinStyleStore: ObservableObject {
         siteName = defaults.string(forKey: Keys.siteName) ?? Self.defaultSiteName
         if let data = defaults.data(forKey: Keys.customizations),
            let decoded = try? JSONDecoder().decode([BinCustomization].self, from: data),
-           Self.isValid(decoded)
-        {
+           Self.isValid(decoded) {
             customizations = decoded.sorted { $0.order < $1.order }
         } else {
             customizations = Self.defaultCustomizations()
@@ -263,7 +262,7 @@ final class BinStyleStore: ObservableObject {
                 symbolName: BinIconOption.recycle.symbolName,
                 colorToken: BinColorToken.yellow.rawValue,
                 order: 2
-            ),
+            )
         ]
     }
 }

@@ -15,7 +15,7 @@ struct StatsView: View {
     @State private var siteNameDraft = ""
 
     /// Used when Stats is shown as an overlay (slide from right) instead of a cover.
-    var onClose: (() -> Void)? = nil
+    var onClose: (() -> Void)?
 
     private var events: [ZoneEventRecord] {
         settings.useMockStats ? StatsMockData.events() : history.events
@@ -172,14 +172,14 @@ struct StatsView: View {
         control.setTitleTextAttributes(
             [
                 .foregroundColor: UIColor(white: 0.28, alpha: 1),
-                .font: UIFont.systemFont(ofSize: 16, weight: .medium),
+                .font: UIFont.systemFont(ofSize: 16, weight: .medium)
             ],
             for: .normal
         )
         control.setTitleTextAttributes(
             [
                 .foregroundColor: UIColor(white: 0.12, alpha: 1),
-                .font: UIFont.systemFont(ofSize: 16, weight: .semibold),
+                .font: UIFont.systemFont(ofSize: 16, weight: .semibold)
             ],
             for: .selected
         )
@@ -615,7 +615,7 @@ private struct BinsFilledArtwork: View {
     private static let artOrder = [
         BinGuide.organic.id,
         BinGuide.residual.id,
-        BinGuide.cleanInorganic.id,
+        BinGuide.cleanInorganic.id
     ]
 
     var body: some View {
