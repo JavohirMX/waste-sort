@@ -35,6 +35,7 @@ enum WasteSortConfig {
     static let defaultShowFPS = false
     static let defaultUseMockStats = true
     static let defaultVoiceGuidanceEnabled = false
+    static let defaultBarcodeAssistEnabled = true
     static let defaultHasCompletedOnboarding = false
 }
 
@@ -43,6 +44,7 @@ struct RuntimeSettings: Equatable {
     var confidence: Double
     var iou: Double
     var maxItems: Int
+    var barcodeAssistEnabled: Bool
     var confirmHits: Int
     var maxMisses: Int
     var trackerIou: Double
@@ -185,6 +187,10 @@ final class AppSettings: ObservableObject {
     @Published var voiceGuidanceEnabled: Bool {
         didSet { persist(voiceGuidanceEnabled, key: Keys.voiceGuidanceEnabled) }
     }
+    /// Throttled Vision pass surfacing product barcodes alongside YOLO results.
+    @Published var barcodeAssistEnabled: Bool {
+        didSet { persist(barcodeAssistEnabled, key: Keys.barcodeAssistEnabled) }
+    }
     /// Gates the first-launch onboarding flow. Intentionally left out of `resetToDefaults()`
     /// so restoring tuning values does not relaunch the tutorial — Settings offers a
     /// dedicated "Show onboarding again" action instead.
@@ -211,6 +217,7 @@ final class AppSettings: ObservableObject {
             confidence: confidence,
             iou: iou,
             maxItems: maxItems,
+            barcodeAssistEnabled: barcodeAssistEnabled,
             confirmHits: confirmHits,
             maxMisses: maxMisses,
             trackerIou: trackerIou,
@@ -270,6 +277,7 @@ final class AppSettings: ObservableObject {
         static let showFPS = "settings.showFPS"
         static let useMockStats = "settings.useMockStats"
         static let voiceGuidanceEnabled = "settings.voiceGuidanceEnabled"
+        static let barcodeAssistEnabled = "settings.barcodeAssistEnabled"
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
     }
 
@@ -352,6 +360,11 @@ final class AppSettings: ObservableObject {
             Keys.voiceGuidanceEnabled,
             WasteSortConfig.defaultVoiceGuidanceEnabled
         )
+        barcodeAssistEnabled = Self.loadBool(
+            defaults,
+            Keys.barcodeAssistEnabled,
+            WasteSortConfig.defaultBarcodeAssistEnabled
+        )
         hasCompletedOnboarding = Self.loadBool(
             defaults,
             Keys.hasCompletedOnboarding,
@@ -387,6 +400,7 @@ final class AppSettings: ObservableObject {
         showFPS = WasteSortConfig.defaultShowFPS
         useMockStats = WasteSortConfig.defaultUseMockStats
         voiceGuidanceEnabled = WasteSortConfig.defaultVoiceGuidanceEnabled
+        barcodeAssistEnabled = WasteSortConfig.defaultBarcodeAssistEnabled
         resetCaptureToDefaults()
     }
 

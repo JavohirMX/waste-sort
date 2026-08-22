@@ -16,6 +16,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
     var aprilTagBindings: [UUID: [Int]]
     var aprilTagStaleTimeout: Double
     var aprilTagRangeProfile: AprilTagRangeProfile
+    var onBarcodeHint: ((ScannedBarcode?) -> Void)?
     var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
 
     func makeCoordinator() -> Coordinator {
@@ -67,6 +68,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
 
     func updateUIView(_ uiView: YOLOView, context: Context) {
         context.coordinator.onDetection = onDetection
+        context.coordinator.onBarcodeHint = onBarcodeHint
         context.coordinator.yoloView = uiView
         context.coordinator.replaceInputs(
             settings: settings,
@@ -143,6 +145,9 @@ struct LiveYOLOCamera: UIViewRepresentable {
 
     final class Coordinator {
         var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
+        var onBarcodeHint: ((ScannedBarcode?) -> Void)?
+        /// Throttled Vision pass; runs beside the AprilTag luma tap.
+        let barcodeScanner = BarcodeFrameScanner()
         var preferredCameraID: String
         var selectedModelName: String
         let recording: RecordingController
@@ -219,6 +224,13 @@ struct LiveYOLOCamera: UIViewRepresentable {
             )
             self.aprilTagRangeProfile = aprilTagRangeProfile
             self.onDetection = onDetection
+            self.onBarcodeHint = nil
+            barcodeScanner.onBarcode = { [weak self] barcode in
+                guard let self else { return }
+                DispatchQueue.main.async {
+                    self.onBarcodeHint?(barcode)
+                }
+            }
             aprilTagPipeline.apply(tuning: aprilTagRangeProfile.tuning)
         }
 
@@ -415,8 +427,13 @@ struct LiveYOLOCamera: UIViewRepresentable {
             // The tap copies luma here on the camera queue and detects on the pipeline's own
             // queue. Running the pass inline would cost YOLO an inference frame per detection.
             frameColorProxy?.frameTap = { [weak self] pixelBuffer in
-                guard let self, self.currentInputs.aprilTagEnabled else { return }
-                self.aprilTagPipeline.submit(pixelBuffer)
+                guard let self else { return }
+                if self.currentInputs.aprilTagEnabled {
+                    self.aprilTagPipeline.submit(pixelBuffer)
+                }
+                if self.currentInputs.settings.barcodeAssistEnabled {
+                    self.barcodeScanner.submit(pixelBuffer)
+                }
             }
             aprilTagPipeline.onTags = { [weak self] tags, timestamp in
                 self?.aprilTagBinDetector.ingest(tags: tags, timestamp: timestamp)

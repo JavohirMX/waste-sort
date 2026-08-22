@@ -411,6 +411,7 @@ struct SettingsView: View {
             )
             Toggle("Show FPS", isOn: $settings.showFPS)
             Toggle("Speak bin on deposit", isOn: $settings.voiceGuidanceEnabled)
+            Toggle("Scan product barcodes", isOn: $settings.barcodeAssistEnabled)
         } header: {
             Text("Live overlay")
                 .foregroundStyle(BinGuide.organic.color)

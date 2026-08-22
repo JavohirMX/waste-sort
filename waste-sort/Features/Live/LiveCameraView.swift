@@ -29,6 +29,8 @@ struct LiveCameraView: View {
     @State private var settlingZoneIDs: Set<UUID> = []
     @State private var segmentFrames: [String: CGRect] = [:]
     @State private var detectedTagFailure: String?
+    @State private var barcodeHint: ScannedBarcode?
+    @State private var barcodeClearTask: Task<Void, Never>?
 
     /// Non-nil while the AprilTag detector failed to initialize - lid gating is inert.
     private var tagFailureReason: String? {
@@ -81,7 +83,17 @@ struct LiveCameraView: View {
                         aprilTagEnabled: aprilTagStore.isEnabled,
                         aprilTagBindings: aprilTagStore.bindings,
                         aprilTagStaleTimeout: aprilTagStore.staleTimeout,
-                        aprilTagRangeProfile: aprilTagStore.rangeProfile
+                        aprilTagRangeProfile: aprilTagStore.rangeProfile,
+                        onBarcodeHint: { barcode in
+                            barcodeClearTask?.cancel()
+                            barcodeHint = barcode
+                            guard barcode != nil else { return }
+                            barcodeClearTask = Task {
+                                try? await Task.sleep(for: .seconds(4))
+                                guard !Task.isCancelled else { return }
+                                barcodeHint = nil
+                            }
+                        }
                     ) { result, tracked, zoneFrame, tagFrame in
                         if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                             fps = measured
@@ -193,6 +205,13 @@ struct LiveCameraView: View {
                         TagFailureBanner(reason: tagFailure)
                             .padding(.horizontal, Theme.hudInset)
                             .padding(.top, 6)
+                    }
+
+                    if let barcode = barcodeHint {
+                        BarcodeHintChip(barcode: barcode)
+                            .padding(.horizontal, Theme.hudInset)
+                            .padding(.top, 6)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
 
