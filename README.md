@@ -30,6 +30,10 @@ Inference runs entirely on device. Nothing is uploaded.
 - **Photo sort** — pick a still from the library and sort without the live camera
 - **Recording** — raw clip to Photos; overlay clip (boxes, labels, timestamps) to Photos and Files; CSV log to Files
 - **Recoverable sessions** — saves when you stop, background, or close the app; leftover recordings are recovered on next launch
+- **Voice guidance** — optional spoken bin confirmations ("Organic bin") for hands-free operation
+- **Haptic language** — CoreHaptics patterns per bin on correct deposits, warning buzz for wrong-bin drops
+- **Siri shortcuts** — "Start Sortla recording", toggle voice guidance, cycle model weights hands-free
+- **Barcode assist** — throttled Vision pass surfaces product barcodes with offline disposal hints
 - **Tunable** — swap bundled Core ML weights, confidence, overlap, and live tracking without rebuilding
 
 Open Settings by **long-pressing the FPS badge**.
@@ -131,18 +135,36 @@ waste-sort/
     Live/              # camera, YOLO view, recording
     Photo/             # library stills
     Settings/          # model, camera, thresholds
+    Intents/           # Siri App Intents + shortcuts
+    Stats/ History/ Onboarding/ BinSettings/
   Core/
     Detection/         # tracker, bin map, box overlay
     Camera/            # device catalog, capture locks, color preprocess
-    Logging/           # JSONL session + CSV export
-    Recording/         # overlay compositor / annotated writer
+    Logging/           # JSONL session + CSV export, per-session logger
+    Recording/         # overlay compositor, recovery, photo saver, rotation math
+    Feedback/          # speech guidance, haptic language
+    Vision/            # barcode frame scanner
   Resources/Models/    # Core ML weights
 waste-sortTests/       # Swift Testing
 ```
 
+See [AGENTS.md](AGENTS.md) for the threading model and conventions any
+contributor (human or AI) must follow.
+
 ## Tests
 
-From Xcode, **Product → Test** (`⌘U`). Coverage includes tracker coast/drop, class vote, geometry (rotation + mirror), camera preference fallback, overlay rendering, and CSV write/recovery (`class_switch`, `coast_start`).
+From Xcode, **Product → Test** (`⌘U`), or:
+
+```bash
+xcodebuild test -scheme waste-sort \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5'
+```
+
+Coverage includes tracker coast/drop, class vote, geometry (rotation + mirror),
+camera preference fallback, overlay rendering, CSV write/recovery
+(`class_switch`, `coast_start`), recovery service, rotation math, voice/barcode
+guidance phrases, and the recording phase mirror. `swiftlint lint` must stay at
+zero errors (config: `.swiftlint.yml`).
 
 ## Credits
 

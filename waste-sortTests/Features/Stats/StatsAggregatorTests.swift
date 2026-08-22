@@ -39,8 +39,10 @@ struct StatsAggregatorTests {
         let snapshot = StatsAggregator.snapshot(events: [], period: .daily, now: now, calendar: calendar)
         #expect(snapshot.generatedTotal == 0)
         #expect(snapshot.isEmpty)
-        #expect(snapshot.categoryCounts.allSatisfy { $0.count == 0 })
-        #expect(snapshot.destinationCounts.allSatisfy { $0.count == 0 })
+        // StatsCategoryCount.count is an Int payload, not a collection count;
+        // isEmpty does not exist, so empty_count is a false positive here.
+        #expect(snapshot.categoryCounts.allSatisfy { $0.count == 0 }) // swiftlint:disable:this empty_count
+        #expect(snapshot.destinationCounts.allSatisfy { $0.count == 0 }) // swiftlint:disable:this empty_count
         #expect(snapshot.timeBuckets.count == 13)
         #expect(snapshot.timeBuckets.allSatisfy { $0.generated == 0 && $0.misplaced == 0 })
     }
