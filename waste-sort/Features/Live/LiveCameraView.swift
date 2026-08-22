@@ -341,6 +341,23 @@ private final class FrameRateMonitor {
     }
 }
 
+/// Immutable pipeline configuration owned by the main thread and swapped
+/// atomically before each read on the YOLO inference queue.
+///
+/// `Coordinator.handle` runs on Ultralytics' camera/predictor queue while SwiftUI
+/// writes configuration from `updateUIView` on the main thread. Passing this
+/// snapshot instead of letting both sides touch plain stored properties removes
+/// the data race without introducing actor hops on the frame path.
+private struct PipelineInputs {
+    var settings: RuntimeSettings
+    var zones: [DropZone]
+    var dwellFrames: Int
+    var reacquireGrace: Double
+    var aprilTagEnabled: Bool
+    var aprilTagBindings: [UUID: [Int]]
+    var aprilTagStaleTimeout: Double
+}
+
 /// YOLOCamera wrapper that loads the selected segment model, sets thresholds, and hides developer chrome.
 private struct LiveYOLOCamera: UIViewRepresentable {
     var settings: RuntimeSettings
@@ -380,8 +397,15 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             task: .segment
         )
         applyThresholds(view, settings: settings)
-        applyTracking(context.coordinator, settings: settings)
-        applyZones(context.coordinator)
+        context.coordinator.replaceInputs(
+            settings: settings,
+            zones: zones,
+            dwellFrames: dwellFrames,
+            reacquireGrace: reacquireGrace,
+            aprilTagEnabled: aprilTagEnabled,
+            aprilTagBindings: aprilTagBindings,
+            aprilTagStaleTimeout: aprilTagStaleTimeout
+        )
         view.showOverlays = false
         hideDeveloperChrome(view)
         let coordinator = context.coordinator
@@ -399,13 +423,16 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     func updateUIView(_ uiView: YOLOView, context: Context) {
         context.coordinator.onDetection = onDetection
         context.coordinator.yoloView = uiView
-        context.coordinator.recording = recording
-        context.coordinator.aprilTagEnabled = aprilTagEnabled
-        context.coordinator.aprilTagBindings = aprilTagBindings
-        context.coordinator.aprilTagRangeProfile = aprilTagRangeProfile
+        context.coordinator.replaceInputs(
+            settings: settings,
+            zones: zones,
+            dwellFrames: dwellFrames,
+            reacquireGrace: reacquireGrace,
+            aprilTagEnabled: aprilTagEnabled,
+            aprilTagBindings: aprilTagBindings,
+            aprilTagStaleTimeout: aprilTagStaleTimeout
+        )
         applyThresholds(uiView, settings: settings)
-        applyTracking(context.coordinator, settings: settings)
-        applyZones(context.coordinator)
         let coordinator = context.coordinator
         uiView.onDetection = { result in
             coordinator.handle(result)
@@ -422,8 +449,12 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             coordinator.selectedModelName = selectedModelName
             coordinator.reloadModel(named: selectedModelName)
         }
+        // Triggers the tuning/reset didSet when changed; main-thread only.
+        context.coordinator.aprilTagRangeProfile = aprilTagRangeProfile
         coordinator.applyCaptureControlsIfNeeded()
         coordinator.updateFrameColorControls()
+        // Tracker/deposit knobs are applied inside handle() from the snapshot so
+        // the inference queue never races main-thread writes on those objects.
         // Do not register the capture session here: updateUIView runs on every
         // SwiftUI refresh (including each detection frame). Publishing from
         // RecordingController during that path caused a 100% CPU update loop.
@@ -444,25 +475,6 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         view.setConfidenceThreshold(settings.confidence)
         view.setIouThreshold(settings.iou)
         view.setNumItemsThreshold(settings.maxItems)
-    }
-
-    private func applyTracking(_ coordinator: Coordinator, settings: RuntimeSettings) {
-        coordinator.settings = settings
-        coordinator.tracker.iouThreshold = CGFloat(settings.trackerIou)
-        coordinator.tracker.confirmHits = settings.confirmHits
-        coordinator.tracker.maxMisses = settings.maxMisses
-        coordinator.tracker.crossClassIouThreshold = CGFloat(settings.crossClassIou)
-        coordinator.tracker.classLockWindow = settings.classLockWindow
-        coordinator.tracker.emaAlpha = CGFloat(settings.emaAlpha)
-        coordinator.tracker.boxInflate = CGFloat(settings.boxInflate)
-        coordinator.tracker.maxSpeed = CGFloat(settings.maxSpeed)
-    }
-
-    private func applyZones(_ coordinator: Coordinator) {
-        coordinator.zones = zones
-        coordinator.depositDetector.requiredDwellFrames = dwellFrames
-        coordinator.depositDetector.reacquireGrace = reacquireGrace
-        coordinator.aprilTagStaleTimeout = aprilTagStaleTimeout
     }
 
     private func hideDeveloperChrome(_ view: YOLOView) {
@@ -486,22 +498,30 @@ private struct LiveYOLOCamera: UIViewRepresentable {
 
     final class Coordinator {
         var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
-        var settings: RuntimeSettings
         var preferredCameraID: String
         var selectedModelName: String
-        var recording: RecordingController
-        var zones: [DropZone]
-        var aprilTagEnabled: Bool
-        var aprilTagBindings: [UUID: [Int]]
-        var aprilTagStaleTimeout: Double
-        var aprilTagRangeProfile: AprilTagRangeProfile = .far {
-            didSet {
-                guard oldValue != aprilTagRangeProfile else { return }
-                aprilTagPipeline.apply(tuning: aprilTagRangeProfile.tuning)
-                aprilTagPipeline.reset()
-                applyCaptureResolution(force: true)
+        let recording: RecordingController
+        /// Read by `handle` on the inference queue; mirrors the published phase.
+        private let phaseMirror: RecordingPhaseMirror
+
+        // MARK: Cross-thread state (main writes, camera queue reads)
+        private let inputsLock = NSLock()
+        private var _inputs: PipelineInputs
+        private var _capturingOriginals = false
+
+        var capturingOriginals: Bool {
+            get {
+                inputsLock.lock()
+                defer { inputsLock.unlock() }
+                return _capturingOriginals
+            }
+            set {
+                inputsLock.lock()
+                _capturingOriginals = newValue
+                inputsLock.unlock()
             }
         }
+
         weak var yoloView: YOLOView?
         let tracker = DetectionTracker()
         let depositDetector = ZoneDepositDetector()
@@ -512,10 +532,18 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         private var cameraObservers: [NSObjectProtocol] = []
         private var applyWorkItem: DispatchWorkItem?
         private var isReloadingModel = false
-        var capturingOriginals = false
         private var lastAppliedCaptureDeviceID: String?
         private var lastAppliedCaptureControls: CameraCaptureControls?
         private var frameColorProxy: VideoFrameColorProxy?
+
+        var aprilTagRangeProfile: AprilTagRangeProfile = .far {
+            didSet {
+                guard oldValue != aprilTagRangeProfile else { return }
+                aprilTagPipeline.apply(tuning: aprilTagRangeProfile.tuning)
+                aprilTagPipeline.reset()
+                applyCaptureResolution(force: true)
+            }
+        }
 
         init(
             settings: RuntimeSettings,
@@ -531,33 +559,77 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagRangeProfile: AprilTagRangeProfile,
             onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
         ) {
-            self.settings = settings
             self.preferredCameraID = preferredCameraID
             self.selectedModelName = selectedModelName
             self.recording = recording
-            self.zones = zones
-            self.aprilTagEnabled = aprilTagEnabled
-            self.aprilTagBindings = aprilTagBindings
-            self.aprilTagStaleTimeout = aprilTagStaleTimeout
+            self.phaseMirror = recording.phaseMirror
+            self._inputs = PipelineInputs(
+                settings: settings,
+                zones: zones,
+                dwellFrames: dwellFrames,
+                reacquireGrace: reacquireGrace,
+                aprilTagEnabled: aprilTagEnabled,
+                aprilTagBindings: aprilTagBindings,
+                aprilTagStaleTimeout: aprilTagStaleTimeout
+            )
             self.aprilTagRangeProfile = aprilTagRangeProfile
             self.onDetection = onDetection
             aprilTagPipeline.apply(tuning: aprilTagRangeProfile.tuning)
-            depositDetector.requiredDwellFrames = dwellFrames
-            depositDetector.reacquireGrace = reacquireGrace
+        }
+
+        /// Atomically swaps everything `handle` reads. Main thread only.
+        func replaceInputs(
+            settings: RuntimeSettings,
+            zones: [DropZone],
+            dwellFrames: Int,
+            reacquireGrace: Double,
+            aprilTagEnabled: Bool,
+            aprilTagBindings: [UUID: [Int]],
+            aprilTagStaleTimeout: Double
+        ) {
+            let snapshot = PipelineInputs(
+                settings: settings,
+                zones: zones,
+                dwellFrames: dwellFrames,
+                reacquireGrace: reacquireGrace,
+                aprilTagEnabled: aprilTagEnabled,
+                aprilTagBindings: aprilTagBindings,
+                aprilTagStaleTimeout: aprilTagStaleTimeout
+            )
+            inputsLock.lock()
+            _inputs = snapshot
+            inputsLock.unlock()
         }
 
         func handle(_ result: YOLOResult) {
-            if let view = yoloView {
-                view.setConfidenceThreshold(settings.confidence)
-                view.setIouThreshold(settings.iou)
-                view.setNumItemsThreshold(settings.maxItems)
-                let shouldCapture = recording.shouldCaptureOriginalFrames
-                if capturingOriginals != shouldCapture {
-                    capturingOriginals = shouldCapture
-                    YOLOViewPredictorAccess.setCapturesOriginalImage(shouldCapture, in: view)
-                }
+            inputsLock.lock()
+            let inputs = _inputs
+            let shouldCapture = switch phaseMirror.current {
+            case .starting, .recording, .stopping: true
+            case .idle, .saving: false
             }
-            let minConf = Float(settings.confidence)
+            var captureToggle: Bool?
+            if _capturingOriginals != shouldCapture {
+                _capturingOriginals = shouldCapture
+                captureToggle = shouldCapture
+            }
+            inputsLock.unlock()
+
+            // Tracker/deposit knobs live on the inference queue: applying them here
+            // from the immutable snapshot keeps main-thread writes out of these objects.
+            tracker.iouThreshold = CGFloat(inputs.settings.trackerIou)
+            tracker.confirmHits = inputs.settings.confirmHits
+            tracker.maxMisses = inputs.settings.maxMisses
+            tracker.crossClassIouThreshold = CGFloat(inputs.settings.crossClassIou)
+            tracker.classLockWindow = inputs.settings.classLockWindow
+            tracker.emaAlpha = CGFloat(inputs.settings.emaAlpha)
+            tracker.boxInflate = CGFloat(inputs.settings.boxInflate)
+            tracker.maxSpeed = CGFloat(inputs.settings.maxSpeed)
+
+            if let enable = captureToggle, let view = yoloView {
+                YOLOViewPredictorAccess.setCapturesOriginalImage(enable, in: view)
+            }
+            let minConf = Float(inputs.settings.confidence)
             let raw: [RawDetection] = result.boxes.compactMap { box in
                 guard box.conf >= minConf else { return nil }
                 let key = BinGuide.normalizedKey(box.cls)
@@ -569,27 +641,29 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                 )
             }
             let tracked = tracker.update(raw)
-            let currentZones = zones
-            var tagFrame = aprilTagEnabled
+            let currentZones = inputs.zones
+            depositDetector.requiredDwellFrames = inputs.dwellFrames
+            depositDetector.reacquireGrace = inputs.reacquireGrace
+            var tagFrame = inputs.aprilTagEnabled
                 ? aprilTagBinDetector.update(
                     zones: currentZones,
-                    tagBindings: aprilTagBindings,
-                    config: AprilTagConfig(staleTimeout: aprilTagStaleTimeout)
+                    tagBindings: inputs.aprilTagBindings,
+                    config: AprilTagConfig(staleTimeout: inputs.aprilTagStaleTimeout)
                 )
                 : AprilTagStatusFrame()
-            if aprilTagEnabled {
+            if inputs.aprilTagEnabled {
                 tagFrame.detectorStats = aprilTagPipeline.detector.lastFrameStats
             }
             depositDetector.binOpenState = FrameBinOpenState(tagFrame: tagFrame, zones: currentZones)
             let zoneFrame = depositDetector.update(tracks: tracked, zones: currentZones)
-            if recording.isRecording {
+            if phaseMirror.current == .recording {
                 let fps = result.fps.flatMap { $0.isFinite ? Int($0.rounded()) : nil } ?? 0
                 recording.ingestLiveFrame(
                     tracks: tracked,
                     deposits: zoneFrame.deposits,
                     originalImage: result.originalImage,
                     fps: fps,
-                    settings: settings
+                    settings: inputs.settings
                 )
             }
             // Zone results ride the existing main-thread hop so the @Published history
@@ -677,8 +751,14 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         }
 
         func updateFrameColorControls() {
-            frameColorProxy?.controls = settings.frameColor
+            frameColorProxy?.controls = currentInputs.settings.frameColor
             frameColorProxy?.syncPreviewLayout()
+        }
+
+        private var currentInputs: PipelineInputs {
+            inputsLock.lock()
+            defer { inputsLock.unlock() }
+            return _inputs
         }
 
         func installFrameColorProxyIfNeeded() {
@@ -689,13 +769,13 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             // The tap copies luma here on the camera queue and detects on the pipeline's own
             // queue. Running the pass inline would cost YOLO an inference frame per detection.
             frameColorProxy?.frameTap = { [weak self] pixelBuffer in
-                guard let self, self.aprilTagEnabled else { return }
+                guard let self, self.currentInputs.aprilTagEnabled else { return }
                 self.aprilTagPipeline.submit(pixelBuffer)
             }
             aprilTagPipeline.onTags = { [weak self] tags, timestamp in
                 self?.aprilTagBinDetector.ingest(tags: tags, timestamp: timestamp)
             }
-            frameColorProxy?.controls = settings.frameColor
+            frameColorProxy?.controls = currentInputs.settings.frameColor
             frameColorProxy?.install(on: view)
             frameColorProxy?.syncPreviewLayout()
         }
@@ -734,7 +814,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             else {
                 return
             }
-            let controls = settings.captureControls
+            let controls = currentInputs.settings.captureControls
             if lastAppliedCaptureDeviceID == device.uniqueID,
                lastAppliedCaptureControls == controls {
                 return
@@ -761,9 +841,9 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                     guard let self else { return }
                     self.isReloadingModel = false
                     if case .success = result {
-                        view.setConfidenceThreshold(self.settings.confidence)
-                        view.setIouThreshold(self.settings.iou)
-                        view.setNumItemsThreshold(self.settings.maxItems)
+                        view.setConfidenceThreshold(self.currentInputs.settings.confidence)
+                        view.setIouThreshold(self.currentInputs.settings.iou)
+                        view.setNumItemsThreshold(self.currentInputs.settings.maxItems)
                         if self.capturingOriginals {
                             YOLOViewPredictorAccess.setCapturesOriginalImage(true, in: view)
                         }
