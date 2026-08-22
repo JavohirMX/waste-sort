@@ -74,7 +74,6 @@ final class RecordingController: NSObject, ObservableObject {
     private var outputURL: URL?
     private var stopRequested = false
     private var saveWasInterrupted = false
-    private var pendingSaveURLs: [URL] = []
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     private var sessionObservers: [NSObjectProtocol] = []
     private var lifecycleObservers: [NSObjectProtocol] = []
@@ -84,13 +83,13 @@ final class RecordingController: NSObject, ObservableObject {
     private var startingWatchdogItem: DispatchWorkItem?
 
     private let logStore = DetectionLogStore.shared
-    private var annotatedWriter: AnnotatedVideoWriter?
-    private var sessionId: String?
-    private var sessionStartedAt: Date?
-    private var filePrefix: String?
-    private var loggedTrackIDs = Set<Int>()
-    private var lastClassByTrack: [Int: String] = [:]
-    private var lastMissesByTrack: [Int: Int] = [:]
+    private lazy var recoveryService = RecordingRecoveryService(
+        directory: recordingsDirectory,
+        activeFileKey: activeFileKey,
+        activeAnnotatedFileKey: activeAnnotatedFileKey
+    )
+    /// Owns the per-session CSV event trail and overlay movie.
+    private let sessionLogger = DetectionSessionLogger()
     private var sessionRotation: LivePreviewRotation = WasteSortConfig.defaultLiveRotation
     private var sessionMirror = WasteSortConfig.defaultLiveMirror
     private var annotatedPending = false
@@ -114,6 +113,20 @@ final class RecordingController: NSObject, ObservableObject {
             try FileManager.default.createDirectory(at: recordingsDirectory, withIntermediateDirectories: true)
         } catch {
             AppLog.recording.error("Recordings directory create failed: \(error.localizedDescription)")
+        }
+
+        photoSaver.onStatus = { [weak self] message in
+            self?.statusMessage = message
+        }
+        photoSaver.onProgress = { [weak self] in
+            self?.processSaveQueue()
+        }
+        photoSaver.onPermissionDenied = { [weak self] in
+            self?.phase = .idle
+            self?.endBackgroundTask()
+        }
+        photoSaver.onSavedFile = { [weak self] url in
+            self?.discardSavedClip(url)
         }
 
         lifecycleObservers = [
@@ -202,128 +215,13 @@ final class RecordingController: NSObject, ObservableObject {
         fps: Int,
         settings: RuntimeSettings
     ) {
-        guard isRecording, let sessionId, let sessionStartedAt else { return }
-
-        let now = Date()
-        for track in tracks {
-            let isNew = loggedTrackIDs.insert(track.id).inserted
-            let previousClass = lastClassByTrack[track.id]
-            let previousMisses = lastMissesByTrack[track.id] ?? 0
-            lastClassByTrack[track.id] = track.classKey
-            lastMissesByTrack[track.id] = track.misses
-
-            if isNew {
-                logStore.append(
-                    logEvent(
-                        now: now,
-                        sessionId: sessionId,
-                        sessionStartedAt: sessionStartedAt,
-                        track: track,
-                        fps: fps,
-                        settings: settings,
-                        eventType: DetectionLogEvent.eventTypeFirstSeen
-                    )
-                )
-            } else if previousClass != track.classKey {
-                logStore.append(
-                    logEvent(
-                        now: now,
-                        sessionId: sessionId,
-                        sessionStartedAt: sessionStartedAt,
-                        track: track,
-                        fps: fps,
-                        settings: settings,
-                        eventType: DetectionLogEvent.eventTypeClassSwitch
-                    )
-                )
-            }
-
-            if track.misses == 1, previousMisses == 0 {
-                logStore.append(
-                    logEvent(
-                        now: now,
-                        sessionId: sessionId,
-                        sessionStartedAt: sessionStartedAt,
-                        track: track,
-                        fps: fps,
-                        settings: settings,
-                        eventType: DetectionLogEvent.eventTypeCoastStart
-                    )
-                )
-            }
-        }
-
-        for deposit in deposits {
-            let bin = BinGuide.info(for: deposit.classKey)
-            logStore.append(
-                DetectionLogEvent(
-                    timestamp: now,
-                    sessionId: sessionId,
-                    sessionStartedAt: sessionStartedAt,
-                    trackId: deposit.trackID,
-                    classKey: deposit.classKey,
-                    className: deposit.className,
-                    bin: bin.id,
-                    confidence: Double(deposit.conf),
-                    model: settings.selectedModelName,
-                    confidenceThreshold: settings.confidence,
-                    iouThreshold: settings.iou,
-                    cameraId: settings.preferredCameraID,
-                    boxX: Double(deposit.boxXywhn.origin.x),
-                    boxY: Double(deposit.boxXywhn.origin.y),
-                    boxW: Double(deposit.boxXywhn.width),
-                    boxH: Double(deposit.boxXywhn.height),
-                    fps: fps,
-                    eventType: DetectionLogEvent.eventTypeZoneDeposit,
-                    zoneId: deposit.zoneID.uuidString,
-                    zoneName: deposit.zoneName,
-                    zoneBin: deposit.zoneBinID,
-                    isCorrect: deposit.isCorrect,
-                    dwellFrames: deposit.dwellFrames,
-                    viaTrajectory: deposit.viaTrajectory
-                )
-            )
-        }
-
-        if let originalImage {
-            annotatedWriter?.append(
-                image: originalImage,
-                tracks: tracks,
-                timestamp: now
-            )
-        }
-    }
-
-    private func logEvent(
-        now: Date,
-        sessionId: String,
-        sessionStartedAt: Date,
-        track: TrackedDetection,
-        fps: Int,
-        settings: RuntimeSettings,
-        eventType: String
-    ) -> DetectionLogEvent {
-        let bin = BinGuide.info(for: track.classKey)
-        return DetectionLogEvent(
-            timestamp: now,
-            sessionId: sessionId,
-            sessionStartedAt: sessionStartedAt,
-            trackId: track.id,
-            classKey: track.classKey,
-            className: track.className,
-            bin: bin.id,
-            confidence: Double(track.conf),
-            model: settings.selectedModelName,
-            confidenceThreshold: settings.confidence,
-            iouThreshold: settings.iou,
-            cameraId: settings.preferredCameraID,
-            boxX: Double(track.displayXywhn.origin.x),
-            boxY: Double(track.displayXywhn.origin.y),
-            boxW: Double(track.displayXywhn.width),
-            boxH: Double(track.displayXywhn.height),
+        guard isRecording else { return }
+        sessionLogger.record(
+            tracks: tracks,
+            deposits: deposits,
+            originalImage: originalImage,
             fps: fps,
-            eventType: eventType,
-            rawClassKey: track.observedClassKey
+            settings: settings
         )
     }
 
@@ -525,55 +423,34 @@ final class RecordingController: NSObject, ObservableObject {
     }
 
     private func beginDetectionSession() {
-        let startedAt = Date()
-        let id = UUID().uuidString
-        let prefix = SessionFileNamer.prefix(for: startedAt)
-        sessionId = id
-        sessionStartedAt = startedAt
-        filePrefix = prefix
-        loggedTrackIDs.removeAll()
-        lastClassByTrack.removeAll()
-        lastMissesByTrack.removeAll()
-        logSavedToFiles = false
-        annotatedSavedToFiles = false
-        csvFailed = false
-        logStore.startSession(id: id, startedAt: startedAt, filePrefix: prefix)
-
-        let annotatedURL = recordingsDirectory.appendingPathComponent("\(prefix)-annotated.mov")
-        try? FileManager.default.removeItem(at: annotatedURL)
-        annotatedWriter = AnnotatedVideoWriter(
-            outputURL: annotatedURL,
+        sessionLogger.begin(
             rotation: sessionRotation,
-            mirror: sessionMirror
+            mirror: sessionMirror,
+            recordingsDirectory: recordingsDirectory,
+            persistedAnnotatedKey: activeAnnotatedFileKey
         )
-        UserDefaults.standard.set(annotatedURL.path, forKey: activeAnnotatedFileKey)
     }
 
     private func abortDetectionSession() {
-        annotatedWriter?.cancel()
-        annotatedWriter = nil
         annotatedPending = false
-        logStore.discardSession()
-        clearSessionIdentifiers()
-        UserDefaults.standard.removeObject(forKey: activeAnnotatedFileKey)
+        sessionLogger.abort(persistedAnnotatedKey: activeAnnotatedFileKey)
     }
 
     private func finishDetectionArtifactsThenSave() {
         annotatedPending = true
-        let writer = annotatedWriter
-        annotatedWriter = nil
-        let prefix = filePrefix
+        let result = sessionLogger.finish()
         let csvURL = logStore.finishSession()
         logSavedToFiles = csvURL != nil
         csvFailed = csvURL == nil
-        clearSessionIdentifiers()
 
         Task { @MainActor in
-            let finished = await writer?.finish()
-            if let finished, let prefix {
-                copyAnnotatedToDocuments(finished, prefix: prefix)
-                if usableRecordingURL(finished) != nil {
-                    enqueueSaves([finished])
+            if let result {
+                let finished = await result.writer.finish()
+                if let finished {
+                    copyAnnotatedToDocuments(finished, prefix: result.prefix)
+                    if recoveryService.usableRecordingURL(finished) != nil {
+                        enqueueSaves([finished])
+                    }
                 }
             }
             UserDefaults.standard.removeObject(forKey: self.activeAnnotatedFileKey)
@@ -592,15 +469,6 @@ final class RecordingController: NSObject, ObservableObject {
             AppLog.recording.error("Annotated Files copy failed for \(prefix): \(error.localizedDescription)")
             annotatedSavedToFiles = false
         }
-    }
-
-    private func clearSessionIdentifiers() {
-        sessionId = nil
-        sessionStartedAt = nil
-        filePrefix = nil
-        loggedTrackIDs.removeAll()
-        lastClassByTrack.removeAll()
-        lastMissesByTrack.removeAll()
     }
 
     private func observeCaptureSession(_ session: AVCaptureSession?) {
@@ -649,20 +517,25 @@ final class RecordingController: NSObject, ObservableObject {
 
     /// Rotates and optionally mirrors the recorded stream to match the Live preview snapshot.
     private func applyFeedRotation(to connection: AVCaptureConnection, session: AVCaptureSession) {
-        let baseAngle: CGFloat
-        if let dataOut = session.outputs.compactMap({ $0 as? AVCaptureVideoDataOutput }).first,
-           let dataConn = dataOut.connection(with: .video) {
-            baseAngle = dataConn.videoRotationAngle
-        } else {
-            baseAngle = 0
-        }
+        let baseAngle = session.outputs
+            .compactMap { $0 as? AVCaptureVideoDataOutput }
+            .first?
+            .connection(with: .video)?
+            .videoRotationAngle ?? 0
 
-        var target = (baseAngle + CGFloat(sessionRotation.rawValue)).truncatingRemainder(dividingBy: 360)
-        if target < 0 { target += 360 }
+        let target = VideoRotationMath.targetRotationAngle(baseAngle: baseAngle, rotation: sessionRotation)
         if connection.isVideoRotationAngleSupported(target) {
             connection.videoRotationAngle = target
         } else {
-            applyLegacyOrientation(to: connection, session: session)
+            let baseOrientation = session.outputs
+                .compactMap { $0 as? AVCaptureVideoDataOutput }
+                .first?
+                .connection(with: .video)?
+                .videoOrientation ?? .portrait
+            connection.videoOrientation = VideoRotationMath.legacyOrientation(
+                base: baseOrientation,
+                rotation: sessionRotation
+            )
         }
 
         guard connection.isVideoMirroringSupported else { return }
@@ -671,134 +544,37 @@ final class RecordingController: NSObject, ObservableObject {
             .compactMap { $0 as? AVCaptureDeviceInput }
             .first { $0.device.hasMediaType(.video) }?
             .device.position == .front
-        connection.isVideoMirrored = (isFront == true) != sessionMirror
-    }
-
-    private func applyLegacyOrientation(to connection: AVCaptureConnection, session: AVCaptureSession) {
-        let baseOrientation = session.outputs
-            .compactMap { $0 as? AVCaptureVideoDataOutput }
-            .first?
-            .connection(with: .video)?
-            .videoOrientation ?? .portrait
-
-        let flipped180: AVCaptureVideoOrientation
-        switch baseOrientation {
-        case .portrait: flipped180 = .portraitUpsideDown
-        case .portraitUpsideDown: flipped180 = .portrait
-        case .landscapeRight: flipped180 = .landscapeLeft
-        case .landscapeLeft: flipped180 = .landscapeRight
-        @unknown default: flipped180 = baseOrientation
-        }
-
-        switch sessionRotation {
-        case .zero:
-            connection.videoOrientation = baseOrientation
-        case .oneEighty:
-            connection.videoOrientation = flipped180
-        case .ninety, .twoSeventy:
-            connection.videoOrientation = flipped180
-        }
+        connection.isVideoMirrored = VideoRotationMath.shouldMirror(
+            isFrontCamera: isFront,
+            mirrorPreference: sessionMirror
+        )
     }
 
     private func recoverLeftoverRecordings() {
-        let files = leftoverRecordingFiles()
-        guard !files.isEmpty else {
-            UserDefaults.standard.removeObject(forKey: activeFileKey)
-            return
-        }
+        let files = recoveryService.recoverRawRecordings()
+        guard !files.isEmpty else { return }
         saveWasInterrupted = true
         enqueueSaves(files)
     }
 
     private func recoverLeftoverAnnotatedRecordings() {
-        let files = leftoverAnnotatedFiles()
-        guard !files.isEmpty else {
-            UserDefaults.standard.removeObject(forKey: activeAnnotatedFileKey)
-            return
-        }
-        for url in files {
-            let prefix = url.deletingPathExtension().lastPathComponent.replacingOccurrences(
-                of: "-annotated",
-                with: ""
-            )
-            copyAnnotatedToDocuments(url, prefix: prefix)
+        let files = recoveryService.recoverAnnotatedRecordings()
+        guard !files.isEmpty else { return }
+        for item in files {
+            copyAnnotatedToDocuments(item.url, prefix: item.prefix)
         }
         saveWasInterrupted = true
-        enqueueSaves(files)
-    }
-
-    private func leftoverRecordingFiles() -> [URL] {
-        leftoverMovies { url in
-            !url.lastPathComponent.lowercased().contains("annotated")
-        }
-    }
-
-    private func leftoverAnnotatedFiles() -> [URL] {
-        leftoverMovies { url in
-            url.lastPathComponent.lowercased().contains("annotated")
-        }
-    }
-
-    private func leftoverMovies(matching: (URL) -> Bool) -> [URL] {
-        let fm = FileManager.default
-        let listed = (try? fm.contentsOfDirectory(
-            at: recordingsDirectory,
-            includingPropertiesForKeys: [.fileSizeKey],
-            options: [.skipsHiddenFiles]
-        )) ?? []
-
-        var urls = listed.filter {
-            $0.pathExtension.lowercased() == "mov" && matching($0)
-        }
-
-        let persistedKeys = [activeFileKey, activeAnnotatedFileKey]
-        for key in persistedKeys {
-            if let path = UserDefaults.standard.string(forKey: key) {
-                let persisted = URL(fileURLWithPath: path)
-                if matching(persisted),
-                   fm.fileExists(atPath: persisted.path),
-                   !urls.contains(where: { $0.path == persisted.path }) {
-                    urls.append(persisted)
-                }
-            }
-        }
-
-        var usable: [URL] = []
-        for url in urls {
-            if usableRecordingURL(url) != nil {
-                usable.append(url)
-            } else {
-                do {
-                    try fm.removeItem(at: url)
-                } catch {
-                    AppLog.recording.error("Could not discard unusable recording \(url.lastPathComponent): \(error.localizedDescription)")
-                }
-            }
-        }
-        return usable
-    }
-
-    private func usableRecordingURL(_ url: URL) -> URL? {
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        guard
-            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-            let size = attrs[.size] as? NSNumber,
-            size.intValue >= 1024
-        else {
-            AppLog.recording.error("Skipping unusable recording \(url.lastPathComponent): missing, unreadable, or <1 KB")
-            return nil
-        }
-        return url
+        enqueueSaves(files.map(\.url))
     }
 
     private func enqueueSaves(_ urls: [URL]) {
-        pendingSaveURLs.append(contentsOf: urls)
+        photoSaver.enqueue(urls)
         processSaveQueue()
     }
 
     private func processSaveQueue() {
         guard phase != .recording, phase != .starting else { return }
-        guard !pendingSaveURLs.isEmpty else {
+        guard !photoSaver.isEmpty else {
             if annotatedPending { return }
             if phase == .saving || phase == .stopping {
                 phase = .idle
@@ -811,10 +587,11 @@ final class RecordingController: NSObject, ObservableObject {
 
         beginBackgroundTaskIfNeeded()
         phase = .saving
-        let url = pendingSaveURLs.removeFirst()
         statusMessage = "Saving…"
-        saveToPhotos(url: url)
+        photoSaver.saveNext()
     }
+
+    private let photoSaver = PhotoLibrarySaver()
 
     private func completionStatusMessage() -> String {
         let filesExportOK = logSavedToFiles || annotatedSavedToFiles
@@ -829,42 +606,15 @@ final class RecordingController: NSObject, ObservableObject {
         }
     }
 
-    private func saveToPhotos(url: URL) {
-        PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] status in
-            guard let self else { return }
-            guard status == .authorized || status == .limited else {
-                DispatchQueue.main.async {
-                    self.statusMessage = "Photos access is required to save recordings."
-                    // Keep the file so a later launch can retry.
-                    self.pendingSaveURLs.insert(url, at: 0)
-                    self.phase = .idle
-                    self.endBackgroundTask()
-                }
-                return
-            }
-
-            PHPhotoLibrary.shared().performChanges({
-                let request = PHAssetCreationRequest.forAsset()
-                let options = PHAssetResourceCreationOptions()
-                options.shouldMoveFile = false
-                request.addResource(with: .video, fileURL: url, options: options)
-            }) { success, error in
-                DispatchQueue.main.async {
-                    if success {
-                        try? FileManager.default.removeItem(at: url)
-                        if url.path == UserDefaults.standard.string(forKey: self.activeFileKey) {
-                            UserDefaults.standard.removeObject(forKey: self.activeFileKey)
-                        }
-                        if url.path == UserDefaults.standard.string(forKey: self.activeAnnotatedFileKey) {
-                            UserDefaults.standard.removeObject(forKey: self.activeAnnotatedFileKey)
-                        }
-                    } else {
-                        let detail = error?.localizedDescription ?? "Unknown error"
-                        self.statusMessage = "Could not save to Photos: \(detail)"
-                    }
-                    self.processSaveQueue()
-                }
-            }
+    /// A clip made it into Photos; drop the local file and forget any persisted
+    /// "active recording" pointer that referenced it.
+    private func discardSavedClip(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+        if url.path == UserDefaults.standard.string(forKey: activeFileKey) {
+            UserDefaults.standard.removeObject(forKey: activeFileKey)
+        }
+        if url.path == UserDefaults.standard.string(forKey: activeAnnotatedFileKey) {
+            UserDefaults.standard.removeObject(forKey: activeAnnotatedFileKey)
         }
     }
 
@@ -926,7 +676,7 @@ extension RecordingController: AVCaptureFileOutputRecordingDelegate {
             cancelStartingWatchdog()
             outputURL = nil
 
-            if let usable = usableRecordingURL(outputFileURL) {
+            if let usable = recoveryService.usableRecordingURL(outputFileURL) {
                 finishDetectionArtifactsThenSave()
                 enqueueSaves([usable])
                 return
