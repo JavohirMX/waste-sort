@@ -22,6 +22,7 @@ struct LiveCameraView: View {
     @State private var showStats = false
     @State private var selectedZoneID: UUID?
     @State private var flashedZoneIDs: Set<UUID> = []
+    @State private var flashTask: Task<Void, Never>?
     @State private var occupiedZoneIDs: Set<UUID> = []
     @State private var armedZoneIDs: Set<UUID> = []
     @State private var settlingZoneIDs: Set<UUID> = []
@@ -288,8 +289,10 @@ struct LiveCameraView: View {
             flashedZoneIDs.formUnion(zoneIDs)
         }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        Task {
+        flashTask?.cancel()
+        flashTask = Task {
             try? await Task.sleep(for: .milliseconds(900))
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: Theme.animationDuration)) {
                 flashedZoneIDs.subtract(zoneIDs)
             }

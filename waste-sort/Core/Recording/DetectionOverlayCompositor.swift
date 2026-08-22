@@ -109,10 +109,7 @@ nonisolated enum DetectionOverlayCompositor {
         canvasSize: CGSize,
         fontSize: CGFloat
     ) {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        let text = formatter.string(from: date)
+        let text = TimestampFormatters.overlayClock.string(from: date)
         let font = UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .semibold)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
