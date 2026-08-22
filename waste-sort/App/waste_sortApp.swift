@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import TipKit
 
 @main
 struct WasteSortApp: App {
@@ -18,6 +19,7 @@ struct WasteSortApp: App {
 
     init() {
         BrandFont.register()
+        try? Tips.configure()
     }
 
     var body: some Scene {

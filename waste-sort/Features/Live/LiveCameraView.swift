@@ -1,5 +1,6 @@
 import AVFoundation
 import SwiftUI
+import TipKit
 import UIKit
 import UltralyticsYOLO
 
@@ -325,12 +326,20 @@ struct LiveCameraView: View {
         .accessibilityLabel("Waste stats")
         .accessibilityHint("Opens stats. Long press opens developer settings.")
         .accessibilityAction(named: "Open developer settings") {
-            showSettings = true
+            openSettings()
         }
         .onLongPressGesture {
             HapticsService.shared.fire(.lightTap)
-            showSettings = true
+            openSettings()
         }
+        .popoverTip(SettingsAccessTip(), arrowEdge: .bottom) { _ in
+            openSettings()
+        }
+    }
+
+    private func openSettings() {
+        showSettings = true
+        Task { try? await SettingsAccessTip.Events.settingsOpenedViaLongPress.donate() }
     }
 }
 
