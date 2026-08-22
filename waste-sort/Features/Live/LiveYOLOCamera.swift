@@ -41,7 +41,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
             modelPathOrName: selectedModelName,
             task: .segment
         )
-        applyThresholds(view, settings: settings)
+        Self.applyThresholds(view, settings: settings)
         context.coordinator.replaceInputs(
             settings: settings,
             zones: zones,
@@ -77,7 +77,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagBindings: aprilTagBindings,
             aprilTagStaleTimeout: aprilTagStaleTimeout
         )
-        applyThresholds(uiView, settings: settings)
+        Self.applyThresholds(uiView, settings: settings)
         let coordinator = context.coordinator
         uiView.onDetection = { result in
             coordinator.handle(result)
@@ -116,7 +116,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
         }
     }
 
-    private func applyThresholds(_ view: YOLOView, settings: RuntimeSettings) {
+    static func applyThresholds(_ view: YOLOView, settings: RuntimeSettings) {
         view.setConfidenceThreshold(settings.confidence)
         view.setIouThreshold(settings.iou)
         view.setNumItemsThreshold(settings.maxItems)
@@ -487,9 +487,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
                     guard let self else { return }
                     self.isReloadingModel = false
                     if case .success = result {
-                        view.setConfidenceThreshold(self.currentInputs.settings.confidence)
-                        view.setIouThreshold(self.currentInputs.settings.iou)
-                        view.setNumItemsThreshold(self.currentInputs.settings.maxItems)
+                        LiveYOLOCamera.applyThresholds(view, settings: self.currentInputs.settings)
                         if self.capturingOriginals {
                             YOLOViewPredictorAccess.setCapturesOriginalImage(true, in: view)
                         }

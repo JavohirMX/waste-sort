@@ -43,16 +43,6 @@ struct CTACueMapperTests {
         #expect(cues.map(\.binID) == ["organic", "organic", "residual"])
     }
 
-    @Test func uniqueBinIDsForBarEffects() {
-        let tracks = [
-            track(id: 1, classKey: "organic", width: 0.2, height: 0.2),
-            track(id: 2, classKey: "organic", width: 0.15, height: 0.15),
-            track(id: 3, classKey: "clean_inorganic", width: 0.2, height: 0.2)
-        ]
-        let cues = map(tracks)
-        #expect(CTACueMapper.activeBinIDs(from: cues) == ["organic", "clean_inorganic"])
-    }
-
     @Test func mapsCleanInorganicToBinID() {
         let cues = map([track(id: 4, classKey: "inorganic", width: 0.25, height: 0.25)])
         #expect(cues.first?.binID == "clean_inorganic")

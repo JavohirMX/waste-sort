@@ -1,9 +1,13 @@
 import AVFoundation
+import os
 import UIKit
 import UltralyticsYOLO
 
 /// Switches YOLOView's live capture input by reconfiguring the session behind its preview layer.
-/// Ultralytics does not expose a public device picker; this keeps inference on the same session.
+///
+/// Part of the Ultralytics adapter surface (see `YOLOViewPredictorAccess`):
+/// Ultralytics exposes no public device picker, so this keeps inference on the
+/// same session while swapping the input.
 enum YOLOViewCameraSwitcher {
     @discardableResult
     static func switchTo(_ device: AVCaptureDevice, in view: YOLOView) -> Bool {
@@ -26,6 +30,7 @@ enum YOLOViewCameraSwitcher {
         do {
             newInput = try AVCaptureDeviceInput(device: device)
         } catch {
+            AppLog.pipeline.error("Camera input creation failed for \(device.uniqueID): \(error.localizedDescription)")
             return false
         }
 

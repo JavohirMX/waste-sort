@@ -34,8 +34,4 @@ enum CTACueMapper {
             return CTACue(id: track.id, binID: bin.id, displayRect: rect)
         }
     }
-
-    static func activeBinIDs(from cues: [CTACue]) -> Set<String> {
-        Set(cues.map(\.binID))
-    }
 }

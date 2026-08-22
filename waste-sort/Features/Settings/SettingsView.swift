@@ -619,13 +619,17 @@ private struct SettingsSliderRow: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
+            // Keep the slider its own accessibility element so VoiceOver can
+            // adjust it; combining the row would collapse it to static text.
             Slider(value: $value, in: range, step: step)
+                .accessibilityLabel(title)
+                .accessibilityValue(valueText)
+                .accessibilityHint(help)
             Text(help)
                 .font(.system(.footnote, design: .default))
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
     }
 }
 

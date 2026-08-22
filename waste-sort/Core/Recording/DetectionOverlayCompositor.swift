@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftUI
 import UIKit
 
 /// Burns tracked boxes, class, confidence, and a clock onto a camera frame.
@@ -142,34 +143,15 @@ nonisolated enum DetectionOverlayCompositor {
     }
 }
 
+/// Overlay-video styling derived from `BinGuide`, so burned-in labels can never
+/// drift from the live HUD's category metadata.
 nonisolated enum OverlayBinStyle {
     static func displayName(for classKey: String) -> String {
-        switch normalized(classKey) {
-        case "organic": return "ORGANIC"
-        case "residual": return "RESIDUAL"
-        case "clean_inorganic", "cleaninorganic", "inorganic": return "RECYCLABLE"
-        default: return "UNKNOWN"
-        }
+        BinGuide.info(for: classKey).displayName
     }
 
     static func uiColor(for classKey: String) -> UIColor {
-        switch normalized(classKey) {
-        case "organic":
-            return UIColor(red: 34 / 255, green: 197 / 255, blue: 94 / 255, alpha: 1)
-        case "residual":
-            return UIColor(red: 39 / 255, green: 39 / 255, blue: 42 / 255, alpha: 1)
-        case "clean_inorganic", "cleaninorganic", "inorganic":
-            return UIColor(red: 234 / 255, green: 179 / 255, blue: 8 / 255, alpha: 1)
-        default:
-            return UIColor(red: 113 / 255, green: 113 / 255, blue: 122 / 255, alpha: 1)
-        }
-    }
-
-    private static func normalized(_ classKey: String) -> String {
-        classKey
-            .lowercased()
-            .replacingOccurrences(of: " ", with: "_")
-            .replacingOccurrences(of: "-", with: "_")
+        UIColor(BinGuide.info(for: classKey).color)
     }
 }
 

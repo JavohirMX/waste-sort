@@ -240,12 +240,6 @@ struct LiveCameraView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
-                .environmentObject(settings)
-                .environmentObject(recording)
-                .environmentObject(zoneStore)
-                .environmentObject(history)
-                .environmentObject(aprilTagStore)
-                .environmentObject(BinStyleStore.shared)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -256,10 +250,6 @@ struct LiveCameraView: View {
                         showStats = false
                     }
                 })
-                .environmentObject(settings)
-                .environmentObject(history)
-                .environmentObject(binStyle)
-                .environmentObject(zoneStore)
                 .background(.clear)
                 .transition(.move(edge: .trailing))
                 .zIndex(1)
