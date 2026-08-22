@@ -1,6 +1,7 @@
 import AVFoundation
 import Combine
 import Foundation
+import os
 import Photos
 import UIKit
 import UltralyticsYOLO
@@ -95,6 +96,8 @@ final class RecordingController: NSObject, ObservableObject {
     private var annotatedPending = false
     private var logSavedToFiles = false
     private var annotatedSavedToFiles = false
+    /// Set when the CSV export failed, so the completion message can be honest about it.
+    private var csvFailed = false
 
     private let activeFileKey = "recording.activeFilePath"
     private let activeAnnotatedFileKey = "recording.activeAnnotatedFilePath"
@@ -107,7 +110,11 @@ final class RecordingController: NSObject, ObservableObject {
     private override init() {
         super.init()
         movieOutput.movieFragmentInterval = CMTime(seconds: 10, preferredTimescale: 600)
-        try? FileManager.default.createDirectory(at: recordingsDirectory, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: recordingsDirectory, withIntermediateDirectories: true)
+        } catch {
+            AppLog.recording.error("Recordings directory create failed: \(error.localizedDescription)")
+        }
 
         lifecycleObservers = [
             NotificationCenter.default.addObserver(
@@ -327,7 +334,7 @@ final class RecordingController: NSObject, ObservableObject {
     private func startRecording(isRetry: Bool) {
         guard canStart else { return }
         guard let session = captureSession else {
-            statusMessage = "Open the Live tab first."
+            statusMessage = "The live camera must be running before recording."
             return
         }
 
@@ -335,6 +342,7 @@ final class RecordingController: NSObject, ObservableObject {
         saveWasInterrupted = false
         logSavedToFiles = false
         annotatedSavedToFiles = false
+        csvFailed = false
         sessionRotation = AppSettings.shared.liveRotation
         sessionMirror = AppSettings.shared.liveMirror
         startGeneration += 1
@@ -528,6 +536,7 @@ final class RecordingController: NSObject, ObservableObject {
         lastMissesByTrack.removeAll()
         logSavedToFiles = false
         annotatedSavedToFiles = false
+        csvFailed = false
         logStore.startSession(id: id, startedAt: startedAt, filePrefix: prefix)
 
         let annotatedURL = recordingsDirectory.appendingPathComponent("\(prefix)-annotated.mov")
@@ -556,6 +565,7 @@ final class RecordingController: NSObject, ObservableObject {
         let prefix = filePrefix
         let csvURL = logStore.finishSession()
         logSavedToFiles = csvURL != nil
+        csvFailed = csvURL == nil
         clearSessionIdentifiers()
 
         Task { @MainActor in
@@ -579,6 +589,7 @@ final class RecordingController: NSObject, ObservableObject {
             try FileManager.default.copyItem(at: tempURL, to: destination)
             annotatedSavedToFiles = true
         } catch {
+            AppLog.recording.error("Annotated Files copy failed for \(prefix): \(error.localizedDescription)")
             annotatedSavedToFiles = false
         }
     }
@@ -757,7 +768,11 @@ final class RecordingController: NSObject, ObservableObject {
             if usableRecordingURL(url) != nil {
                 usable.append(url)
             } else {
-                try? fm.removeItem(at: url)
+                do {
+                    try fm.removeItem(at: url)
+                } catch {
+                    AppLog.recording.error("Could not discard unusable recording \(url.lastPathComponent): \(error.localizedDescription)")
+                }
             }
         }
         return usable
@@ -770,6 +785,7 @@ final class RecordingController: NSObject, ObservableObject {
             let size = attrs[.size] as? NSNumber,
             size.intValue >= 1024
         else {
+            AppLog.recording.error("Skipping unusable recording \(url.lastPathComponent): missing, unreadable, or <1 KB")
             return nil
         }
         return url
@@ -801,14 +817,16 @@ final class RecordingController: NSObject, ObservableObject {
     }
 
     private func completionStatusMessage() -> String {
-        if logSavedToFiles || annotatedSavedToFiles {
-            return saveWasInterrupted
-                ? "Saved interrupted recording to Photos · log saved to Files"
-                : "Saved to Photos · log saved to Files"
+        let filesExportOK = logSavedToFiles || annotatedSavedToFiles
+        let saved = saveWasInterrupted ? "Saved interrupted recording" : "Saved"
+        switch (filesExportOK, csvFailed) {
+        case (true, _):
+            return "\(saved) to Photos · log saved to Files"
+        case (false, true):
+            return "\(saved) to Photos · Files export failed (see logs)"
+        case (false, false):
+            return "\(saved) to Photos"
         }
-        return saveWasInterrupted
-            ? "Saved interrupted recording to Photos"
-            : "Saved to Photos"
     }
 
     private func saveToPhotos(url: URL) {

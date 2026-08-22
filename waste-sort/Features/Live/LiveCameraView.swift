@@ -26,6 +26,13 @@ struct LiveCameraView: View {
     @State private var armedZoneIDs: Set<UUID> = []
     @State private var settlingZoneIDs: Set<UUID> = []
     @State private var segmentFrames: [String: CGRect] = [:]
+    @State private var detectedTagFailure: String?
+
+    /// Non-nil while the AprilTag detector failed to initialize - lid gating is inert.
+    private var tagFailureReason: String? {
+        guard aprilTagStore.isEnabled else { return nil }
+        return detectedTagFailure
+    }
 
     private var activeBinIDs: Set<String> {
         Set(counts.compactMap { key, value in
@@ -82,6 +89,7 @@ struct LiveCameraView: View {
                         detectedTags = tagFrame.detectedTags
                         tagStatuses = tagFrame.statuses
                         tagStats = tagFrame.detectorStats
+                        detectedTagFailure = tagFrame.detectorFailureReason
                         if occupiedZoneIDs != zoneFrame.occupiedZoneIDs {
                             occupiedZoneIDs = zoneFrame.occupiedZoneIDs
                         }
@@ -178,6 +186,12 @@ struct LiveCameraView: View {
                     )
                         .frame(maxWidth: .infinity)
                         .padding(.top, Theme.categoryBarTopGap)
+
+                    if let tagFailure = tagFailureReason {
+                        TagFailureBanner(reason: tagFailure)
+                            .padding(.horizontal, Theme.hudInset)
+                            .padding(.top, 6)
+                    }
                 }
 
                 Spacer(minLength: 0)
@@ -310,9 +324,29 @@ struct LiveCameraView: View {
     }
 }
 
+/// Warning chip shown when the AprilTag detector could not initialize: lid gating
+/// silently degrades to "bins always closed" unless the operator is told.
+private struct TagFailureBanner: View {
+    let reason: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+            Text("Bin lid tracking unavailable - deposits count regardless of lids. (\(reason))")
+                .lineLimit(2)
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(.white)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 9))
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// Smoothed pipeline FPS from callback timing; prefers the model's reported rate when present.
-private final class FrameRateMonitor {
-    private var lastFrameAt: CFAbsoluteTime = 0
+private final class FrameRateMonitor {    private var lastFrameAt: CFAbsoluteTime = 0
     private var ema: Double = 0
     private(set) var fps: Int = 0
 
@@ -653,6 +687,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                 : AprilTagStatusFrame()
             if inputs.aprilTagEnabled {
                 tagFrame.detectorStats = aprilTagPipeline.detector.lastFrameStats
+                tagFrame.detectorFailureReason = aprilTagPipeline.detector.configurationFailureReason
             }
             depositDetector.binOpenState = FrameBinOpenState(tagFrame: tagFrame, zones: currentZones)
             let zoneFrame = depositDetector.update(tracks: tracked, zones: currentZones)

@@ -30,7 +30,7 @@ final class ZoneStore: ObservableObject {
         didSet { defaults.set(reacquireGrace, forKey: Keys.reacquireGrace) }
     }
 
-    /// Drives the inline calibration mode on the Live tab.
+    /// Drives the inline calibration mode on the live camera screen.
     @Published var isEditingZones = false
 
     private let defaults: UserDefaults
