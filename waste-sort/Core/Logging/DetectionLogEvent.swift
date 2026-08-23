@@ -30,6 +30,12 @@ struct DetectionLogEvent: Codable, Equatable, Sendable {
     /// inside the zone. `dwellFrames` is 0 for these.
     var viaTrajectory: Bool?
     var rawClassKey: String?
+    /// True when the verdict was resolved by fallback instead of a decisive belief read.
+    var beliefUncertain: Bool?
+    /// Belief lead of the top class over the runner-up (0…1).
+    var beliefMargin: Double?
+    /// The model's own leader on deposit events, even when the advised bin overruled it.
+    var modelTopClassKey: String?
 
     static let eventTypeFirstSeen = "first_seen"
     static let eventTypeZoneDeposit = "zone_deposit"
@@ -42,7 +48,7 @@ struct DetectionLogEvent: Codable, Equatable, Sendable {
         "model", "confidenceThreshold", "iouThreshold", "cameraId",
         "boxX", "boxY", "boxW", "boxH", "fps", "eventType",
         "zoneId", "zoneName", "zoneBin", "isCorrect", "dwellFrames",
-        "viaTrajectory", "rawClassKey"
+        "viaTrajectory", "rawClassKey", "beliefUncertain", "beliefMargin", "modelTopClassKey"
     ].joined(separator: ",")
 
     static let timestampFormatter: ISO8601DateFormatter = {
@@ -77,7 +83,10 @@ struct DetectionLogEvent: Codable, Equatable, Sendable {
             isCorrect.map { $0 ? "true" : "false" } ?? "",
             dwellFrames.map(String.init) ?? "",
             viaTrajectory.map { $0 ? "true" : "false" } ?? "",
-            escape(rawClassKey ?? "")
+            escape(rawClassKey ?? ""),
+            beliefUncertain.map { $0 ? "true" : "false" } ?? "",
+            beliefMargin.map { String(format: "%.4f", $0) } ?? "",
+            escape(modelTopClassKey ?? "")
         ].joined(separator: ",")
     }
 

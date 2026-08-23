@@ -507,7 +507,8 @@ struct SettingsView: View {
             )
             SettingsSliderRow(
                 title: "Verdict certainty",
-                help: "How sure the app must be before it commits to a bin. Higher = fewer confident mistakes, more 'not sure' items.",
+                help: "How sure the app must be before it commits to a bin. "
+                    + "Higher = fewer confident mistakes, more 'not sure' items.",
                 valueText: percent(settings.beliefThreshold),
                 value: $settings.beliefThreshold,
                 range: 0.30...0.95,
@@ -515,7 +516,8 @@ struct SettingsView: View {
             )
             SettingsSliderRow(
                 title: "Verdict margin",
-                help: "How far the leading category must sit ahead of the runner-up. Higher = borderline items are treated as unsure instead of guessed.",
+                help: "How far the leading category must sit ahead of the runner-up. "
+                    + "Higher = borderline items are treated as unsure instead of guessed.",
                 valueText: decimal(settings.beliefMargin),
                 value: $settings.beliefMargin,
                 range: 0.00...0.60,

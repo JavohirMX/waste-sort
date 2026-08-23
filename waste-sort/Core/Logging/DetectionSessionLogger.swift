@@ -151,7 +151,10 @@ final class DetectionSessionLogger {
                     zoneBin: deposit.zoneBinID,
                     isCorrect: deposit.isCorrect,
                     dwellFrames: deposit.dwellFrames,
-                    viaTrajectory: deposit.viaTrajectory
+                    viaTrajectory: deposit.viaTrajectory,
+                    beliefUncertain: deposit.wasUncertain,
+                    beliefMargin: Double(deposit.margin),
+                    modelTopClassKey: deposit.modelTopClassKey.isEmpty ? nil : deposit.modelTopClassKey
                 )
             )
         }
@@ -241,7 +244,9 @@ final class DetectionSessionLogger {
             boxH: Double(track.displayXywhn.height),
             fps: fps,
             eventType: eventType,
-            rawClassKey: track.observedClassKey
+            rawClassKey: track.observedClassKey,
+            beliefUncertain: track.beliefUncertain,
+            beliefMargin: Double(track.beliefMargin)
         )
     }
 }

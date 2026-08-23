@@ -65,6 +65,14 @@ nonisolated enum BinGuide {
 
     static let all: [BinInfo] = [organic, residual, cleanInorganic]
 
+    /// Where the system routes items it cannot place confidently.
+    ///
+    /// Bali's three-stream scheme treats residu as the last-resort stream (Pergub
+    /// 47/2019 Pasal 6: what can be neither composted nor recycled goes to TPA), and
+    /// a contaminated recyclable ruins its whole batch. So when the belief engine is
+    /// unsure, the honest answer is residual — never a coin-flip guess at recycling.
+    static let fallbackBinID = residual.id
+
     static func normalizedKey(_ className: String) -> String {
         className
             .lowercased()

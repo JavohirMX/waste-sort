@@ -61,7 +61,9 @@ struct BeliefEngineTests {
         let state = engine.currentState(at: time)
 
         #expect(state.topKey == "residual")
-        #expect(state.probabilities["residual"]! > state.probabilities["organic"]!)
+        let residualProbability = state.probabilities["residual"] ?? 0
+        let organicProbability = state.probabilities["organic"] ?? 0
+        #expect(residualProbability > organicProbability)
     }
 
     @Test func hysteresisHoldsLabelUntilChallengerSustainsLead() {
