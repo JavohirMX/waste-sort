@@ -45,20 +45,24 @@ flowchart LR
   camera[Camera or USB webcam]
   yolo[YOLOv8-seg Core ML]
   tracker[DetectionTracker]
+  belief[BeliefEngine]
   bins[BinGuide]
   hud[Live HUD]
   rec[Recording]
 
   camera --> yolo
   yolo --> tracker
-  tracker --> bins
+  tracker --> belief
+  appearance[Appearance prior] -.-> belief
+  recheck[Zoom re-check] -.-> belief
+  belief --> bins
   bins --> hud
   tracker --> rec
   rec --> photos[Photos]
   rec --> files[Files app Sortla]
 ```
 
-Each frame goes through Core ML, then a tracker that holds an ID across frames (confirm hits, IoU association, EMA smoothing, time-window class vote). Confirmed tracks map to a bin via `BinGuide` and light the HUD. While recording, the same tracks are written to an overlay movie and a CSV.
+Each frame goes through Core ML, then a tracker that holds an ID across frames (confirm hits, IoU association, EMA smoothing). Every confirmed track owns a **belief engine**: a per-object class belief with recency decay that fuses the model's per-frame verdicts plus two assist signals — a color/texture prior sampled inside the box, and for items that stay *unsure*, a crop-and-rerun second pass at native resolution. A bin verdict is only spoken when the top class clears an absolute threshold **and** a margin over the runner-up; otherwise the item is honestly unsure and guided to the residual stream (Bali's last-resort bin — Pergub 47/2019 treats residu as what can be neither composted nor recycled). Deposit scoring freezes the same engine's verdict when the item vanishes into a bin.
 
 | Class | Bin | Put here | Keep out |
 | --- | --- | --- | --- |
@@ -66,7 +70,11 @@ Each frame goes through Core ML, then a tracker that holds an ID across frames (
 | `residual` | Black / grey | Soft film, dirty packaging, tissues, mixed or contaminated items | Clean rigid recyclables |
 | `clean_inorganic` | Blue / yellow | Clean rigid plastic, metal cans, glass, clean paper/cardboard | Soft film and dirty recyclables |
 
-Unrecognized classes are ignored in the live bar.
+Unrecognized classes are ignored in the live bar. Unsure items (dashed box, question-mark badge) are pointed at the residual bin everywhere advice is given, and the CSV marks them via `beliefUncertain` / `beliefMargin` / `modelTopClassKey` columns so accuracy work can measure where the engine overruled the model.
+
+### Roadmap: material taxonomy (v4 model)
+
+The current three classes are the kiosk's bins, not what objects *are*. The next training round should relabel the dataset into a material taxonomy — plastic, paper, glass, metal, organic, textile, e-waste, B3/hazardous — with a fixed mapping table from materials to the three physical streams. That buys: better headroom than any post-processing (the model learns materials, the mapping layer owns regulation), B3 awareness that Pergub 47/2019 Pasal 6 requires but no current class expresses (batteries and electronics currently land in residual), and a clean path to new bins without re-architecting this pipeline — the belief engine is already generic over class keys.
 
 ## Requirements
 

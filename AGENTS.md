@@ -70,6 +70,7 @@ Rules that are load-bearing:
 | Truth | Do not duplicate |
 |---|---|
 | `BinGuide` (names, colors, aliases, normalization) | Overlay video styling (`OverlayBinStyle` derives from it), CSV rows, HUD |
+| `BeliefEngine` (bin verdicts + uncertainty) | Any other confidence-vote/argmax logic; `TrackedDetection.advisedBinID` is the only advice resolver for CTA, HUD, and photo counts |
 | `applyThresholds(_ settings:)` in `LiveYOLOCamera` | Inline `setConfidenceThreshold` triplets anywhere |
 | `RuntimeSettings` snapshot | Reading `AppSettings.shared` off-main |
 | `TimestampFormatters` | Allocating `DateFormatter` on any per-frame path (it cost real fps once) |
