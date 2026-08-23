@@ -11,17 +11,22 @@ struct PhotoSortView: View {
     @State private var isLoadingModel = true
     @State private var isInferring = false
     @State private var sourceImage: UIImage?
-    @State private var detections: [Box] = []
+    @State private var fused: [FusedPhotoDetection] = []
+    /// User resolutions for unsure items, keyed by detection index.
+    @State private var overrides: [Int: String] = [:]
     @State private var errorMessage: String?
 
     private var photoTracks: [TrackedDetection] {
-        detections.enumerated().map { index, box in
-            TrackedDetection(
+        fused.enumerated().map { index, item in
+            let overridden = overrides[index]
+            let classKey = overridden ?? item.classKey
+            return TrackedDetection(
                 id: index + 1,
-                classKey: BinGuide.normalizedKey(box.cls),
-                className: box.cls,
-                conf: box.conf,
-                displayXywhn: box.xywhn
+                classKey: classKey,
+                className: BinGuide.bin(id: classKey).title,
+                conf: item.conf,
+                displayXywhn: item.box.xywhn,
+                beliefUncertain: item.wasUncertain && overridden == nil
             )
         }
     }
@@ -159,23 +164,53 @@ struct PhotoSortView: View {
 
     private var resultsList: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(detections.isEmpty ? "No items found" : "\(detections.count) item\(detections.count == 1 ? "" : "s")")
+            Text(fused.isEmpty ? "No items found" : "\(fused.count) item\(fused.count == 1 ? "" : "s")")
                 .font(.system(.title3, design: .default).weight(.semibold))
 
             CategoryBar(counts: photoCounts)
                 .padding(.bottom, 4)
 
-            ForEach(Array(detections.enumerated()), id: \.offset) { _, box in
-                DetectionRow(className: box.cls, confidence: box.conf)
+            ForEach(fused.indices, id: \.self) { index in
+                DetectionRow(
+                    className: displayName(for: index),
+                    confidence: fused[index].conf
+                )
+                if fused[index].wasUncertain, overrides[index] == nil {
+                    resolveChip(index: index)
+                }
             }
+        }
+    }
+
+    private func displayName(for index: Int) -> String {
+        if let override = overrides[index] {
+            return BinGuide.bin(id: override).displayName
+        }
+        return fused[index].wasUncertain
+            ? "UNSURE → \(BinGuide.bin(id: fused[index].classKey).displayName)"
+            : fused[index].className
+    }
+
+    /// Two-button resolution for an unsure photo item; photo mode is not
+    /// throughput-bound, so asking beats guessing.
+    private func resolveChip(index: Int) -> some View {
+        HStack(spacing: 8) {
+            Text("Not sure about this one?")
+                .font(.system(.footnote, design: .default))
+                .foregroundStyle(.secondary)
+            Button("Recyclable") { overrides[index] = BinGuide.cleanInorganic.id }
+                .buttonStyle(.bordered)
+                .tint(BinGuide.cleanInorganic.color)
+            Button("Residual") { overrides[index] = BinGuide.residual.id }
+                .buttonStyle(.borderedProminent)
+                .tint(Color(red: 82 / 255, green: 82 / 255, blue: 91 / 255))
         }
     }
 
     private var photoCounts: [String: Int] {
         var counts: [String: Int] = [:]
-        for box in detections {
-            let key = BinGuide.info(for: box.cls).id
-            counts[key, default: 0] += 1
+        for track in photoTracks {
+            counts[track.advisedBinID, default: 0] += 1
         }
         return counts
     }
@@ -238,7 +273,8 @@ struct PhotoSortView: View {
         errorMessage = nil
         sourceImage = image
         isInferring = true
-        detections = []
+        fused = []
+        overrides = [:]
 
         applyThresholds(model)
         let minConf = Float(settings.confidence)
@@ -252,11 +288,34 @@ struct PhotoSortView: View {
         }
         sourceImage = prepared
 
+        // Two-pass ensemble: the mirror pass supplies a second opinion without a
+        // second model; disagreement is what powers the unsure state below.
         let result = await Task.detached(priority: .userInitiated) {
-            model(prepared)
+            let flipped = FrameColorAdjuster.uiImage(
+                from: FrameColorAdjuster.ciImage(from: prepared).oriented(.upMirrored)
+            ) ?? prepared
+            return (model(prepared), model(flipped))
         }.value
 
-        detections = result.boxes.filter { $0.conf >= minConf }
+        var priors: [AppearancePrior?] = []
+        if settings.appearanceAssistEnabled {
+            let sampler = BoxAppearanceSampler()
+            for box in result.0.boxes where box.conf >= minConf {
+                priors.append(
+                    sampler.sample(image: prepared, rectNorm: box.xywhn)
+                        .map { AppearanceAnalyzer.prior(for: $0) }
+                )
+            }
+        }
+
+        let fusedDetections = PhotoDetectionFuser.fuse(
+            passes: [
+                Array(result.0.boxes.filter { $0.conf >= minConf }),
+                Array(result.1.boxes.filter { $0.conf >= minConf })
+            ],
+            priors: priors
+        )
+        fused = fusedDetections
         isInferring = false
     }
 
