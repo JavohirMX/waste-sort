@@ -178,6 +178,12 @@ struct LiveYOLOCamera: UIViewRepresentable {
         /// Color/texture evidence for the belief engines. Inference-queue owned.
         private let appearanceSampler = BoxAppearanceSampler()
         private var lastAppearanceSampleAt: CFAbsoluteTime = 0
+        /// Crop-and-recheck escalation for unsure items. Requests fire from the
+        /// inference queue; outcomes return via a lock-guarded buffer drained on the
+        /// next frame, because the engine's completion runs on its own queue.
+        private let zoomRecheck = ZoomRecheckEngine()
+        private let recheckBufferLock = NSLock()
+        private var pendingRecheckOutcomes: [ZoomRecheckOutcome] = []
         let aprilTagPipeline = AprilTagFramePipeline(
             detector: AprilTagDetector(familyName: "tag16h5", tuning: AprilTagRangeProfile.far.tuning)
         )
@@ -266,7 +272,10 @@ struct LiveYOLOCamera: UIViewRepresentable {
             let inputs = _inputs
             let shouldCapture = switch phaseMirror.current {
             case .starting, .recording, .stopping: true
-            case .idle, .saving: false
+            // Appearance priors and the zoom re-check both need frames while idle;
+            // without them the kiosk's main mode would run blind to those signals.
+            case .idle: inputs.settings.appearanceAssistEnabled || inputs.settings.recheckAssistEnabled
+            case .saving: false
             }
             var captureToggle: Bool?
             if _capturingOriginals != shouldCapture {
@@ -294,6 +303,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
                 YOLOViewPredictorAccess.setCapturesOriginalImage(enable, in: view)
             }
             let minConf = Float(inputs.settings.confidence)
+            drainRecheckOutcomes()
             var priorsByKey: [Int: AppearancePrior] = [:]
             if inputs.settings.appearanceAssistEnabled, let image = result.originalImage {
                 priorsByKey = sampleAppearancePriors(image: image, boxes: result.boxes)
@@ -310,6 +320,13 @@ struct LiveYOLOCamera: UIViewRepresentable {
                 )
             }
             let tracked = tracker.update(raw)
+            if inputs.settings.recheckAssistEnabled, let image = result.originalImage {
+                requestRechecks(
+                    for: tracked,
+                    image: image,
+                    settings: inputs.settings
+                )
+            }
             let currentZones = inputs.zones
             depositDetector.requiredDwellFrames = inputs.dwellFrames
             depositDetector.reacquireGrace = inputs.reacquireGrace
@@ -366,6 +383,58 @@ struct LiveYOLOCamera: UIViewRepresentable {
                 priors[box.index] = prior
             }
             return priors
+        }
+
+        /// Fires zoom re-checks for tracks that have been unsure and still for long
+        /// enough. Inference-queue owned state; completion lands on the engine's queue.
+        private func requestRechecks(
+            for tracked: [TrackedDetection],
+            image: UIImage,
+            settings: RuntimeSettings
+        ) {
+            let now = CFAbsoluteTimeGetCurrent()
+            for track in tracked where track.beliefUncertain {
+                guard zoomRecheck.shouldRecheck(
+                    track: track,
+                    timestamp: now,
+                    delay: WasteSortConfig.defaultRecheckDelay,
+                    cooldown: WasteSortConfig.defaultRecheckCooldown,
+                    maxDriftPerFrame: 0.05
+                ) else { continue }
+                zoomRecheck.request(
+                    image: image,
+                    boxNorm: track.displayXywhn,
+                    trackID: track.id,
+                    modelName: settings.selectedModelName,
+                    settings: settings
+                ) { [weak self] outcome in
+                    guard let self, let outcome else { return }
+                    self.recheckBufferLock.lock()
+                    self.pendingRecheckOutcomes.append(outcome)
+                    self.recheckBufferLock.unlock()
+                }
+            }
+        }
+
+        /// Applies buffered re-check verdicts to the tracker. Must run on the inference
+        /// queue — this is why outcomes buffer instead of injecting directly.
+        private func drainRecheckOutcomes() {
+            recheckBufferLock.lock()
+            let outcomes = pendingRecheckOutcomes
+            pendingRecheckOutcomes.removeAll(keepingCapacity: true)
+            recheckBufferLock.unlock()
+            guard !outcomes.isEmpty else { return }
+            let now = CFAbsoluteTimeGetCurrent()
+            for outcome in outcomes {
+                tracker.injectRecheck(
+                    trackID: outcome.trackID,
+                    classKey: outcome.classKey,
+                    className: outcome.className,
+                    conf: outcome.conf,
+                    weight: Float(WasteSortConfig.defaultRecheckWeight) * outcome.conf,
+                    at: now
+                )
+            }
         }
 
         func startObservingCameraChanges() {
@@ -535,6 +604,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
         func reloadModel(named name: String) {
             guard let view = yoloView, !isReloadingModel else { return }
             isReloadingModel = true
+            zoomRecheck.invalidateModel()
             view.setModel(modelPathOrName: name, task: .segment) { [weak self] result in
                 Task { @MainActor in
                     guard let self else { return }

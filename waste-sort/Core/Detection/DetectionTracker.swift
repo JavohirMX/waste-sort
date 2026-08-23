@@ -200,6 +200,34 @@ final class DetectionTracker {
         return suppressOverlapping(tracks.filter(\.confirmed)).map { emit($0) }
     }
 
+    /// Fuses a completed zoom re-check into a track's belief. Real model output, so it
+    /// counts toward the minimum-evidence gate; `weight` is pre-boosted by the caller.
+    /// Called from `update`'s queue after draining the recheck buffer.
+    func injectRecheck(
+        trackID: Int,
+        classKey: String,
+        className: String,
+        conf: Float,
+        weight: Float,
+        at timestamp: CFAbsoluteTime
+    ) {
+        guard let i = tracks.firstIndex(where: { $0.id == trackID }) else { return }
+        tracks[i].belief.inject(
+            classKey: classKey,
+            className: className,
+            weight: Double(weight),
+            at: timestamp,
+            countsAsEvidence: true
+        )
+        tracks[i].lastBelief = tracks[i].belief.currentState(at: timestamp)
+        if let state = tracks[i].lastBelief,
+           let locked = state.lockedClassKey, locked != tracks[i].classKey {
+            tracks[i].classKey = locked
+            tracks[i].className = state.classNameByKey[locked] ?? className
+            tracks[i].lockedConf = Float(state.probabilities[locked] ?? 0)
+        }
+    }
+
     private func emit(_ track: Track) -> TrackedDetection {
         let state = track.lastBelief
         let raw = track.lastRaw

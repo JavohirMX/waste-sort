@@ -25,6 +25,14 @@ enum WasteSortConfig {
     static let defaultAppearanceWeight = 0.35
     /// Minimum wall-clock seconds between appearance samples (per pipeline, all boxes).
     static let defaultAppearanceInterval = 0.25
+    /// Crop-and-recheck escalation for unsure items.
+    static let defaultRecheckAssistEnabled = true
+    /// How long a track must stay unsure before the zoom pass fires.
+    static let defaultRecheckDelay = 0.6
+    /// Minimum seconds between re-checks of the same item.
+    static let defaultRecheckCooldown = 2.0
+    /// Multiplier on the re-check confidence when injected as belief evidence.
+    static let defaultRecheckWeight = 1.5
     static let defaultEmaAlpha = 0.4
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8
@@ -60,6 +68,7 @@ struct RuntimeSettings: Equatable {
     var maxItems: Int
     var barcodeAssistEnabled: Bool
     var appearanceAssistEnabled: Bool
+    var recheckAssistEnabled: Bool
     var confirmHits: Int
     var maxMisses: Int
     var trackerIou: Double
@@ -216,6 +225,10 @@ final class AppSettings: ObservableObject {
     @Published var appearanceAssistEnabled: Bool {
         didSet { persist(appearanceAssistEnabled, key: Keys.appearanceAssistEnabled) }
     }
+    /// Zoom-in second pass for items the engine cannot place confidently.
+    @Published var recheckAssistEnabled: Bool {
+        didSet { persist(recheckAssistEnabled, key: Keys.recheckAssistEnabled) }
+    }
     /// Gates the first-launch onboarding flow. Intentionally left out of `resetToDefaults()`
     /// so restoring tuning values does not relaunch the tutorial — Settings offers a
     /// dedicated "Show onboarding again" action instead.
@@ -244,6 +257,7 @@ final class AppSettings: ObservableObject {
             maxItems: maxItems,
             barcodeAssistEnabled: barcodeAssistEnabled,
             appearanceAssistEnabled: appearanceAssistEnabled,
+            recheckAssistEnabled: recheckAssistEnabled,
             confirmHits: confirmHits,
             maxMisses: maxMisses,
             trackerIou: trackerIou,
@@ -307,6 +321,7 @@ final class AppSettings: ObservableObject {
         static let voiceGuidanceEnabled = "settings.voiceGuidanceEnabled"
         static let barcodeAssistEnabled = "settings.barcodeAssistEnabled"
         static let appearanceAssistEnabled = "settings.appearanceAssistEnabled"
+        static let recheckAssistEnabled = "settings.recheckAssistEnabled"
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
     }
 
@@ -400,6 +415,11 @@ final class AppSettings: ObservableObject {
             Keys.appearanceAssistEnabled,
             WasteSortConfig.defaultAppearanceAssistEnabled
         )
+        recheckAssistEnabled = Self.loadBool(
+            defaults,
+            Keys.recheckAssistEnabled,
+            WasteSortConfig.defaultRecheckAssistEnabled
+        )
         hasCompletedOnboarding = Self.loadBool(
             defaults,
             Keys.hasCompletedOnboarding,
@@ -438,6 +458,7 @@ final class AppSettings: ObservableObject {
         voiceGuidanceEnabled = WasteSortConfig.defaultVoiceGuidanceEnabled
         barcodeAssistEnabled = WasteSortConfig.defaultBarcodeAssistEnabled
         appearanceAssistEnabled = WasteSortConfig.defaultAppearanceAssistEnabled
+        recheckAssistEnabled = WasteSortConfig.defaultRecheckAssistEnabled
         resetCaptureToDefaults()
     }
 

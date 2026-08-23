@@ -199,7 +199,7 @@ final class BoxAppearanceSampler {
 
     /// Returns the downsampled crop for `rectNorm`, or nil when the image cannot be drawn.
     func sample(image: UIImage, rectNorm: CGRect) -> AppearanceSample? {
-        guard let cgImage = image.cgImage ?? image.makeCGImage(),
+        guard let cgImage = image.cgImageOrRendered,
               let context,
               rectNorm.width > 0, rectNorm.height > 0
         else { return nil }
@@ -236,11 +236,13 @@ final class BoxAppearanceSampler {
     }
 }
 
-private extension UIImage {
-    /// CIImage-backed images (what the predictor hands over during recording) have no
-    /// cgImage; render through a minimal context once per call site.
-    func makeCGImage() -> CGImage? {
-        guard let ciImage = ciImage else { return nil }
+/// CIImage-backed images (what the predictor hands over during recording) have no
+/// cgImage; render through a minimal context. Shared by appearance sampling and zoom
+/// re-check cropping.
+nonisolated extension UIImage {
+    var cgImageOrRendered: CGImage? {
+        if let cgImage { return cgImage }
+        guard let ciImage else { return nil }
         let context = CIContext(options: [.useSoftwareRenderer: false])
         return context.createCGImage(ciImage, from: ciImage.extent)
     }
