@@ -20,6 +20,11 @@ enum WasteSortConfig {
     static let defaultBeliefSwitchConfirmations = 2
     static let defaultBeliefMinEvidenceEvents = 2
     static let defaultBeliefMinEvidenceDepositEvents = 3
+    /// Color/texture prior fused into beliefs when the camera frame is available.
+    static let defaultAppearanceAssistEnabled = true
+    static let defaultAppearanceWeight = 0.35
+    /// Minimum wall-clock seconds between appearance samples (per pipeline, all boxes).
+    static let defaultAppearanceInterval = 0.25
     static let defaultEmaAlpha = 0.4
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8
@@ -54,6 +59,7 @@ struct RuntimeSettings: Equatable {
     var iou: Double
     var maxItems: Int
     var barcodeAssistEnabled: Bool
+    var appearanceAssistEnabled: Bool
     var confirmHits: Int
     var maxMisses: Int
     var trackerIou: Double
@@ -206,6 +212,10 @@ final class AppSettings: ObservableObject {
     @Published var barcodeAssistEnabled: Bool {
         didSet { persist(barcodeAssistEnabled, key: Keys.barcodeAssistEnabled) }
     }
+    /// Soft color/texture prior fused into bin decisions when frames allow sampling.
+    @Published var appearanceAssistEnabled: Bool {
+        didSet { persist(appearanceAssistEnabled, key: Keys.appearanceAssistEnabled) }
+    }
     /// Gates the first-launch onboarding flow. Intentionally left out of `resetToDefaults()`
     /// so restoring tuning values does not relaunch the tutorial — Settings offers a
     /// dedicated "Show onboarding again" action instead.
@@ -233,6 +243,7 @@ final class AppSettings: ObservableObject {
             iou: iou,
             maxItems: maxItems,
             barcodeAssistEnabled: barcodeAssistEnabled,
+            appearanceAssistEnabled: appearanceAssistEnabled,
             confirmHits: confirmHits,
             maxMisses: maxMisses,
             trackerIou: trackerIou,
@@ -295,6 +306,7 @@ final class AppSettings: ObservableObject {
         static let useMockStats = "settings.useMockStats"
         static let voiceGuidanceEnabled = "settings.voiceGuidanceEnabled"
         static let barcodeAssistEnabled = "settings.barcodeAssistEnabled"
+        static let appearanceAssistEnabled = "settings.appearanceAssistEnabled"
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
     }
 
@@ -383,6 +395,11 @@ final class AppSettings: ObservableObject {
             Keys.barcodeAssistEnabled,
             WasteSortConfig.defaultBarcodeAssistEnabled
         )
+        appearanceAssistEnabled = Self.loadBool(
+            defaults,
+            Keys.appearanceAssistEnabled,
+            WasteSortConfig.defaultAppearanceAssistEnabled
+        )
         hasCompletedOnboarding = Self.loadBool(
             defaults,
             Keys.hasCompletedOnboarding,
@@ -420,6 +437,7 @@ final class AppSettings: ObservableObject {
         useMockStats = WasteSortConfig.defaultUseMockStats
         voiceGuidanceEnabled = WasteSortConfig.defaultVoiceGuidanceEnabled
         barcodeAssistEnabled = WasteSortConfig.defaultBarcodeAssistEnabled
+        appearanceAssistEnabled = WasteSortConfig.defaultAppearanceAssistEnabled
         resetCaptureToDefaults()
     }
 

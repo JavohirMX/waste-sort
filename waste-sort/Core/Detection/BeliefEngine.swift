@@ -117,17 +117,27 @@ nonisolated final class BeliefEngine {
         inject(classKey: classKey, className: className, weight: Double(conf), at: time)
     }
 
-    /// Records external evidence (appearance prior, zoom re-check). `weight` is
-    /// pre-scaled by the caller — a strong re-check pass may inject more than its raw
-    /// confidence, a soft color prior less.
-    func inject(classKey: String, className: String, weight: Double, at time: CFTimeInterval) {
+    /// Records external evidence. `weight` is pre-scaled by the caller.
+    ///
+    /// Set `countsAsEvidence` to false for soft side-channels such as the appearance
+    /// prior: they shift shares but must not satisfy the minimum-model-observations
+    /// gate, which exists so a verdict is never declared without real detections.
+    func inject(
+        classKey: String,
+        className: String,
+        weight: Double,
+        at time: CFTimeInterval,
+        countsAsEvidence: Bool = true
+    ) {
         applyDecay(to: time)
         guard weight > 0 else { return }
         weights[classKey, default: 0] += weight
         if !className.isEmpty {
             classNames[classKey] = className
         }
-        evidenceEvents += 1
+        if countsAsEvidence {
+            evidenceEvents += 1
+        }
     }
 
     /// Recomputes probabilities at `time` and advances label hysteresis.

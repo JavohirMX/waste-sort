@@ -175,6 +175,9 @@ struct LiveYOLOCamera: UIViewRepresentable {
         weak var yoloView: YOLOView?
         let tracker = DetectionTracker()
         let depositDetector = ZoneDepositDetector()
+        /// Color/texture evidence for the belief engines. Inference-queue owned.
+        private let appearanceSampler = BoxAppearanceSampler()
+        private var lastAppearanceSampleAt: CFAbsoluteTime = 0
         let aprilTagPipeline = AprilTagFramePipeline(
             detector: AprilTagDetector(familyName: "tag16h5", tuning: AprilTagRangeProfile.far.tuning)
         )
@@ -283,11 +286,18 @@ struct LiveYOLOCamera: UIViewRepresentable {
             tracker.emaAlpha = CGFloat(inputs.settings.emaAlpha)
             tracker.boxInflate = CGFloat(inputs.settings.boxInflate)
             tracker.maxSpeed = CGFloat(inputs.settings.maxSpeed)
+            tracker.appearanceEvidenceWeight = inputs.settings.appearanceAssistEnabled
+                ? WasteSortConfig.defaultAppearanceWeight
+                : 0
 
             if let enable = captureToggle, let view = yoloView {
                 YOLOViewPredictorAccess.setCapturesOriginalImage(enable, in: view)
             }
             let minConf = Float(inputs.settings.confidence)
+            var priorsByKey: [Int: AppearancePrior] = [:]
+            if inputs.settings.appearanceAssistEnabled, let image = result.originalImage {
+                priorsByKey = sampleAppearancePriors(image: image, boxes: result.boxes)
+            }
             let raw: [RawDetection] = result.boxes.compactMap { box in
                 guard box.conf >= minConf else { return nil }
                 let key = BinGuide.normalizedKey(box.cls)
@@ -295,7 +305,8 @@ struct LiveYOLOCamera: UIViewRepresentable {
                     classKey: key,
                     className: box.cls,
                     conf: box.conf,
-                    xywhn: box.xywhn
+                    xywhn: box.xywhn,
+                    appearancePrior: priorsByKey[box.index]
                 )
             }
             let tracked = tracker.update(raw)
@@ -332,10 +343,34 @@ struct LiveYOLOCamera: UIViewRepresentable {
             }
         }
 
+        /// Samples color/texture priors for the largest boxes at most once per interval.
+        /// Runs on the inference queue; the sampler is queue-owned state.
+        private func sampleAppearancePriors(
+            image: UIImage,
+            boxes: [Box]
+        ) -> [Int: AppearancePrior] {
+            let now = CFAbsoluteTimeGetCurrent()
+            guard now - lastAppearanceSampleAt >= WasteSortConfig.defaultAppearanceInterval else {
+                return [:]
+            }
+            lastAppearanceSampleAt = now
+            // Bound the cost: the biggest items are the ones being sorted.
+            let largest = boxes.sorted { $0.xywhn.width * $0.xywhn.height > $1.xywhn.width * $1.xywhn.height }
+                .prefix(6)
+            var priors: [Int: AppearancePrior] = [:]
+            for box in largest {
+                guard let prior = appearanceSampler
+                    .sample(image: image, rectNorm: box.xywhn)
+                    .map({ AppearanceAnalyzer.prior(for: $0) })
+                else { continue }
+                priors[box.index] = prior
+            }
+            return priors
+        }
+
         func startObservingCameraChanges() {
             stopObservingCameraChanges()
             _ = CameraDeviceCatalog.availableOptions()
-
             let center = NotificationCenter.default
             cameraObservers = [
                 center.addObserver(

@@ -8,6 +8,8 @@ struct RawDetection: Equatable, Sendable {
     let conf: Float
     /// Normalized rect (0…1) in image space, origin top-left.
     let xywhn: CGRect
+    /// Soft color/texture evidence sampled inside the box, when appearance assist is on.
+    var appearancePrior: AppearancePrior?
 }
 
 /// Confirmed track ready for overlay drawing and counting.
@@ -66,6 +68,9 @@ final class DetectionTracker {
     var beliefHalfLife: CFTimeInterval = WasteSortConfig.defaultBeliefDisplayHalfLife
     var beliefDecideThreshold: Double = WasteSortConfig.defaultBeliefThreshold
     var beliefDecideMargin: Double = WasteSortConfig.defaultBeliefMargin
+    /// Total injected weight per appearance sample. Small on purpose: the prior nudges,
+    /// the model decides.
+    var appearanceEvidenceWeight: Double = WasteSortConfig.defaultAppearanceWeight
     /// Hide a younger confirmed track when it sits on top of an older one.
     var emitOverlapIou: CGFloat = 0.45
 
@@ -285,6 +290,19 @@ final class DetectionTracker {
             conf: det.conf,
             at: timestamp
         )
+        // Soft color/texture evidence rides along when sampled this frame; it shifts
+        // shares without counting toward the minimum-evidence gate.
+        if let prior = det.appearancePrior {
+            for (key, share) in prior.shares {
+                tracks[i].belief.inject(
+                    classKey: key,
+                    className: BinGuide.bin(id: key).title,
+                    weight: share * appearanceEvidenceWeight,
+                    at: timestamp,
+                    countsAsEvidence: false
+                )
+            }
+        }
         let state = tracks[i].belief.currentState(at: timestamp)
         tracks[i].lastBelief = state
         // The engine's stable lock outranks the raw class once it exists; this is what
