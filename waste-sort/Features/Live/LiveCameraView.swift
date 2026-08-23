@@ -120,7 +120,8 @@ struct LiveCameraView: View {
 
                         var nextCounts: [String: Int] = [:]
                         for track in tracked where !track.isCoasting {
-                            let binID = BinGuide.info(for: track.classKey).id
+                            // Unsure items light up the fallback bin so the bar stays honest.
+                            let binID = track.advisedBinID
                             guard binID != BinGuide.unknown.id else { continue }
                             nextCounts[binID, default: 0] += 1
                         }
@@ -322,7 +323,13 @@ struct LiveCameraView: View {
             let bin = BinGuide.info(for: deposit.classKey)
             guard bin != BinGuide.unknown, !announcedBins.contains(bin.id) else { continue }
             announcedBins.insert(bin.id)
-            SpeechAnnouncer.shared.speak(GuidancePhrases.depositConfirmation(displayName: bin.displayName))
+            if deposit.wasUncertain {
+                SpeechAnnouncer.shared.speak(
+                    GuidancePhrases.uncertainDepositConfirmation(displayName: bin.displayName)
+                )
+            } else {
+                SpeechAnnouncer.shared.speak(GuidancePhrases.depositConfirmation(displayName: bin.displayName))
+            }
         }
     }
 

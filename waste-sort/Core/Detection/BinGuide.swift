@@ -97,3 +97,15 @@ nonisolated enum BinGuide {
         }
     }
 }
+
+nonisolated extension TrackedDetection {
+    /// The bin the kiosk should advise for this track right now.
+    ///
+    /// When the belief engine backs the label this is simply its bin; when it does
+    /// not, guidance falls to `fallbackBinID` so an unsure item is pointed at the
+    /// last-resort stream instead of a coin-flip guess. Deposit scoring mirrors this
+    /// via `ZoneDeposit.classKey`, keeping advice and scoring consistent.
+    var advisedBinID: String {
+        beliefUncertain ? BinGuide.fallbackBinID : BinGuide.info(for: classKey).id
+    }
+}

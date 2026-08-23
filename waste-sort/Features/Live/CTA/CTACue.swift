@@ -20,7 +20,8 @@ enum CTACueMapper {
     ) -> [CTACue] {
         tracks.compactMap { track in
             guard !track.isCoasting else { return nil }
-            let bin = BinGuide.info(for: track.classKey)
+            // Unsure items are pointed at the fallback stream, not the label's bin.
+            let bin = BinGuide.bin(id: track.advisedBinID)
             guard bin.id != BinGuide.unknown.id else { return nil }
             let rect = DetectionGeometry.mapDisplayRect(
                 normalized: track.displayXywhn,

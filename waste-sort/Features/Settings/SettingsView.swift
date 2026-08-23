@@ -551,7 +551,7 @@ struct SettingsView: View {
             Text("Live tracking")
                 .foregroundStyle(BinGuide.cleanInorganic.color)
         } footer: {
-            Text("These only affect the camera overlay. Throw scoring still uses a lifetime vote of the raw model class.")
+            Text("These only affect the camera overlay. Throw scoring uses the same certainty gates with a longer memory, and unsure items are guided to the residual bin.")
         }
     }
 

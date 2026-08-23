@@ -328,7 +328,8 @@ struct DetectionBoxOverlay: View {
                         rect: rect,
                         confidence: track.conf,
                         style: style,
-                        isCoasting: track.isCoasting
+                        isCoasting: track.isCoasting,
+                        isUncertain: track.beliefUncertain
                     )
                 }
             }
@@ -354,6 +355,9 @@ struct DetectionBoxView: View {
     var confidence: Float = 0
     var style: BoxOverlayStyle = .default
     var isCoasting: Bool = false
+    /// True when the belief engine cannot back the label. Draws a dashed border and a
+    /// question-mark chip so the kiosk never presents a coin flip as a verdict.
+    var isUncertain: Bool = false
 
     private var scale: CGFloat { style.badgeScale }
     private var badgeSize: CGFloat { Theme.badgeSize * scale }
@@ -365,7 +369,13 @@ struct DetectionBoxView: View {
             .fill(bin.color.opacity(isCoasting ? Theme.boxFillOpacity * 0.5 : Theme.boxFillOpacity))
             .overlay {
                 RoundedRectangle(cornerRadius: Theme.boxCornerRadius, style: .continuous)
-                    .strokeBorder(bin.color, lineWidth: Theme.boxStrokeWidth)
+                    .strokeBorder(
+                        bin.color,
+                        style: StrokeStyle(
+                            lineWidth: Theme.boxStrokeWidth,
+                            dash: isUncertain ? [6, 4] : []
+                        )
+                    )
             }
             .frame(width: rect.width, height: rect.height)
             .overlay(alignment: style.placement.alignment) {
@@ -393,6 +403,9 @@ struct DetectionBoxView: View {
                 Image(systemName: bin.symbolName)
                     .font(.system(size: iconOnlyFontSize, weight: .bold))
                     .foregroundStyle(.white)
+                if isUncertain {
+                    uncertaintyDot
+                }
             }
         } else {
             HStack(spacing: 4 * scale) {
@@ -412,11 +425,22 @@ struct DetectionBoxView: View {
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                 }
+                if isUncertain {
+                    uncertaintyDot
+                }
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 7 * scale)
             .padding(.vertical, 4 * scale)
             .background(bin.color, in: Capsule())
         }
+    }
+
+    /// Small question mark appended to the badge for unsure items.
+    private var uncertaintyDot: some View {
+        Image(systemName: "questionmark.circle.fill")
+            .font(.system(size: capsuleFontSize, weight: .bold))
+            .foregroundStyle(.white)
+            .symbolRenderingMode(.hierarchical)
     }
 }

@@ -65,4 +65,10 @@ nonisolated enum GuidancePhrases {
         let word = displayName.lowercased().capitalized
         return "\(word) bin"
     }
+
+    /// Spoken form for a fallback-routed deposit: honest about the uncertainty while
+    /// still confirming the safe destination.
+    static func uncertainDepositConfirmation(displayName: String) -> String {
+        "\(depositConfirmation(displayName: displayName)). Not sure, so residual is safest"
+    }
 }
