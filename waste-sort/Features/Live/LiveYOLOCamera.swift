@@ -278,7 +278,8 @@ struct LiveYOLOCamera: UIViewRepresentable {
             tracker.confirmHits = inputs.settings.confirmHits
             tracker.maxMisses = inputs.settings.maxMisses
             tracker.crossClassIouThreshold = CGFloat(inputs.settings.crossClassIou)
-            tracker.classLockWindow = inputs.settings.classLockWindow
+            tracker.beliefDecideThreshold = inputs.settings.beliefThreshold
+            tracker.beliefDecideMargin = inputs.settings.beliefMargin
             tracker.emaAlpha = CGFloat(inputs.settings.emaAlpha)
             tracker.boxInflate = CGFloat(inputs.settings.boxInflate)
             tracker.maxSpeed = CGFloat(inputs.settings.maxSpeed)

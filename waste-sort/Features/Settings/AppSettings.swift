@@ -10,7 +10,16 @@ enum WasteSortConfig {
     static let defaultMaxMisses = 3
     static let defaultTrackerIou = 0.3
     static let defaultCrossClassIou = 0.30
-    static let defaultClassLockWindow = 0.40
+    /// Belief-engine verdict gate for both the overlay label and the deposit scoring.
+    static let defaultBeliefThreshold = 0.55
+    static let defaultBeliefMargin = 0.15
+    /// Overlay policy: short memory so labels track the item currently in hand.
+    static let defaultBeliefDisplayHalfLife = 0.80
+    /// Deposit policy: near-lifetime memory so a throw is scored on everything seen.
+    static let defaultBeliefDepositHalfLife = 4.0
+    static let defaultBeliefSwitchConfirmations = 2
+    static let defaultBeliefMinEvidenceEvents = 2
+    static let defaultBeliefMinEvidenceDepositEvents = 3
     static let defaultEmaAlpha = 0.4
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8
@@ -49,7 +58,8 @@ struct RuntimeSettings: Equatable {
     var maxMisses: Int
     var trackerIou: Double
     var crossClassIou: Double
-    var classLockWindow: Double
+    var beliefThreshold: Double
+    var beliefMargin: Double
     var emaAlpha: Double
     var boxInflate: Double
     var maxSpeed: Double
@@ -106,8 +116,13 @@ final class AppSettings: ObservableObject {
     @Published var crossClassIou: Double {
         didSet { persist(crossClassIou, key: Keys.crossClassIou) }
     }
-    @Published var classLockWindow: Double {
-        didSet { persist(classLockWindow, key: Keys.classLockWindow) }
+    /// Belief-engine gate: probability the top class must reach for a confident verdict.
+    @Published var beliefThreshold: Double {
+        didSet { persist(beliefThreshold, key: Keys.beliefThreshold) }
+    }
+    /// Belief-engine gate: required lead of the top class over the runner-up.
+    @Published var beliefMargin: Double {
+        didSet { persist(beliefMargin, key: Keys.beliefMargin) }
     }
     @Published var emaAlpha: Double {
         didSet { persist(emaAlpha, key: Keys.emaAlpha) }
@@ -222,7 +237,8 @@ final class AppSettings: ObservableObject {
             maxMisses: maxMisses,
             trackerIou: trackerIou,
             crossClassIou: crossClassIou,
-            classLockWindow: classLockWindow,
+            beliefThreshold: beliefThreshold,
+            beliefMargin: beliefMargin,
             emaAlpha: emaAlpha,
             boxInflate: boxInflate,
             maxSpeed: maxSpeed,
@@ -250,7 +266,8 @@ final class AppSettings: ObservableObject {
         static let maxMisses = "settings.maxMisses.v2"
         static let trackerIou = "settings.trackerIou"
         static let crossClassIou = "settings.crossClassIou"
-        static let classLockWindow = "settings.classLockWindow"
+        static let beliefThreshold = "settings.beliefThreshold"
+        static let beliefMargin = "settings.beliefMargin"
         static let emaAlpha = "settings.emaAlpha"
         static let boxInflate = "settings.boxInflate"
         /// v2 picks up lower association speed without requiring a manual reset.
@@ -292,11 +309,12 @@ final class AppSettings: ObservableObject {
         maxMisses = Self.loadInt(defaults, Keys.maxMisses, WasteSortConfig.defaultMaxMisses)
         trackerIou = Self.loadDouble(defaults, Keys.trackerIou, WasteSortConfig.defaultTrackerIou)
         crossClassIou = Self.loadDouble(defaults, Keys.crossClassIou, WasteSortConfig.defaultCrossClassIou)
-        classLockWindow = Self.loadDouble(
+        beliefThreshold = Self.loadDouble(
             defaults,
-            Keys.classLockWindow,
-            WasteSortConfig.defaultClassLockWindow
+            Keys.beliefThreshold,
+            WasteSortConfig.defaultBeliefThreshold
         )
+        beliefMargin = Self.loadDouble(defaults, Keys.beliefMargin, WasteSortConfig.defaultBeliefMargin)
         emaAlpha = Self.loadDouble(defaults, Keys.emaAlpha, WasteSortConfig.defaultEmaAlpha)
         boxInflate = Self.loadDouble(defaults, Keys.boxInflate, WasteSortConfig.defaultBoxInflate)
         maxSpeed = Self.loadDouble(defaults, Keys.maxSpeed, WasteSortConfig.defaultMaxSpeed)
@@ -380,7 +398,8 @@ final class AppSettings: ObservableObject {
         maxMisses = WasteSortConfig.defaultMaxMisses
         trackerIou = WasteSortConfig.defaultTrackerIou
         crossClassIou = WasteSortConfig.defaultCrossClassIou
-        classLockWindow = WasteSortConfig.defaultClassLockWindow
+        beliefThreshold = WasteSortConfig.defaultBeliefThreshold
+        beliefMargin = WasteSortConfig.defaultBeliefMargin
         emaAlpha = WasteSortConfig.defaultEmaAlpha
         boxInflate = WasteSortConfig.defaultBoxInflate
         maxSpeed = WasteSortConfig.defaultMaxSpeed

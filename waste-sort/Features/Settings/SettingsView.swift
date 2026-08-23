@@ -506,11 +506,19 @@ struct SettingsView: View {
                 step: 0.05
             )
             SettingsSliderRow(
-                title: "Label stickiness",
-                help: "How long a new bin must lead (by confidence) before the label changes. Higher = less flicker, slower to correct.",
-                valueText: String(format: "%.2f s", settings.classLockWindow),
-                value: $settings.classLockWindow,
-                range: 0.10...1.00,
+                title: "Verdict certainty",
+                help: "How sure the app must be before it commits to a bin. Higher = fewer confident mistakes, more 'not sure' items.",
+                valueText: percent(settings.beliefThreshold),
+                value: $settings.beliefThreshold,
+                range: 0.30...0.95,
+                step: 0.05
+            )
+            SettingsSliderRow(
+                title: "Verdict margin",
+                help: "How far the leading category must sit ahead of the runner-up. Higher = borderline items are treated as unsure instead of guessed.",
+                valueText: decimal(settings.beliefMargin),
+                value: $settings.beliefMargin,
+                range: 0.00...0.60,
                 step: 0.05
             )
             SettingsSliderRow(

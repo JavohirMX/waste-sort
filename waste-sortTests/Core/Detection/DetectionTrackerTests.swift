@@ -397,7 +397,6 @@ private func stickyTracker() -> DetectionTracker {
     tracker.boxInflate = 0
     tracker.iouThreshold = 0.3
     tracker.crossClassIouThreshold = 0.5
-    tracker.classLockWindow = 0.10
     return tracker
 }
 
