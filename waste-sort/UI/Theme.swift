@@ -14,6 +14,9 @@ enum Theme {
     static let segmentIdleOpacity: Double = 0.42
     static let animationDuration: Double = 0.2
     static let barCornerRadius: CGFloat = 14
+    /// How long the throw-result banner stays before the 3-segment bar returns.
+    static let throwFeedbackDuration: TimeInterval = 1.8
+    static let throwFeedbackIncorrect = Color(red: 220 / 255, green: 38 / 255, blue: 38 / 255)
     static let ctaPulseScale: CGFloat = 1.08
     static let ctaPulsePeriod: TimeInterval = 0.7
     static let ctaHighlightOpacity: Double = 0.24

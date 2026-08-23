@@ -32,6 +32,8 @@ struct LiveCameraView: View {
     @State private var showVerdicts = false
     @State private var showHistory = false
     @State private var segmentFrames: [String: CGRect] = [:]
+    @State private var throwFeedbackGate = ThrowFeedbackGate()
+    @State private var previewedFeedbackIDs: Set<UUID> = []
 
     private var activeBinIDs: Set<String> {
         Set(counts.compactMap { key, value in
@@ -75,6 +77,7 @@ struct LiveCameraView: View {
                         zones: zoneStore.zones,
                         dwellFrames: zoneStore.dwellFrames,
                         reacquireGrace: zoneStore.reacquireGrace,
+                        throwFeedbackGrace: zoneStore.throwFeedbackGrace,
                         aprilTagEnabled: aprilTagStore.isEnabled,
                         aprilTagBindings: aprilTagStore.bindings,
                         aprilTagStaleTimeout: aprilTagStore.staleTimeout,
@@ -104,6 +107,12 @@ struct LiveCameraView: View {
                         }
                         if settlingZoneIDs != zoneFrame.settlingZoneIDs {
                             settlingZoneIDs = zoneFrame.settlingZoneIDs
+                        }
+                        if !zoneFrame.cancelledThrowFeedbackIDs.isEmpty {
+                            cancelThrowFeedback(ids: zoneFrame.cancelledThrowFeedbackIDs)
+                        }
+                        for cue in zoneFrame.throwFeedbackCues {
+                            presentThrowFeedback(cue)
                         }
                         if !zoneFrame.deposits.isEmpty {
                             history.append(zoneFrame.deposits)
@@ -189,10 +198,12 @@ struct LiveCameraView: View {
                     CategoryBar(
                         bins: binStyle.orderedBins,
                         counts: counts,
-                        ctaStyle: settings.ctaStyle
+                        ctaStyle: settings.ctaStyle,
+                        throwFeedback: throwFeedbackGate.feedback,
+                        throwFeedbackToken: throwFeedbackGate.token
                     )
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, Theme.categoryBarTopGap)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, Theme.categoryBarTopGap)
                 }
 
                 Spacer(minLength: 0)
@@ -349,11 +360,76 @@ struct LiveCameraView: View {
             freshDepositID = latest
         }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if let deposit = deposits.last {
+            if previewedFeedbackIDs.contains(deposit.id) {
+                releasePersistedFeedback(for: deposit)
+            } else {
+                presentThrowFeedback(
+                    ThrowFeedbackCue(
+                        objectID: deposit.id,
+                        zoneBinID: deposit.zoneBinID,
+                        isCorrect: deposit.isCorrect,
+                        persistWhilePresent: false
+                    )
+                )
+            }
+            previewedFeedbackIDs.remove(deposit.id)
+        }
         Task {
             try? await Task.sleep(for: .milliseconds(900))
             withAnimation(.easeOut(duration: Theme.animationDuration)) {
                 flashedZoneIDs.subtract(zoneIDs)
                 if freshDepositID == latest { freshDepositID = nil }
+            }
+        }
+    }
+
+    /// Overlays the destination segment; a newer throw cancels the dismiss.
+    private func presentThrowFeedback(_ cue: ThrowFeedbackCue) {
+        let feedback = ThrowFeedback.from(cue)
+        var gate = throwFeedbackGate
+        let token = gate.present(
+            feedback,
+            objectID: cue.objectID,
+            persistWhilePresent: cue.persistWhilePresent
+        )
+        withAnimation(.easeOut(duration: Theme.animationDuration)) {
+            throwFeedbackGate = gate
+        }
+        previewedFeedbackIDs.insert(cue.objectID)
+        if settings.throwFeedbackSoundsEnabled {
+            ThrowFeedbackPlayer.shared.play(correct: cue.isCorrect)
+        }
+        if !cue.persistWhilePresent {
+            scheduleThrowFeedbackDismiss(token: token)
+        }
+    }
+
+    private func cancelThrowFeedback(ids: Set<UUID>) {
+        previewedFeedbackIDs.subtract(ids)
+        guard let current = throwFeedbackGate.objectID, ids.contains(current) else { return }
+        withAnimation(.easeOut(duration: Theme.animationDuration)) {
+            throwFeedbackGate.dismiss(objectID: current)
+        }
+    }
+
+    /// After a real deposit, an in-zone banner that was holding starts its 1.8s fade.
+    private func releasePersistedFeedback(for deposit: ZoneDeposit) {
+        guard throwFeedbackGate.objectID == deposit.id, throwFeedbackGate.persistWhilePresent else {
+            return
+        }
+        let token = throwFeedbackGate.token
+        var gate = throwFeedbackGate
+        gate.markEphemeral()
+        throwFeedbackGate = gate
+        scheduleThrowFeedbackDismiss(token: token)
+    }
+
+    private func scheduleThrowFeedbackDismiss(token: UInt64) {
+        Task {
+            try? await Task.sleep(for: .seconds(Theme.throwFeedbackDuration))
+            withAnimation(.easeOut(duration: Theme.animationDuration)) {
+                throwFeedbackGate.dismissIfCurrent(token: token)
             }
         }
     }
@@ -426,6 +502,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     var zones: [DropZone]
     var dwellFrames: Int
     var reacquireGrace: Double
+    var throwFeedbackGrace: Double
     var aprilTagEnabled: Bool
     var aprilTagBindings: [UUID: [Int]]
     var aprilTagStaleTimeout: Double
@@ -442,6 +519,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             zones: zones,
             dwellFrames: dwellFrames,
             reacquireGrace: reacquireGrace,
+            throwFeedbackGrace: throwFeedbackGrace,
             aprilTagEnabled: aprilTagEnabled,
             aprilTagBindings: aprilTagBindings,
             aprilTagStaleTimeout: aprilTagStaleTimeout,
@@ -540,6 +618,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         coordinator.zones = zones
         coordinator.depositDetector.requiredDwellFrames = dwellFrames
         coordinator.depositDetector.reacquireGrace = reacquireGrace
+        coordinator.depositDetector.throwFeedbackGrace = throwFeedbackGrace
         coordinator.aprilTagStaleTimeout = aprilTagStaleTimeout
         coordinator.setConfirmationEnabled(foundationConfirmationEnabled)
     }
@@ -608,6 +687,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             zones: [DropZone],
             dwellFrames: Int,
             reacquireGrace: Double,
+            throwFeedbackGrace: Double,
             aprilTagEnabled: Bool,
             aprilTagBindings: [UUID: [Int]],
             aprilTagStaleTimeout: Double,
@@ -628,6 +708,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagPipeline.apply(tuning: aprilTagRangeProfile.tuning)
             depositDetector.requiredDwellFrames = dwellFrames
             depositDetector.reacquireGrace = reacquireGrace
+            depositDetector.throwFeedbackGrace = throwFeedbackGrace
             setConfirmationEnabled(foundationConfirmationEnabled)
         }
 

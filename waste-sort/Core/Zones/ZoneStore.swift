@@ -9,6 +9,9 @@ enum ZoneConfig {
     /// still lands in the log while the person is standing there.
     static let defaultReacquireGrace = 1.4
     static let reacquireGraceRange = 0.0...3.0
+    /// Bar and sound fire after this; History still waits for `defaultReacquireGrace`.
+    static let defaultThrowFeedbackGrace = 0.4
+    static let throwFeedbackGraceRange = 0.0...3.0
 }
 
 /// Persisted drop zones plus the transient state the live editor needs.
@@ -30,6 +33,11 @@ final class ZoneStore: ObservableObject {
         didSet { defaults.set(reacquireGrace, forKey: Keys.reacquireGrace) }
     }
 
+    /// Seconds before throw / wrong-zone feedback. Scoring still uses `reacquireGrace`.
+    @Published var throwFeedbackGrace: Double {
+        didSet { defaults.set(throwFeedbackGrace, forKey: Keys.throwFeedbackGrace) }
+    }
+
     /// Drives the inline calibration mode on the Live tab.
     @Published var isEditingZones = false
 
@@ -39,6 +47,7 @@ final class ZoneStore: ObservableObject {
         static let zones = "zones.dropZones.v1"
         static let dwellFrames = "zones.dwellFrames.v1"
         static let reacquireGrace = "zones.reacquireGrace.v1"
+        static let throwFeedbackGrace = "zones.throwFeedbackGrace.v1"
     }
 
     /// `rotation`/`mirror` only shape the first-run layout, so the starting row reads
@@ -74,6 +83,12 @@ final class ZoneStore: ObservableObject {
             reacquireGrace = defaults.double(forKey: Keys.reacquireGrace)
         } else {
             reacquireGrace = ZoneConfig.defaultReacquireGrace
+        }
+
+        if defaults.object(forKey: Keys.throwFeedbackGrace) != nil {
+            throwFeedbackGrace = defaults.double(forKey: Keys.throwFeedbackGrace)
+        } else {
+            throwFeedbackGrace = ZoneConfig.defaultThrowFeedbackGrace
         }
     }
 
@@ -113,6 +128,7 @@ final class ZoneStore: ObservableObject {
         )
         dwellFrames = ZoneConfig.defaultDwellFrames
         reacquireGrace = ZoneConfig.defaultReacquireGrace
+        throwFeedbackGrace = ZoneConfig.defaultThrowFeedbackGrace
     }
 
     private func persistZones() {

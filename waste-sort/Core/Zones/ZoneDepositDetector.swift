@@ -34,6 +34,15 @@ nonisolated struct ZoneDeposit: Identifiable, Equatable, Sendable {
     var isCorrect: Bool { BinGuide.info(for: classKey).id == zoneBinID }
 }
 
+/// Early HUD cue: a throw preview or an item held in the wrong zone. Not a scored deposit.
+nonisolated struct ThrowFeedbackCue: Equatable, Sendable {
+    let objectID: UUID
+    let zoneBinID: String
+    let isCorrect: Bool
+    /// In-zone incorrect stays up until cancel; throw previews use the 1.8s auto-dismiss.
+    let persistWhilePresent: Bool
+}
+
 /// What one frame of zone evaluation produced.
 nonisolated struct ZoneFrameResult: Equatable, Sendable {
     /// Items confirmed released this frame. Confirmation lags the disappearance by the
@@ -47,6 +56,10 @@ nonisolated struct ZoneFrameResult: Equatable, Sendable {
     /// Zones holding an object that has vanished and is inside its reacquisition window —
     /// about to be counted unless the model finds it again.
     var settlingZoneIDs: Set<UUID> = []
+    /// First-time throw / wrong-zone feedback this frame.
+    var throwFeedbackCues: [ThrowFeedbackCue] = []
+    /// Objects whose preview should come down (left the wrong zone, or came back).
+    var cancelledThrowFeedbackIDs: Set<UUID> = []
 }
 
 /// Decides when an item counts as thrown away.
@@ -82,6 +95,13 @@ nonisolated final class ZoneDepositDetector {
     /// How long a vanished object is given to come back before it is judged. Also the delay
     /// between a real throw and it appearing in the log.
     var reacquireGrace: CFAbsoluteTime = 1.4
+    /// How long after a vanish (or a hold in the wrong zone) before the HUD reacts.
+    /// Scoring still waits for `reacquireGrace`.
+    var throwFeedbackGrace: CFAbsoluteTime = 0.4
+
+    private var effectiveThrowFeedbackGrace: CFAbsoluteTime {
+        min(throwFeedbackGrace, reacquireGrace)
+    }
     /// How far a reappearing box may sit from where the object was lost, in normalized
     /// image widths, at the instant it vanishes.
     var reacquireRadius: CGFloat = 0.10
@@ -149,6 +169,12 @@ nonisolated final class ZoneDepositDetector {
         var zoneName = ""
         var zoneBinID = ""
         var dwell = 0
+        /// When the object entered its current zone. Nil when it is outside every zone.
+        var zoneEnteredAt: CFAbsoluteTime?
+        /// A throw-preview cue has already been sent for this vanish.
+        var didEmitThrowFeedback = false
+        /// An in-zone "Not here!" cue is currently live for this occupancy.
+        var didEmitInZoneIncorrect = false
         /// Frames the model actually saw this object, across every id it wore.
         var detectedFrames = 0
         var last: Sighting
@@ -230,6 +256,8 @@ nonisolated final class ZoneDepositDetector {
 
         var seenThisFrame = Set<ObjectIdentifier>()
         var occupied = Set<UUID>()
+        var throwFeedbackCues: [ThrowFeedbackCue] = []
+        var cancelledThrowFeedbackIDs = Set<UUID>()
 
         // Coasting boxes are dropped outright. The tracker keeps emitting a frozen box for
         // `maxMisses` frames after the model stops finding something. When association
@@ -270,16 +298,29 @@ nonisolated final class ZoneDepositDetector {
             )
             seenThisFrame.insert(ObjectIdentifier(object))
             let isFirstSighting = object.detectedFrames == 0
+            let wasMissing = object.missingSince != nil
             // Back on camera: whatever it was about to be judged as no longer applies.
             object.missingSince = nil
             object.pendingTarget = nil
             object.sawBinOpen = false
             object.note(sighting, at: timestamp, smoothing: velocitySmoothing)
 
+            if wasMissing, object.didEmitThrowFeedback {
+                cancelledThrowFeedbackIDs.insert(object.id)
+                object.didEmitThrowFeedback = false
+                object.didEmitInZoneIncorrect = false
+            }
+
             guard let zone = zones.first(where: { $0.contains(sighting.center) }) else {
                 // Outside every zone: this is what earns the right to be counted later.
+                if object.didEmitInZoneIncorrect {
+                    cancelledThrowFeedbackIDs.insert(object.id)
+                    object.didEmitInZoneIncorrect = false
+                    object.didEmitThrowFeedback = false
+                }
                 object.arrivedFromOutside = true
                 object.zoneID = nil
+                object.zoneEnteredAt = nil
                 object.dwell = 0
                 object.lastInZone = nil
                 continue
@@ -296,14 +337,26 @@ nonisolated final class ZoneDepositDetector {
             }
 
             if object.zoneID != zone.id {
+                if object.didEmitInZoneIncorrect {
+                    cancelledThrowFeedbackIDs.insert(object.id)
+                    object.didEmitInZoneIncorrect = false
+                    object.didEmitThrowFeedback = false
+                }
                 object.zoneID = zone.id
                 object.zoneName = zone.name
                 object.zoneBinID = zone.binID
                 object.dwell = 0
+                object.zoneEnteredAt = timestamp
+            } else if object.zoneEnteredAt == nil {
+                object.zoneEnteredAt = timestamp
             }
             // Every frame that reaches here is one the model actually saw, so dwell only
             // ever counts real evidence.
             object.dwell += 1
+
+            if let cue = inZoneIncorrectCue(for: object, at: timestamp) {
+                throwFeedbackCues.append(cue)
+            }
         }
 
         // Anything not seen this frame starts, or continues, its reacquisition window.
@@ -319,6 +372,9 @@ nonisolated final class ZoneDepositDetector {
             // signals coincide on one exact frame would drop real deposits.
             if let target = object.pendingTarget, binOpenState.isOpen(binID: target.binID) {
                 object.sawBinOpen = true
+            }
+            if let cue = throwPreviewCue(for: object, at: timestamp) {
+                throwFeedbackCues.append(cue)
             }
         }
 
@@ -355,7 +411,45 @@ nonisolated final class ZoneDepositDetector {
             deposits: deposits.sorted { $0.trackID < $1.trackID },
             occupiedZoneIDs: occupied,
             armedZoneIDs: armedZoneIDs,
-            settlingZoneIDs: settlingZoneIDs
+            settlingZoneIDs: settlingZoneIDs,
+            throwFeedbackCues: throwFeedbackCues,
+            cancelledThrowFeedbackIDs: cancelledThrowFeedbackIDs
+        )
+    }
+
+    private func throwPreviewCue(for object: TrackedObject, at timestamp: CFAbsoluteTime) -> ThrowFeedbackCue? {
+        guard !object.didEmitThrowFeedback,
+              let missingSince = object.missingSince,
+              let target = object.pendingTarget,
+              timestamp - missingSince >= effectiveThrowFeedbackGrace
+        else { return nil }
+        object.didEmitThrowFeedback = true
+        let isCorrect = BinGuide.info(for: object.verdictClass.key).id == target.binID
+        return ThrowFeedbackCue(
+            objectID: object.id,
+            zoneBinID: target.binID,
+            isCorrect: isCorrect,
+            persistWhilePresent: false
+        )
+    }
+
+    private func inZoneIncorrectCue(for object: TrackedObject, at timestamp: CFAbsoluteTime) -> ThrowFeedbackCue? {
+        guard object.arrivedFromOutside,
+              !object.didEmitInZoneIncorrect,
+              object.missingSince == nil,
+              !object.zoneBinID.isEmpty,
+              let entered = object.zoneEnteredAt,
+              timestamp - entered >= throwFeedbackGrace
+        else { return nil }
+        let category = BinGuide.info(for: object.verdictClass.key).id
+        guard category != BinGuide.unknown.id, category != object.zoneBinID else { return nil }
+        object.didEmitInZoneIncorrect = true
+        object.didEmitThrowFeedback = true
+        return ThrowFeedbackCue(
+            objectID: object.id,
+            zoneBinID: object.zoneBinID,
+            isCorrect: false,
+            persistWhilePresent: true
         )
     }
 

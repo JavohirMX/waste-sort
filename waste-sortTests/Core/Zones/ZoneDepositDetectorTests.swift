@@ -94,11 +94,13 @@ struct ZoneDepositDetectorTests {
             zones: [DropZone],
             dwell: Int = 3,
             grace: CFAbsoluteTime = 1.4,
+            throwFeedbackGrace: CFAbsoluteTime = 0.4,
             binState: BinOpenStateProviding? = nil
         ) {
             self.zones = zones
             detector.requiredDwellFrames = dwell
             detector.reacquireGrace = grace
+            detector.throwFeedbackGrace = throwFeedbackGrace
             if let binState {
                 detector.binOpenState = binState
             }
@@ -141,9 +143,16 @@ struct ZoneDepositDetectorTests {
     private func clock(
         dwell: Int = 3,
         grace: CFAbsoluteTime = 1.4,
+        throwFeedbackGrace: CFAbsoluteTime = 0.4,
         binState: BinOpenStateProviding? = nil
     ) -> Clock {
-        Clock(zones: zones, dwell: dwell, grace: grace, binState: binState)
+        Clock(
+            zones: zones,
+            dwell: dwell,
+            grace: grace,
+            throwFeedbackGrace: throwFeedbackGrace,
+            binState: binState
+        )
     }
 
     private func mouthClock(
@@ -639,5 +648,120 @@ struct ZoneDepositDetectorTests {
         c.tick([track(centerX: 0.2)], times: 3)
         let settling = c.tick([])
         #expect(settling.settlingZoneIDs.isEmpty)
+    }
+
+    // MARK: - Throw feedback cues
+
+    @Test("a vanished item cues after throwFeedbackGrace, and deposits only after reacquireGrace")
+    func throwCueThenDeposit() {
+        let c = clock(throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        c.tick([track(centerX: 0.2)], times: 3)
+        #expect(c.tick([]).throwFeedbackCues.isEmpty)
+
+        var cues: [ThrowFeedbackCue] = []
+        var deposits: [ZoneDeposit] = []
+        for _ in 0..<12 {
+            let frame = c.tick([])
+            cues.append(contentsOf: frame.throwFeedbackCues)
+            deposits.append(contentsOf: frame.deposits)
+        }
+        #expect(cues.count == 1)
+        #expect(cues[0].isCorrect)
+        #expect(cues[0].zoneBinID == BinGuide.organic.id)
+        #expect(cues[0].persistWhilePresent == false)
+        #expect(deposits.isEmpty)
+
+        let confirmed = c.waitOutGrace()
+        #expect(confirmed.count == 1)
+        #expect(confirmed[0].id == cues[0].objectID)
+    }
+
+    @Test("a cue is cancelled when the item comes back before it settles")
+    func throwCueCancelledOnReappear() {
+        let c = clock(throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        c.tick([track(centerX: 0.2)], times: 3)
+        c.tick([])
+        var cue: ThrowFeedbackCue?
+        for _ in 0..<12 {
+            if let next = c.tick([]).throwFeedbackCues.first { cue = next }
+        }
+        #expect(cue != nil)
+
+        let back = c.tick([track(id: 2, centerX: 0.2)])
+        #expect(back.cancelledThrowFeedbackIDs.contains(cue!.objectID))
+        #expect(c.waitOutGrace().isEmpty)
+    }
+
+    @Test("an organic item held in the residual zone cues incorrect and cancels on leave")
+    func inZoneIncorrectThenLeave() {
+        let c = clock(throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        #expect(c.tick([track(centerX: 0.8)]).throwFeedbackCues.isEmpty)
+
+        var cues: [ThrowFeedbackCue] = []
+        for _ in 0..<12 {
+            cues.append(contentsOf: c.tick([track(centerX: 0.8)]).throwFeedbackCues)
+        }
+        #expect(cues.count == 1)
+        #expect(cues[0].isCorrect == false)
+        #expect(cues[0].zoneBinID == BinGuide.residual.id)
+        #expect(cues[0].persistWhilePresent)
+
+        let left = c.tick([track(centerX: 0.5)])
+        #expect(left.cancelledThrowFeedbackIDs.contains(cues[0].objectID))
+    }
+
+    @Test("an organic item in the organic zone does not cue")
+    func correctZoneDoesNotCueWhileVisible() {
+        let c = clock(throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        var cues: [ThrowFeedbackCue] = []
+        for _ in 0..<15 {
+            cues.append(contentsOf: c.tick([track(centerX: 0.2)]).throwFeedbackCues)
+        }
+        #expect(cues.isEmpty)
+    }
+
+    @Test("in-zone incorrect then a throw into that bin does not cue twice")
+    func inZoneIncorrectThenThrowDoesNotDoubleCue() {
+        let c = clock(throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        var cues: [ThrowFeedbackCue] = []
+        c.tick([track(centerX: 0.8)])
+        for _ in 0..<12 {
+            cues.append(contentsOf: c.tick([track(centerX: 0.8)]).throwFeedbackCues)
+        }
+        #expect(cues.count == 1)
+
+        var extra: [ThrowFeedbackCue] = []
+        for _ in 0..<12 {
+            extra.append(contentsOf: c.tick([]).throwFeedbackCues)
+        }
+        #expect(extra.isEmpty)
+
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits[0].id == cues[0].objectID)
+        #expect(deposits[0].isCorrect == false)
+    }
+
+    @Test("when feedback grace is at least reacquire, only one cue fires with the deposit")
+    func matchingGracesDoNotDoubleCue() {
+        let c = clock(grace: 0.4, throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        c.tick([track(centerX: 0.2)], times: 3)
+        c.tick([])
+
+        var cues: [ThrowFeedbackCue] = []
+        var deposits: [ZoneDeposit] = []
+        for _ in 0..<20 {
+            let frame = c.tick([])
+            cues.append(contentsOf: frame.throwFeedbackCues)
+            deposits.append(contentsOf: frame.deposits)
+        }
+        #expect(cues.count == 1)
+        #expect(deposits.count == 1)
     }
 }
