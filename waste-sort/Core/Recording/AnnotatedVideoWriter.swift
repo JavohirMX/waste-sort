@@ -16,7 +16,7 @@ nonisolated final class AnnotatedVideoWriter: @unchecked Sendable {
 
     init(
         outputURL: URL,
-        rotation: LivePreviewRotation = .oneEighty,
+        rotation: LivePreviewRotation = .zero,
         mirror: Bool = false
     ) {
         self.outputURL = outputURL

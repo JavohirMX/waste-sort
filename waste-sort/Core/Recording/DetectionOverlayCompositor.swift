@@ -8,7 +8,7 @@ nonisolated enum DetectionOverlayCompositor {
         image: UIImage,
         tracks: [TrackedDetection],
         timestamp: Date,
-        rotation: LivePreviewRotation = .oneEighty,
+        rotation: LivePreviewRotation = .zero,
         mirror: Bool = false
     ) -> UIImage {
         let source = image.normalizedCGImage() ?? image

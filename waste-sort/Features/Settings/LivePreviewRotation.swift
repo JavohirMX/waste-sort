@@ -24,6 +24,6 @@ enum LivePreviewRotation: Int, CaseIterable, Identifiable, Sendable {
     }
 
     static func from(degrees: Int) -> LivePreviewRotation {
-        LivePreviewRotation(rawValue: degrees) ?? .oneEighty
+        LivePreviewRotation(rawValue: degrees) ?? .zero
     }
 }

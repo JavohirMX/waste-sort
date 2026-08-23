@@ -5,7 +5,7 @@ import os
 /// Categories map to subsystem areas; use `AppLog.ui`, `.pipeline`, `.recording`,
 /// `.persistence`, `.vision` instead of constructing loggers ad hoc.
 enum AppLog {
-    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.javohirmx.sortla"
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.mohamedmorad.sortla"
 
     static let ui = Logger(subsystem: subsystem, category: "ui")
     static let pipeline = Logger(subsystem: subsystem, category: "pipeline")

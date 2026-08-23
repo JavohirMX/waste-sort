@@ -15,7 +15,7 @@ enum WasteSortConfig {
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8
     static let defaultModelName = WasteSortModel.bestv35.resourceName
-    static let defaultLiveRotation = LivePreviewRotation.oneEighty
+    static let defaultLiveRotation = LivePreviewRotation.zero
     static let defaultLiveMirror = false
     static let defaultShowConfidence = false
     static let defaultShowBoxIcon = true

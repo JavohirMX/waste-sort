@@ -33,6 +33,7 @@ struct CameraSetupMedia: View {
             switch camera.status {
             case .running:
                 OnboardingCameraPreview(session: camera.session)
+                    .scaleEffect(x: settings.liveMirror ? -1 : 1, y: 1)
                     .rotationEffect(.degrees(settings.liveRotation.degrees))
             case .denied:
                 unavailableCard(

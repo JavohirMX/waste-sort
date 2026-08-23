@@ -1,0 +1,47 @@
+{
+  "object" : {
+    "artifacts" : [
+
+    ],
+    "dependencies" : [
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "swiftapriltag",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/keyqcloud/SwiftAprilTag.git",
+          "name" : "SwiftAprilTag"
+        },
+        "state" : {
+          "checkoutState" : {
+            "revision" : "038cb9026711ddba05b71c16b32eb364bcfa6ef9",
+            "version" : "1.3.1"
+          },
+          "name" : "sourceControlCheckout"
+        },
+        "subpath" : "SwiftAprilTag"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "yolo-ios-app",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/ultralytics/yolo-ios-app.git",
+          "name" : "yolo-ios-app"
+        },
+        "state" : {
+          "checkoutState" : {
+            "revision" : "6931313992cf3bb97f2f1159cf26c834d4714c7b",
+            "version" : "8.9.13"
+          },
+          "name" : "sourceControlCheckout"
+        },
+        "subpath" : "yolo-ios-app"
+      }
+    ],
+    "prebuilts" : [
+
+    ]
+  },
+  "version" : 7
+}
