@@ -1,6 +1,9 @@
 # Xcode User Data & Build Outputs
 build/
 DerivedData/
+# Xcode's default derived-data location when launched from the CLI/workspace;
+# holds build caches plus SPM source checkouts (third-party code, embedded repos).
+.derivedData/
 *.pbxuser
 !default.pbxuser
 *.mode1v3
