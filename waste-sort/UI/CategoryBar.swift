@@ -13,6 +13,7 @@ struct CategoryBar: View {
     var bins: [BinInfo] = BinGuide.all
     let counts: [String: Int]
     var ctaStyle: CTAStyle = .off
+    var onTripleTap: (() -> Void)? = nil
     @Environment(\.hudTextScale) private var hudTextScale
 
     var body: some View {
@@ -42,6 +43,9 @@ struct CategoryBar: View {
                         )
                     }
                 }
+                .onTapGesture(count: 3) {
+                    onTripleTap?()
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -55,6 +59,13 @@ struct CategoryBar: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityActions {
+            if onTripleTap != nil {
+                Button("Open developer settings") {
+                    onTripleTap?()
+                }
+            }
+        }
     }
 
     private var accessibilityLabel: String {

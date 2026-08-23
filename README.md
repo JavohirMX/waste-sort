@@ -32,7 +32,7 @@ Inference runs entirely on device. Nothing is uploaded.
 - **Recoverable sessions** — saves when you stop, background, or close the app; leftover recordings are recovered on next launch
 - **Tunable** — swap bundled Core ML weights, confidence, overlap, and live tracking without rebuilding
 
-Open Settings by **long-pressing the FPS badge**.
+Open Settings by **triple-tapping any top category** (Organic, Residual, or Recyclable) on the live HUD.
 
 ## How it works
 
@@ -90,7 +90,7 @@ File Sharing is on. Recorded overlay clips and CSV logs show up in the Files app
 
 **Live.** Point the camera at waste. The top bar lights the bins currently in frame. Boxes follow items after they are confirmed across a couple of frames; if the model briefly loses an item, the box freezes in place instead of sliding. The bin label stays with the item until a new class leads by confidence for a short time (default 0.4s).
 
-**Settings.** Long-press the FPS badge.
+**Settings.** Triple-tap any top category (Organic, Residual, or Recyclable) on the live HUD.
 
 - **Model** — bundled weights (`best` v3.1, `bestv3.2`–`bestv3.5`); changing it reloads Live and Photo
 - **Camera** — Auto (prefer USB) or a specific device; rotation and mirror apply to preview and to recordings started after the change. Software brightness, contrast, and saturation preprocess the image the model sees. Hardware exposure, focus, and white balance can be locked (USB cameras may ignore those).
