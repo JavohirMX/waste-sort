@@ -188,3 +188,12 @@ zero errors (config: `.swiftlint.yml`).
 ## Credits
 
 Live segmentation is powered by [Ultralytics YOLO for iOS](https://github.com/ultralytics/yolo-ios-app).
+
+
+## Silent second opinions (PCC judge)
+
+When the belief engine routes an item to residual because it is unsure, the app
+also asks Apple's Private Cloud Compute model for a structured second opinion
+and logs it beside what YOLO believed — nothing on screen changes. Records
+(JSONL + crops) export from Settings by date range and seed the future teaching
+dataset. Setup and quota notes: `specs/001-pcc-uncertainty-judge/quickstart.md`.

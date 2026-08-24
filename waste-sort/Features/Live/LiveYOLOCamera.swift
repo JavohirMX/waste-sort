@@ -193,6 +193,10 @@ struct LiveYOLOCamera: UIViewRepresentable {
         /// inference queue; outcomes return via a lock-guarded buffer drained on the
         /// next frame, because the engine's completion runs on its own queue.
         private let zoomRecheck = ZoomRecheckEngine()
+        /// Silent PCC second opinions for uncertain deposits (specs/001). Created
+        /// lazily so a kiosk that never qualifies a deposit never touches store or
+        /// availability APIs. Own work happens off the inference queue.
+        private lazy var pccJudge: PCCArbiterService = PCCArbiterService(store: PCCRecordStore())
         private let recheckBufferLock = NSLock()
         private var pendingRecheckOutcomes: [ZoomRecheckOutcome] = []
         let aprilTagPipeline = AprilTagFramePipeline(
@@ -306,6 +310,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
             // signals. The first two feed beliefs, so they are inert under legacy.
             case .idle:
                 confirmation.isEnabled
+                    || inputs.settings.pccJudgeEnabled
                     || (inputs.settings.decisionPipeline == .belief
                         && (inputs.settings.appearanceAssistEnabled || inputs.settings.recheckAssistEnabled))
             case .saving: false
@@ -386,6 +391,15 @@ struct LiveYOLOCamera: UIViewRepresentable {
             }
             depositDetector.binOpenState = FrameBinOpenState(tagFrame: tagFrame, zones: currentZones)
             let zoneFrame = depositDetector.update(tracks: tracked, zones: currentZones)
+            if inputs.settings.pccJudgeEnabled {
+                evaluatePCCJudgments(
+                    deposits: zoneFrame.deposits,
+                    tracked: tracked,
+                    confirmationFrame: confirmationFrame,
+                    originalImage: result.originalImage,
+                    pipeline: inputs.settings.decisionPipeline
+                )
+            }
             if phaseMirror.current == .recording {
                 let fps = result.fps.flatMap { $0.isFinite ? Int($0.rounded()) : nil } ?? 0
                 recording.ingestLiveFrame(
@@ -463,6 +477,81 @@ struct LiveYOLOCamera: UIViewRepresentable {
                     self.pendingRecheckOutcomes.append(outcome)
                     self.recheckBufferLock.unlock()
                 }
+            }
+        }
+
+        /// Silent second opinions: one arbitration per uncertain→residual deposit.
+        /// Runs on the inference queue but only does real work when a deposit just
+        /// settled, and everything heavy rides detached tasks inside the arbiter.
+        private func evaluatePCCJudgments(
+            deposits: [ZoneDeposit],
+            tracked: [TrackedDetection],
+            confirmationFrame: ConfirmationFrame,
+            originalImage: UIImage?,
+            pipeline: DecisionPipeline
+        ) {
+            guard !deposits.isEmpty else { return }
+            var cropsByTrack: [Int: CGImage] = [:]
+            if let frameCG = originalImage.flatMap(UprightFrameImage.cgImage(from:)) {
+                for deposit in deposits {
+                    guard let track = tracked.first(where: { $0.id == deposit.trackID }) else { continue }
+                    cropsByTrack[deposit.trackID] = ItemCropper.crop(
+                        frameCG,
+                        to: track.displayXywhn,
+                        padding: WasteSortConfig.defaultPCCCropPadding,
+                        maximumSide: WasteSortConfig.defaultPCCCropMaximumSide,
+                        minimumSide: WasteSortConfig.defaultPCCCropMinimumPixels
+                    )
+                }
+            }
+            let status = pccJudge.currentStatus()
+            for deposit in deposits where deposit.wasUncertain {
+                guard let track = tracked.first(where: { $0.id == deposit.trackID }) else { continue }
+                let context = ArbiterRequestContext(
+                    trackId: deposit.trackID,
+                    sessionId: nil,
+                    yoloLabel: deposit.modelTopClassKey,
+                    yoloConfidence: Double(deposit.conf),
+                    beliefUncertain: true,
+                    beliefMargin: Double(deposit.margin),
+                    engineBinID: deposit.classKey,
+                    pipeline: String(describing: pipeline),
+                    triggeredAt: Date()
+                )
+                let inputs = PCCTriggerPolicy.Inputs(
+                    wasUncertainFallback: deposit.wasUncertain,
+                    confirmationLocked: confirmationFrame.state(for: deposit.trackID) == .confirmed,
+                    judgeEnabled: true,
+                    availabilityIsReady: status.availability.isReady,
+                    quotaLimited: !status.isUsable && status.availability.isReady,
+                    breakerOpen: status.breakerOpenUntil.map { $0 > Date() } ?? false,
+                    alreadyRequested: pccJudge.hasRequested(trackId: deposit.trackID)
+                )
+                switch PCCTriggerPolicy.decision(for: inputs) {
+                case .trigger:
+                    pccJudge.arbitrate(context, crop: cropsByTrack[deposit.trackID])
+                case .skip(let reason):
+                    guard reason != .notUncertainFallback else { continue }
+                    pccJudge.recordSkip(
+                        context,
+                        reasonSkipOutcome: Self.outcome(for: reason, availability: status.availability)
+                    )
+                }
+            }
+        }
+
+        private static func outcome(
+            for reason: PCCTriggerPolicy.SkipReason,
+            availability: PCCJudgeAvailability
+        ) -> PCCVerdictRecord.Outcome {
+            switch reason {
+            case .disabled: return .skippedDisabled
+            case .quotaLimited: return .skippedQuota
+            case .breakerOpen, .alreadyRequested: return .error("gate: \(String(describing: reason))")
+            case .confirmationLocked, .notUncertainFallback:
+                return .skippedUnavailable("superseded")
+            case .unavailable(let detail):
+                return .skippedUnavailable(detail.isEmpty ? availability.summary : detail)
             }
         }
 

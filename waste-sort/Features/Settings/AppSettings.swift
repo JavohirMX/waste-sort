@@ -27,6 +27,21 @@ enum WasteSortConfig {
     static let defaultAppearanceInterval = 0.25
     /// Crop-and-recheck escalation for unsure items.
     static let defaultRecheckAssistEnabled = true
+    // MARK: PCC uncertainty judge (specs/001-pcc-uncertainty-judge)
+    /// Silent second opinions default on: every uncertain deposit becomes data.
+    static let defaultPCCJudgeEnabled = true
+    static let defaultPCCReasoningLevel = "moderate"
+    /// Wall-clock budget for one cloud arbitration.
+    static let defaultPCCTimeoutSeconds = 10.0
+    /// Consecutive failed arbitrations before the circuit breaker opens.
+    static let defaultPCCBreakerThreshold = 3
+    /// How long the breaker stays open after tripping.
+    static let defaultPCCBreakerCooldownSeconds = 120.0
+    /// Records and crops older than this are pruned unless already exported.
+    static let defaultPCCPruneDays = 30
+    static let defaultPCCCropPadding: CGFloat = 0.15
+    static let defaultPCCCropMaximumSide = 448
+    static let defaultPCCCropMinimumPixels = 96
     /// How long a track must stay unsure before the zoom pass fires.
     static let defaultRecheckDelay = 0.6
     /// Minimum seconds between re-checks of the same item.
@@ -81,6 +96,7 @@ struct RuntimeSettings: Equatable {
     var appearanceAssistEnabled: Bool
     var recheckAssistEnabled: Bool
     var verboseDetectionLogging: Bool
+    var pccJudgeEnabled: Bool
     var confirmHits: Int
     var maxMisses: Int
     var trackerIou: Double
@@ -252,6 +268,10 @@ final class AppSettings: ObservableObject {
     @Published var verboseDetectionLogging: Bool {
         didSet { persist(verboseDetectionLogging, key: Keys.verboseDetectionLogging) }
     }
+    /// Silent PCC second opinions for uncertain deposits (specs/001).
+    @Published var pccJudgeEnabled: Bool {
+        didSet { persist(pccJudgeEnabled, key: Keys.pccJudgeEnabled) }
+    }
     /// Gates the first-launch onboarding flow. Intentionally left out of `resetToDefaults()`
     /// so restoring tuning values does not relaunch the tutorial — Settings offers a
     /// dedicated "Show onboarding again" action instead.
@@ -299,6 +319,7 @@ final class AppSettings: ObservableObject {
             appearanceAssistEnabled: appearanceAssistEnabled,
             recheckAssistEnabled: recheckAssistEnabled,
             verboseDetectionLogging: verboseDetectionLogging,
+            pccJudgeEnabled: pccJudgeEnabled,
             confirmHits: confirmHits,
             maxMisses: maxMisses,
             trackerIou: trackerIou,
@@ -365,6 +386,7 @@ final class AppSettings: ObservableObject {
         static let appearanceAssistEnabled = "settings.appearanceAssistEnabled"
         static let recheckAssistEnabled = "settings.recheckAssistEnabled"
         static let verboseDetectionLogging = "settings.verboseDetectionLogging"
+        static let pccJudgeEnabled = "settings.pccJudgeEnabled"
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
         static let foundationConfirmation = "settings.foundationConfirmation"
         static let foundationVerdictLog = "settings.foundationVerdictLog"
@@ -451,6 +473,7 @@ final class AppSettings: ObservableObject {
         appearanceAssistEnabled = Self.loadBool(defaults, Keys.appearanceAssistEnabled, WasteSortConfig.defaultAppearanceAssistEnabled)
         recheckAssistEnabled = Self.loadBool(defaults, Keys.recheckAssistEnabled, WasteSortConfig.defaultRecheckAssistEnabled)
         verboseDetectionLogging = Self.loadBool(defaults, Keys.verboseDetectionLogging, WasteSortConfig.defaultVerboseDetectionLogging)
+        pccJudgeEnabled = Self.loadBool(defaults, Keys.pccJudgeEnabled, WasteSortConfig.defaultPCCJudgeEnabled)
         hasCompletedOnboarding = Self.loadBool(
             defaults,
             Keys.hasCompletedOnboarding,
@@ -512,6 +535,7 @@ final class AppSettings: ObservableObject {
         appearanceAssistEnabled = WasteSortConfig.defaultAppearanceAssistEnabled
         recheckAssistEnabled = WasteSortConfig.defaultRecheckAssistEnabled
         verboseDetectionLogging = WasteSortConfig.defaultVerboseDetectionLogging
+        pccJudgeEnabled = WasteSortConfig.defaultPCCJudgeEnabled
         foundationConfirmationEnabled = WasteSortConfig.defaultFoundationConfirmation
         foundationVerdictLogEnabled = WasteSortConfig.defaultFoundationVerdictLog
         showLastDepositOnLive = WasteSortConfig.defaultShowLastDepositOnLive

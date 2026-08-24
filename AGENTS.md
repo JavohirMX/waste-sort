@@ -114,6 +114,16 @@ Don't re-implement these, extend them:
   for wrong-bin deposits, UIFeedbackGenerator fallback.
 - **TipKit**: `SettingsAccessTip` reveals the long-press gesture; retires via
   donated event. Configure happens once in `WasteSortApp.init`.
+- **PCC judge** (`Core/Intelligence/PCCJudge/`): silent Private Cloud Compute
+  second opinion for uncertain→residual deposits; log-only, never touches live
+  verdicts. iOS-27-gated behind `PCCJudgeABI` dlsym probes; quota/breaker
+  discipline built in. Setup + export workflow:
+  `specs/001-pcc-uncertainty-judge/quickstart.md`.
+- **PCC judge** (`Core/Intelligence/PCCJudge/`): silent Private Cloud Compute
+  second opinion for uncertain→residual deposits; log-only, never touches live
+  verdicts. iOS-27-gated behind `PCCJudgeABI` dlsym probes; quota/breaker
+  discipline built in. Setup + export workflow:
+  `specs/001-pcc-uncertainty-judge/quickstart.md`.
 - **App Intents**: `SortlaShortcuts` (toggle recording, voice guidance, cycle
   model). All hop to MainActor singletons.
 - **Vision barcodes**: `BarcodeFrameScanner` (own serial queue, 0.5 s throttle,

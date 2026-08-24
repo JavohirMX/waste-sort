@@ -15,6 +15,12 @@ struct SettingsView: View {
     @State private var showZoneResetConfirm = false
     /// Sampled when the sheet opens: the model can finish downloading between visits.
     @State private var confirmationAvailability = FoundationCategoryAvailability.current
+    /// PCC judge status + export state (specs/001-pcc-uncertainty-judge).
+    @State private var pccJudgeAvailability = PCCJudgeAvailability.current
+    @State private var pccExportStart = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+    @State private var pccExportEnd = Date()
+    @State private var pccExportMessage: String?
+    @State private var pccExportURL: URL?
 
     var body: some View {
         NavigationStack {
@@ -28,6 +34,7 @@ struct SettingsView: View {
                 photoSection
                 liveOverlaySection
                 confirmationSection
+                pccJudgeSection
                 modelSection
                 detectionSection
                 liveTrackingSection
@@ -623,6 +630,63 @@ struct SettingsView: View {
                     + "Legacy confidence replays the old math with no uncertainty concept, and appearance/recheck assists go inert. "
                     + "Verbose logging writes every tracked frame to the session CSV for offline replay."
             )
+        }
+    }
+
+    private var pccJudgeSection: some View {
+        Section {
+            Toggle("Silent PCC judge", isOn: $settings.pccJudgeEnabled)
+
+            LabeledContent("Status") {
+                Text(pccJudgeAvailability.summary)
+                    .foregroundStyle(pccJudgeAvailability.isReady ? Color.green : Color.secondary)
+                    .multilineTextAlignment(.trailing)
+            }
+
+            DatePicker("From", selection: $pccExportStart, displayedComponents: .date)
+            DatePicker("To", selection: $pccExportEnd, displayedComponents: .date)
+
+            Button("Export judgments for range") {
+                exportPCCJudgments()
+            }
+
+            if let pccExportMessage {
+                Text(pccExportMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("PCC second opinion")
+                .foregroundStyle(BinGuide.cleanInorganic.color)
+        } footer: {
+            Text(
+                "When an item is guided to residual because the engine is unsure, Apple's Private Cloud Compute model "
+                    + "silently judges it too. Nothing on screen changes; answers and crops are logged so future training "
+                    + "can compare them against what YOLO believed. Uses your device's daily cloud-request quota."
+            )
+        }
+    }
+
+    private func exportPCCJudgments() {
+        let start = min(pccExportStart, pccExportEnd)
+        let end = max(pccExportStart, pccExportEnd)
+        let interval = DateInterval(
+            start: Calendar.current.startOfDay(for: start),
+            end: Calendar.current.startOfDay(for: end).addingTimeInterval(86_399)
+        )
+        do {
+            let bundle = try PCCDatasetExporter.export(
+                records: interval,
+                from: PCCRecordStore()
+            )
+            pccExportMessage = "Exported \(bundle.recordCount) records."
+            pccExportURL = bundle.directoryURL
+        } catch PCCDatasetExporter.ExportError.nothingToExport {
+            pccExportMessage = "No judgments recorded in that range yet."
+            pccExportURL = nil
+        } catch {
+            pccExportMessage = "Export failed: \(error.localizedDescription)"
+            pccExportURL = nil
         }
     }
 
