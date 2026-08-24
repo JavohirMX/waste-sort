@@ -13,6 +13,8 @@ struct SettingsView: View {
     @State private var showPhotoSort = false
     @State private var showHistory = false
     @State private var showZoneResetConfirm = false
+    /// Sampled when the sheet opens: the model can finish downloading between visits.
+    @State private var confirmationAvailability = FoundationCategoryAvailability.current
 
     var body: some View {
         NavigationStack {
@@ -25,6 +27,7 @@ struct SettingsView: View {
                 historySection
                 photoSection
                 liveOverlaySection
+                confirmationSection
                 modelSection
                 detectionSection
                 liveTrackingSection
@@ -49,7 +52,10 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .onAppear { refreshCameras() }
+            .onAppear {
+                refreshCameras()
+                confirmationAvailability = .current
+            }
             .onReceive(
                 NotificationCenter.default.publisher(for: AVCaptureDevice.wasConnectedNotification)
             ) { _ in refreshCameras() }
@@ -398,6 +404,7 @@ struct SettingsView: View {
                 step: 0.05
             )
             Toggle("Show FPS", isOn: $settings.showFPS)
+            Toggle("Show last deposit on Live", isOn: $settings.showLastDepositOnLive)
         } header: {
             Text("Live overlay")
                 .foregroundStyle(BinGuide.organic.color)
@@ -405,8 +412,47 @@ struct SettingsView: View {
             Text(
                 "Shown on the live camera when waste is detected. Choose one visual guide at a time. "
                     + "Box badges can show an icon, category name, and confidence percent; placement moves the badge around each box. "
-                    + "Show FPS draws a plain FPS label on the live camera, bottom left."
+                    + "Show FPS draws a plain FPS label on the live camera, bottom left. "
+                    + "The last-deposit chip is a developer overlay; tap it for this session's deposits. History also lives in Stats."
             )
+        }
+    }
+
+    /// Kept out of the view body: as one concatenated literal in a `Text` it pushed the
+    /// type checker past its budget and failed the build.
+    private var confirmationFooter: String {
+        """
+        The detector keeps finding items as it does now. On top of that, each item is \
+        photographed and shown to the on-device Foundation model, and whatever it answers is \
+        locked in — the category stops changing for as long as that item stays on screen, and \
+        it is what gets recorded when the item is thrown away. Its box breathes while the \
+        model is thinking and flashes when the answer lands.
+
+        When "Show last verdict on Live" is on, a chip shows the crop the model was \
+        actually given; tap it for every answer this session, including the ones that were \
+        not acted on.
+
+        \(confirmationAvailability.summary)
+        """
+    }
+
+    @ViewBuilder
+    private var confirmationSection: some View {
+        Section {
+            Toggle("Confirm with on-device model", isOn: $settings.foundationConfirmationEnabled)
+
+            LabeledContent("Status") {
+                Text(confirmationAvailability.isReady ? "Ready" : "Off")
+                    .foregroundStyle(confirmationAvailability.isReady ? .green : .secondary)
+            }
+
+            Toggle("Show last verdict on Live", isOn: $settings.foundationVerdictLogEnabled)
+                .disabled(!settings.foundationConfirmationEnabled)
+        } header: {
+            Text("Category confirmation")
+                .foregroundStyle(BinGuide.cleanInorganic.color)
+        } footer: {
+            Text(confirmationFooter)
         }
     }
 

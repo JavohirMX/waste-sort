@@ -58,9 +58,10 @@ Each frame goes through Core ML, then a tracker that holds an ID across frames (
 
 | Class | Bin | Put here | Keep out |
 | --- | --- | --- | --- |
-| `organic` | Green / brown | Food scraps, peels, plant matter | Plastic film and packaging |
-| `residual` | Black / grey | Soft film, dirty packaging, tissues, mixed or contaminated items | Clean rigid recyclables |
-| `clean_inorganic` | Blue / yellow | Clean rigid plastic, metal cans, glass, clean paper/cardboard | Soft film and dirty recyclables |
+| `organic` | Green / brown | Food scraps, peels, garden/plant matter | Packaging |
+| `residual` | Black / grey | Tissues, diapers, styrofoam, sachets, mixed or unrecognizable | Recyclable material |
+| `clean_inorganic` | Blue / yellow | Empty dry plastic (including clean bags), metal, glass, clean paper/cardboard, sticky notes | Items that may still be dirty |
+| `dirty_recyclable` | Overlay only | Recyclable type that may have leftover food/drink — even at ~40–50% certainty. Rinse then recyclable, or residual as-is | Non-recyclable types |
 
 Unrecognized classes are ignored in the live bar.
 

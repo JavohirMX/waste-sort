@@ -11,7 +11,11 @@ struct RawDetection: Equatable, Sendable {
 }
 
 /// Confirmed track ready for overlay drawing and counting.
-struct TrackedDetection: Identifiable, Equatable, Sendable {
+///
+/// `nonisolated` because it is produced on the capture queue and read from several
+/// off-main layers — the deposit detector and the confirmation coordinator both do — before
+/// it ever reaches a view.
+nonisolated struct TrackedDetection: Identifiable, Equatable, Sendable {
     let id: Int
     let classKey: String
     let className: String
@@ -26,12 +30,28 @@ struct TrackedDetection: Identifiable, Equatable, Sendable {
     /// This frame's YOLO class. Empty means the same as `classKey`.
     var rawClassKey: String = ""
     var rawConf: Float = 0
+    /// Set once the on-device Foundation model has named this item, and never cleared while
+    /// the item stays on screen. The tracker itself never sets this — the confirmation layer
+    /// does, on the way out — and it deliberately leaves `rawClassKey` alone so the log can
+    /// still show what the detector thought.
+    var confirmedBinID: String? = nil
 
     var isCoasting: Bool { misses > 0 }
 
     var observedClassKey: String { rawClassKey.isEmpty ? classKey : rawClassKey }
 
     var isClassPending: Bool { !rawClassKey.isEmpty && rawClassKey != classKey }
+
+    /// What counting and logging should attribute this item to: a locked confirmation when
+    /// there is one, otherwise this frame's raw detection.
+    var vote: (classKey: String, className: String, conf: Float) {
+        guard confirmedBinID == nil else { return (classKey, className, conf) }
+        return (
+            observedClassKey,
+            rawClassKey.isEmpty ? className : rawClassKey,
+            rawConf > 0 ? rawConf : conf
+        )
+    }
 }
 
 /// Associates per-frame detections across time with EMA box smoothing and a time-window

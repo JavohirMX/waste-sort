@@ -8,6 +8,7 @@ struct LiveCameraView: View {
     @EnvironmentObject private var recording: RecordingController
     @EnvironmentObject private var zoneStore: ZoneStore
     @EnvironmentObject private var history: ZoneEventHistoryStore
+    @EnvironmentObject private var verdictLog: FoundationVerdictLog
     @EnvironmentObject private var aprilTagStore: AprilTagBindingStore
     @EnvironmentObject private var binStyle: BinStyleStore
     @State private var counts: [String: Int] = [:]
@@ -25,6 +26,11 @@ struct LiveCameraView: View {
     @State private var occupiedZoneIDs: Set<UUID> = []
     @State private var armedZoneIDs: Set<UUID> = []
     @State private var settlingZoneIDs: Set<UUID> = []
+    @State private var confirmationFrame = ConfirmationFrame()
+    @State private var freshDepositID: UUID?
+    @State private var freshVerdictID: UUID?
+    @State private var showVerdicts = false
+    @State private var showHistory = false
     @State private var segmentFrames: [String: CGRect] = [:]
 
     private var activeBinIDs: Set<String> {
@@ -72,13 +78,21 @@ struct LiveCameraView: View {
                         aprilTagEnabled: aprilTagStore.isEnabled,
                         aprilTagBindings: aprilTagStore.bindings,
                         aprilTagStaleTimeout: aprilTagStore.staleTimeout,
-                        aprilTagRangeProfile: aprilTagStore.rangeProfile
-                    ) { result, tracked, zoneFrame, tagFrame in
+                        aprilTagRangeProfile: aprilTagStore.rangeProfile,
+                        foundationConfirmationEnabled: settings.foundationConfirmationEnabled
+                    ) { result, tracked, zoneFrame, tagFrame, confirmed, verdicts in
                         if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                             fps = measured
                         }
                         imageSize = result.orig_shape
                         tracks = tracked
+                        if confirmationFrame != confirmed {
+                            confirmationFrame = confirmed
+                        }
+                        if !verdicts.isEmpty {
+                            verdictLog.append(verdicts)
+                            flashVerdict()
+                        }
                         detectedTags = tagFrame.detectedTags
                         tagStatuses = tagFrame.statuses
                         tagStats = tagFrame.detectorStats
@@ -96,12 +110,7 @@ struct LiveCameraView: View {
                             flash(zoneFrame.deposits)
                         }
 
-                        var nextCounts: [String: Int] = [:]
-                        for track in tracked where !track.isCoasting {
-                            let binID = BinGuide.info(for: track.classKey).id
-                            guard binID != BinGuide.unknown.id else { continue }
-                            nextCounts[binID, default: 0] += 1
-                        }
+                        var nextCounts = CategoryPresence.counts(from: tracked)
                         if nextCounts != counts {
                             counts = nextCounts
                         }
@@ -156,7 +165,8 @@ struct LiveCameraView: View {
                         useAspectFill: true,
                         rotation: settings.liveRotation,
                         mirror: settings.liveMirror,
-                        style: settings.boxOverlayStyle
+                        style: settings.boxOverlayStyle,
+                        confirmation: confirmationFrame
                     )
                     .allowsHitTesting(false)
 
@@ -202,16 +212,61 @@ struct LiveCameraView: View {
                     .padding(.bottom, Theme.hudInset)
                 } else {
                     HStack(alignment: .bottom) {
-                        if settings.showFPS {
-                            Text("\(fps) FPS")
-                                .font(.system(.caption, design: .default).monospacedDigit())
-                                .foregroundStyle(.white.opacity(0.7))
-                                .accessibilityLabel("\(fps) frames per second")
-                                .padding(.leading, Theme.hudInset)
+                        HStack(alignment: .bottom, spacing: 8) {
+                            if settings.showFPS {
+                                Text("\(fps) FPS")
+                                    .font(.system(.caption, design: .default).monospacedDigit())
+                                    .foregroundStyle(.white.opacity(0.7))
+                                    .accessibilityLabel("\(fps) frames per second")
+                            }
+                            if settings.showLastDepositOnLive, let last = history.events.first {
+                                LastDepositChip(
+                                    record: last,
+                                    isFresh: freshDepositID == last.id,
+                                    onTap: { showHistory = true }
+                                )
+                                .transition(.move(edge: .leading).combined(with: .opacity))
+                                .id(last.id)
+                            }
+                            if tracks.contains(where: {
+                                !$0.isCoasting && BinGuide.isDirtyRecyclable($0.classKey)
+                            }) {
+                                DirtyRecyclableSuggestionChip()
+                                    .transition(.move(edge: .leading).combined(with: .opacity))
+                            }
+                            if settings.foundationConfirmationEnabled,
+                               settings.foundationVerdictLogEnabled,
+                               let verdict = verdictLog.records.first
+                            {
+                                LastVerdictChip(
+                                    record: verdict,
+                                    isFresh: freshVerdictID == verdict.id,
+                                    onTap: { showVerdicts = true }
+                                )
+                                .transition(.move(edge: .leading).combined(with: .opacity))
+                                .id(verdict.id)
+                            }
                         }
+                        .padding(.leading, Theme.hudInset)
                         Spacer(minLength: 0)
                         statsGlassButton
                     }
+                    .animation(
+                        .spring(response: 0.35, dampingFraction: 0.7),
+                        value: history.events.first?.id
+                    )
+                    .animation(
+                        .spring(response: 0.35, dampingFraction: 0.7),
+                        value: tracks.contains(where: {
+                            !$0.isCoasting && BinGuide.isDirtyRecyclable($0.classKey)
+                        })
+                    )
+                    .animation(
+                        .spring(response: 0.35, dampingFraction: 0.7),
+                        value: verdictLog.records.first?.id
+                    )
+                    .animation(.easeOut(duration: Theme.animationDuration), value: freshDepositID)
+                    .animation(.easeOut(duration: Theme.animationDuration), value: freshVerdictID)
                     .padding(.bottom, Theme.hudInset)
                 }
             }
@@ -226,6 +281,16 @@ struct LiveCameraView: View {
         .onPreferenceChange(CategorySegmentFramesKey.self) { segmentFrames = $0 }
         .onChange(of: zoneStore.isEditingZones) { _, editing in
             selectedZoneID = editing ? zoneStore.zones.first?.id : nil
+        }
+        .sheet(isPresented: $showHistory) {
+            HistoryView()
+                .environmentObject(history)
+                .environmentObject(zoneStore)
+                .environmentObject(binStyle)
+        }
+        .sheet(isPresented: $showVerdicts) {
+            VerdictHistoryView()
+                .environmentObject(verdictLog)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -271,17 +336,35 @@ struct LiveCameraView: View {
         zoneStore.update(zone)
     }
 
+    /// Same beat as a deposit landing, minus the haptic — the model answers often enough
+    /// that buzzing every time would be noise.
+    private func flashVerdict() {
+        let latest = verdictLog.records.first?.id
+        withAnimation(.easeOut(duration: Theme.animationDuration)) {
+            freshVerdictID = latest
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(900))
+            withAnimation(.easeOut(duration: Theme.animationDuration)) {
+                if freshVerdictID == latest { freshVerdictID = nil }
+            }
+        }
+    }
+
     /// Flashes the receiving zone outline on a confirmed deposit.
     private func flash(_ deposits: [ZoneDeposit]) {
         let zoneIDs = Set(deposits.map(\.zoneID))
+        let latest = history.events.first?.id
         withAnimation(.easeOut(duration: Theme.animationDuration)) {
             flashedZoneIDs.formUnion(zoneIDs)
+            freshDepositID = latest
         }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         Task {
             try? await Task.sleep(for: .milliseconds(900))
             withAnimation(.easeOut(duration: Theme.animationDuration)) {
                 flashedZoneIDs.subtract(zoneIDs)
+                if freshDepositID == latest { freshDepositID = nil }
             }
         }
     }
@@ -351,7 +434,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     var aprilTagBindings: [UUID: [Int]]
     var aprilTagStaleTimeout: Double
     var aprilTagRangeProfile: AprilTagRangeProfile
-    var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
+    var foundationConfirmationEnabled: Bool
+    var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -366,6 +450,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagBindings: aprilTagBindings,
             aprilTagStaleTimeout: aprilTagStaleTimeout,
             aprilTagRangeProfile: aprilTagRangeProfile,
+            foundationConfirmationEnabled: foundationConfirmationEnabled,
             onDetection: onDetection
         )
     }
@@ -460,6 +545,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         coordinator.depositDetector.requiredDwellFrames = dwellFrames
         coordinator.depositDetector.reacquireGrace = reacquireGrace
         coordinator.aprilTagStaleTimeout = aprilTagStaleTimeout
+        coordinator.setConfirmationEnabled(foundationConfirmationEnabled)
     }
 
     private func hideDeveloperChrome(_ view: YOLOView) {
@@ -482,7 +568,7 @@ private struct LiveYOLOCamera: UIViewRepresentable {
     }
 
     final class Coordinator {
-        var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
+        var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
         var settings: RuntimeSettings
         var preferredCameraID: String
         var selectedModelName: String
@@ -502,6 +588,10 @@ private struct LiveYOLOCamera: UIViewRepresentable {
         weak var yoloView: YOLOView?
         let tracker = DetectionTracker()
         let depositDetector = ZoneDepositDetector()
+        let confirmation = CategoryConfirmationCoordinator(service: FoundationCategoryConfirmer())
+        /// Resolved once: the answer involves a `dlsym` sweep and a system model query, and
+        /// `applyZones` runs on every SwiftUI refresh — which is every detection frame.
+        private lazy var isConfirmationSupported = FoundationCategoryAvailability.current.isReady
         let aprilTagPipeline = AprilTagFramePipeline(
             detector: AprilTagDetector(familyName: "tag16h5", tuning: AprilTagRangeProfile.far.tuning)
         )
@@ -526,7 +616,8 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagBindings: [UUID: [Int]],
             aprilTagStaleTimeout: Double,
             aprilTagRangeProfile: AprilTagRangeProfile,
-            onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
+            foundationConfirmationEnabled: Bool,
+            onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
         ) {
             self.settings = settings
             self.preferredCameraID = preferredCameraID
@@ -541,6 +632,19 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagPipeline.apply(tuning: aprilTagRangeProfile.tuning)
             depositDetector.requiredDwellFrames = dwellFrames
             depositDetector.reacquireGrace = reacquireGrace
+            setConfirmationEnabled(foundationConfirmationEnabled)
+        }
+
+        /// The layer only runs when the operator asked for it *and* the device can actually
+        /// serve it. Turning it off drops every locked verdict, so the next frame is back to
+        /// the detector's own labels with nothing stale hanging around.
+        func setConfirmationEnabled(_ enabled: Bool) {
+            let wanted = enabled && isConfirmationSupported
+            guard confirmation.isEnabled != wanted else { return }
+            confirmation.isEnabled = wanted
+            if !wanted {
+                confirmation.reset()
+            }
         }
 
         func handle(_ result: YOLOResult) {
@@ -548,7 +652,9 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                 view.setConfidenceThreshold(settings.confidence)
                 view.setIouThreshold(settings.iou)
                 view.setNumItemsThreshold(settings.maxItems)
-                let shouldCapture = recording.shouldCaptureOriginalFrames
+                // The confirmation layer needs real pixels to crop, so it turns frame
+                // capture on for itself the same way recording does.
+                let shouldCapture = recording.shouldCaptureOriginalFrames || confirmation.isEnabled
                 if capturingOriginals != shouldCapture {
                     capturingOriginals = shouldCapture
                     YOLOViewPredictorAccess.setCapturesOriginalImage(shouldCapture, in: view)
@@ -565,7 +671,12 @@ private struct LiveYOLOCamera: UIViewRepresentable {
                     xywhn: box.xywhn
                 )
             }
-            let tracked = tracker.update(raw)
+            // Everything downstream — boxes, the category bar, the CTA, deposits, the log —
+            // reads the confirmed labels, because a verdict nobody acts on is decoration.
+            let (tracked, confirmationFrame, verdictRecords) = confirmation.update(
+                tracks: tracker.update(raw),
+                frameImage: { result.originalImage.flatMap(UprightFrameImage.cgImage(from:)) }
+            )
             let currentZones = zones
             var tagFrame = aprilTagEnabled
                 ? aprilTagBinDetector.update(
@@ -592,7 +703,14 @@ private struct LiveYOLOCamera: UIViewRepresentable {
             // Zone results ride the existing main-thread hop so the @Published history
             // append never happens off-main.
             DispatchQueue.main.async {
-                self.onDetection?(result, tracked, zoneFrame, tagFrame)
+                self.onDetection?(
+                    result,
+                    tracked,
+                    zoneFrame,
+                    tagFrame,
+                    confirmationFrame,
+                    verdictRecords
+                )
             }
         }
 

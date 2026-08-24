@@ -35,6 +35,9 @@ enum WasteSortConfig {
     static let defaultShowFPS = false
     static let defaultUseMockStats = true
     static let defaultHasCompletedOnboarding = false
+    static let defaultFoundationConfirmation = false
+    static let defaultFoundationVerdictLog = false
+    static let defaultShowLastDepositOnLive = false
 }
 
 /// Snapshot of tunable inference and tracking values, passed into Live camera updates.
@@ -186,6 +189,18 @@ final class AppSettings: ObservableObject {
     @Published var hasCompletedOnboarding: Bool {
         didSet { persist(hasCompletedOnboarding, key: Keys.hasCompletedOnboarding) }
     }
+    /// Ask the on-device Foundation model to confirm each item's category and lock it in.
+    @Published var foundationConfirmationEnabled: Bool {
+        didSet { persist(foundationConfirmationEnabled, key: Keys.foundationConfirmation) }
+    }
+    /// Show the model's raw answers on Live, including the ones that were not acted on.
+    @Published var foundationVerdictLogEnabled: Bool {
+        didSet { persist(foundationVerdictLogEnabled, key: Keys.foundationVerdictLog) }
+    }
+    /// Developer HUD: last-deposit chip on Live. Off by default — history lives in Stats.
+    @Published var showLastDepositOnLive: Bool {
+        didSet { persist(showLastDepositOnLive, key: Keys.showLastDepositOnLive) }
+    }
 
     var selectedModel: WasteSortModel {
         WasteSortModel.from(resourceName: selectedModelName)
@@ -265,6 +280,9 @@ final class AppSettings: ObservableObject {
         static let showFPS = "settings.showFPS"
         static let useMockStats = "settings.useMockStats"
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
+        static let foundationConfirmation = "settings.foundationConfirmation"
+        static let foundationVerdictLog = "settings.foundationVerdictLog"
+        static let showLastDepositOnLive = "settings.showLastDepositOnLive"
     }
 
     /// Internal rather than private so tests can inject their own defaults suite,
@@ -346,6 +364,21 @@ final class AppSettings: ObservableObject {
             Keys.hasCompletedOnboarding,
             WasteSortConfig.defaultHasCompletedOnboarding
         )
+        foundationConfirmationEnabled = Self.loadBool(
+            defaults,
+            Keys.foundationConfirmation,
+            WasteSortConfig.defaultFoundationConfirmation
+        )
+        foundationVerdictLogEnabled = Self.loadBool(
+            defaults,
+            Keys.foundationVerdictLog,
+            WasteSortConfig.defaultFoundationVerdictLog
+        )
+        showLastDepositOnLive = Self.loadBool(
+            defaults,
+            Keys.showLastDepositOnLive,
+            WasteSortConfig.defaultShowLastDepositOnLive
+        )
     }
 
     func resetToDefaults() {
@@ -375,6 +408,9 @@ final class AppSettings: ObservableObject {
         autoRecordOnOpen = WasteSortConfig.defaultAutoRecordOnOpen
         showFPS = WasteSortConfig.defaultShowFPS
         useMockStats = WasteSortConfig.defaultUseMockStats
+        foundationConfirmationEnabled = WasteSortConfig.defaultFoundationConfirmation
+        foundationVerdictLogEnabled = WasteSortConfig.defaultFoundationVerdictLog
+        showLastDepositOnLive = WasteSortConfig.defaultShowLastDepositOnLive
         resetCaptureToDefaults()
     }
 
