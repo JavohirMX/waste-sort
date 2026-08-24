@@ -88,6 +88,11 @@ nonisolated enum BinGuide {
     /// unsure, the honest answer is residual — never a coin-flip guess at recycling.
     static let fallbackBinID = residual.id
 
+    /// Learned-correction hook (specs/002). Set once at app init to a closure
+    /// reading the lock-guarded `AppliedBinOverrides` store; safe to call from
+    /// the inference queue. The reference is never mutated after launch.
+    nonisolated(unsafe) internal static var overrideProvider: (@Sendable (String) -> String?)?
+
     static func normalizedKey(_ className: String) -> String {
         className
             .lowercased()
@@ -100,7 +105,21 @@ nonisolated enum BinGuide {
         return all.first { $0.id == id } ?? unknown
     }
 
+    /// The routing resolver every consumer shares. Consults applied learned
+    /// corrections first, then the static taxonomy. Invalid override targets
+    /// (not a real bin id) fall through to static behavior rather than
+    /// degrading guidance.
     static func info(for className: String) -> BinInfo {
+        let key = normalizedKey(className)
+        if let binID = overrideProvider?(key), let overridden = resolvedOverride(binID: binID) {
+            return overridden
+        }
+        return staticInfo(for: key)
+    }
+
+    /// The static taxonomy lookup, deliberately bypassing learned overrides —
+    /// the policy analyzer compares suggestions against this baseline.
+    static func staticInfo(for className: String) -> BinInfo {
         switch normalizedKey(className) {
         case "organic":
             return organic
@@ -113,6 +132,13 @@ nonisolated enum BinGuide {
         default:
             return unknown
         }
+    }
+
+    private static func resolvedOverride(binID: String) -> BinInfo? {
+        let candidate = bin(id: binID)
+        // `bin(id:)` maps unknown ids to `unknown`; reject unless it round-trips
+        // so a corrupt override can never masquerade as taxonomy.
+        return candidate.id == binID ? candidate : nil
     }
 
     static func isDirtyRecyclable(_ classKey: String) -> Bool {

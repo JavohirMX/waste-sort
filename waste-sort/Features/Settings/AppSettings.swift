@@ -42,6 +42,13 @@ enum WasteSortConfig {
     static let defaultPCCCropPadding: CGFloat = 0.15
     static let defaultPCCCropMaximumSide = 448
     static let defaultPCCCropMinimumPixels = 96
+    /// Learned-correction thresholds (specs/002). Into-residual and lateral
+    /// overrides need this many answered judgments with this dominance; pulling
+    /// items out of residual needs the stricter `OutOfResidual` pair below.
+    static let defaultPCCSuggestionMinSamples = 12
+    static let defaultPCCSuggestionDominance = 0.75
+    static let defaultPCCOutOfResidualMinSamples = 30
+    static let defaultPCCOutOfResidualDominance = 0.85
     /// How long a track must stay unsure before the zoom pass fires.
     static let defaultRecheckDelay = 0.6
     /// Minimum seconds between re-checks of the same item.

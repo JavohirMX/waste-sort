@@ -197,3 +197,13 @@ also asks Apple's Private Cloud Compute model for a structured second opinion
 and logs it beside what YOLO believed — nothing on screen changes. Records
 (JSONL + crops) export from Settings by date range and seed the future teaching
 dataset. Setup and quota notes: `specs/001-pcc-uncertainty-judge/quickstart.md`.
+
+
+## Self-improving routing (learned corrections)
+
+The judge records double as evidence: when PCC's answers systematically disagree
+with an item class's static bin mapping, Settings → PCC second opinion →
+Learned corrections surfaces the pattern with its sample count and agreement
+rate. One tap re-routes that class everywhere guidance is resolved; removing it
+instantly restores the original behavior. Pulling classes out of residual
+deliberately demands stronger evidence than pushing them in.

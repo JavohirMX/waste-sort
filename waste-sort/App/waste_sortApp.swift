@@ -26,6 +26,9 @@ struct WasteSortApp: App {
     init() {
         BrandFont.register()
         try? Tips.configure()
+        // Learned bin-routing corrections (specs/002): set-once provider; the
+        // store itself is lock-guarded so inference-queue reads are safe.
+        BinGuide.overrideProvider = { AppliedBinOverrides.shared.binID(forClass: $0) }
     }
 
     var body: some Scene {

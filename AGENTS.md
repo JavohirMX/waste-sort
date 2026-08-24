@@ -119,11 +119,11 @@ Don't re-implement these, extend them:
   verdicts. iOS-27-gated behind `PCCJudgeABI` dlsym probes; quota/breaker
   discipline built in. Setup + export workflow:
   `specs/001-pcc-uncertainty-judge/quickstart.md`.
-- **PCC judge** (`Core/Intelligence/PCCJudge/`): silent Private Cloud Compute
-  second opinion for uncertain→residual deposits; log-only, never touches live
-  verdicts. iOS-27-gated behind `PCCJudgeABI` dlsym probes; quota/breaker
-  discipline built in. Setup + export workflow:
-  `specs/001-pcc-uncertainty-judge/quickstart.md`.
+- **Learned corrections** (specs/002, same folder): pure analyzer mines judge
+  records for dominant PCC-vs-BinGuide disagreements (asymmetric thresholds:
+  into-residual 12@75%, out-of-residual 30@85%); operator applies via Settings.
+  Overrides decorate `BinGuide.info(for:)` only — static map untouched,
+  removable instantly.
 - **App Intents**: `SortlaShortcuts` (toggle recording, voice guidance, cycle
   model). All hop to MainActor singletons.
 - **Vision barcodes**: `BarcodeFrameScanner` (own serial queue, 0.5 s throttle,

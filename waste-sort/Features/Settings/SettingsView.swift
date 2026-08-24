@@ -21,6 +21,8 @@ struct SettingsView: View {
     @State private var pccExportEnd = Date()
     @State private var pccExportMessage: String?
     @State private var pccExportURL: URL?
+    @State private var pccSuggestions: [SuggestedOverride] = []
+    @State private var pccAppliedOverrides: [AppliedBinOverride] = []
 
     var body: some View {
         NavigationStack {
@@ -655,6 +657,56 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+
+            Button("Analyze judge records") {
+                refreshPCCCorrections()
+            }
+            .onAppear(perform: refreshPCCCorrections)
+
+            if pccSuggestions.isEmpty {
+                Text("No routing corrections suggested yet.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(pccSuggestions) { suggestion in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(suggestion.itemClass)
+                        Text(pccSuggestionCaption(suggestion))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Apply") {
+                        AppliedBinOverrides.shared.apply(suggestion)
+                        refreshPCCCorrections()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+
+            ForEach(pccAppliedOverrides) { applied in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(applied.itemClass)
+                        Text(pccAppliedCaption(applied))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    let bin = BinGuide.bin(id: applied.binID)
+                    Image(systemName: bin.symbolName)
+                        .foregroundStyle(bin.color)
+                }
+            }
+            .onDelete(perform: removePCCCorrections)
+
+            if !pccAppliedOverrides.isEmpty {
+                Button("Remove all corrections", role: .destructive) {
+                    AppliedBinOverrides.shared.removeAll()
+                    refreshPCCCorrections()
+                }
+            }
         } header: {
             Text("PCC second opinion")
                 .foregroundStyle(BinGuide.cleanInorganic.color)
@@ -665,6 +717,34 @@ struct SettingsView: View {
                     + "can compare them against what YOLO believed. Uses your device's daily cloud-request quota."
             )
         }
+    }
+
+    private func refreshPCCCorrections() {
+        let interval = DateInterval(start: .distantPast, end: Date())
+        pccSuggestions = PCCPolicyAnalyzer.suggestions(
+            from: PCCRecordStore().records(in: interval)
+        )
+        pccAppliedOverrides = AppliedBinOverrides.shared.all()
+    }
+
+    private func removePCCCorrections(at offsets: IndexSet) {
+        for index in offsets {
+            AppliedBinOverrides.shared.remove(itemClassKey: pccAppliedOverrides[index].itemClass)
+        }
+        refreshPCCCorrections()
+    }
+
+    private func pccSuggestionCaption(_ suggestion: SuggestedOverride) -> String {
+        let percent = Int((suggestion.agreementRate * 100).rounded())
+        let from = BinGuide.staticInfo(for: suggestion.id).displayName
+        let to = BinGuide.bin(id: suggestion.suggestedBinID).displayName
+        return "\(from) → \(to) · \(suggestion.sampleCount) judgments · \(percent)% agree"
+    }
+
+    private func pccAppliedCaption(_ applied: AppliedBinOverride) -> String {
+        let percent = Int((applied.agreementRate * 100).rounded())
+        return "→ \(BinGuide.bin(id: applied.binID).displayName) · "
+            + "\(applied.sampleCount) judgments · \(percent)% agree"
     }
 
     private func exportPCCJudgments() {
