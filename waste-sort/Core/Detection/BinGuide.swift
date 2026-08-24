@@ -24,7 +24,7 @@ nonisolated enum BinGuide {
         color: Color(red: 34 / 255, green: 197 / 255, blue: 94 / 255),
         idleColor: Color(red: 107 / 255, green: 143 / 255, blue: 94 / 255),
         symbolName: "leaf.fill",
-        instructions: "Food scraps, peels, plant matter. Keep free of plastic film and packaging."
+        instructions: "Food scraps, peels, garden and plant matter. No packaging."
     )
 
     static let residual = BinInfo(
@@ -36,7 +36,7 @@ nonisolated enum BinGuide {
         color: Color(red: 39 / 255, green: 39 / 255, blue: 42 / 255),
         idleColor: Color(red: 82 / 255, green: 82 / 255, blue: 91 / 255),
         symbolName: "trash.fill",
-        instructions: "Soft plastic film, dirty packaging, tissues, mixed or contaminated items."
+        instructions: "Tissues, diapers, sanitary products, styrofoam, multilayer sachets, mixed or unrecognizable waste, and items soiled beyond rinsing. Also anything that is not recyclable material."
     )
 
     static let cleanInorganic = BinInfo(
@@ -48,7 +48,21 @@ nonisolated enum BinGuide {
         color: Color(red: 234 / 255, green: 179 / 255, blue: 8 / 255),
         idleColor: Color(red: 196 / 255, green: 164 / 255, blue: 106 / 255),
         symbolName: "arrow.3.trianglepath",
-        instructions: "Clean rigid plastic, metal cans, glass, clean paper/cardboard. Empty and dry."
+        instructions: "Empty and dry plastic (bottles, cups, clean bags and film), metal, glass, clean paper, cardboard, and sticky notes. Default for recyclable types only when leftover food, drink, sauce, or oil looks unlikely."
+    )
+
+    /// Overlay-only: a recyclable type that may still be dirty. Not a fourth physical bin,
+    /// so it is omitted from `all`.
+    static let dirtyRecyclable = BinInfo(
+        id: "dirty_recyclable",
+        title: "dirty recyclable",
+        displayName: "DIRTY RECYCLABLE",
+        category: "dirty_recyclable",
+        bin: "Residual or Recyclable",
+        color: Color(red: 39 / 255, green: 39 / 255, blue: 42 / 255),
+        idleColor: Color(red: 82 / 255, green: 82 / 255, blue: 91 / 255),
+        symbolName: "arrow.3.trianglepath",
+        instructions: "Use when the item is recyclable material AND leftover food, drink, sauce, or oil looks possible — even if you are only about 40–50% sure. Prefer this over recyclable whenever dirt is a real possibility. Rinse then recyclable; throw as-is then residual. Never a non-recyclable type."
     )
 
     static let unknown = BinInfo(
@@ -73,7 +87,8 @@ nonisolated enum BinGuide {
     }
 
     static func bin(id: String) -> BinInfo {
-        all.first { $0.id == id } ?? unknown
+        if id == dirtyRecyclable.id { return dirtyRecyclable }
+        return all.first { $0.id == id } ?? unknown
     }
 
     static func info(for className: String) -> BinInfo {
@@ -84,8 +99,33 @@ nonisolated enum BinGuide {
             return residual
         case "clean_inorganic", "cleaninorganic", "inorganic":
             return cleanInorganic
+        case "dirty_recyclable", "dirtyrecyclable":
+            return dirtyRecyclable
         default:
             return unknown
         }
+    }
+
+    static func isDirtyRecyclable(_ classKey: String) -> Bool {
+        info(for: classKey).id == dirtyRecyclable.id
+    }
+
+    /// Category-bar / CTA bins this class should light. Dirty recyclable lights residual
+    /// and recyclable together; unknown lights nothing.
+    static func barBinIDs(for classKey: String) -> [String] {
+        let id = info(for: classKey).id
+        if id == dirtyRecyclable.id {
+            return [residual.id, cleanInorganic.id]
+        }
+        if id == unknown.id { return [] }
+        return [id]
+    }
+
+    static func isAcceptedDeposit(classKey: String, zoneBinID: String) -> Bool {
+        let item = info(for: classKey).id
+        if item == dirtyRecyclable.id {
+            return zoneBinID == residual.id || zoneBinID == cleanInorganic.id
+        }
+        return item == zoneBinID
     }
 }

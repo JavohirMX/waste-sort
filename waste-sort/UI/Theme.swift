@@ -46,6 +46,8 @@ enum Theme {
     /// One-shot flare at the moment the answer lands.
     static let confirmFlashDuration: TimeInterval = 0.5
     static let confirmFlashSpread: CGFloat = 10
+    /// Dirty-recyclable box: residual fill/stroke on the top-left, recyclable on the bottom-right.
+    static let dirtyRecyclableFillOpacity: Double = 0.28
 
     static let categoryLabelFont = Font.system(size: 14, weight: .semibold)
     static let statsBackground = Color(red: 245 / 255, green: 239 / 255, blue: 228 / 255)

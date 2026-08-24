@@ -12,9 +12,9 @@ nonisolated struct CategoryReading: Equatable, Sendable {
     let confidence: Double
 }
 
-/// A category the on-device model committed to for one item, and that was accepted.
+    /// A category the on-device model committed to for one item, and that was accepted.
 nonisolated struct ConfirmedCategory: Equatable, Sendable {
-    /// A `BinGuide` id — `organic`, `residual`, or `clean_inorganic`.
+    /// A `BinGuide` id — `organic`, `residual`, `clean_inorganic`, or `dirty_recyclable`.
     let binID: String
     let confidence: Double
     let label: String

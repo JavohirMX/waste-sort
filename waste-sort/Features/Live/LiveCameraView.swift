@@ -110,12 +110,7 @@ struct LiveCameraView: View {
                             flash(zoneFrame.deposits)
                         }
 
-                        var nextCounts: [String: Int] = [:]
-                        for track in tracked where !track.isCoasting {
-                            let binID = BinGuide.info(for: track.classKey).id
-                            guard binID != BinGuide.unknown.id else { continue }
-                            nextCounts[binID, default: 0] += 1
-                        }
+                        var nextCounts = CategoryPresence.counts(from: tracked)
                         if nextCounts != counts {
                             counts = nextCounts
                         }
@@ -229,6 +224,12 @@ struct LiveCameraView: View {
                                 .transition(.move(edge: .leading).combined(with: .opacity))
                                 .id(last.id)
                             }
+                            if tracks.contains(where: {
+                                !$0.isCoasting && BinGuide.isDirtyRecyclable($0.classKey)
+                            }) {
+                                DirtyRecyclableSuggestionChip()
+                                    .transition(.move(edge: .leading).combined(with: .opacity))
+                            }
                             if settings.foundationConfirmationEnabled,
                                settings.foundationVerdictLogEnabled,
                                let verdict = verdictLog.records.first
@@ -249,6 +250,12 @@ struct LiveCameraView: View {
                     .animation(
                         .spring(response: 0.35, dampingFraction: 0.7),
                         value: history.events.first?.id
+                    )
+                    .animation(
+                        .spring(response: 0.35, dampingFraction: 0.7),
+                        value: tracks.contains(where: {
+                            !$0.isCoasting && BinGuide.isDirtyRecyclable($0.classKey)
+                        })
                     )
                     .animation(
                         .spring(response: 0.35, dampingFraction: 0.7),
