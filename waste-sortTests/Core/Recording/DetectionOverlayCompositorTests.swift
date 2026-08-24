@@ -20,7 +20,7 @@ struct DetectionOverlayCompositorTests {
                 className: "residual",
                 conf: 0.64,
                 displayXywhn: CGRect(x: 0.55, y: 0.4, width: 0.25, height: 0.3)
-            ),
+            )
         ]
 
         let rendered = DetectionOverlayCompositor.render(

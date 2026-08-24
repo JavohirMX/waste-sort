@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import UIKit
 
 /// Persisted display overrides for the three ML bins (label, icon, colour, order).
 nonisolated struct BinCustomization: Codable, Equatable, Sendable, Identifiable {
@@ -66,17 +67,38 @@ enum BinColorToken: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The bar's resting fill. The three design accents take their calibrated idle
+    /// tones; the other ten dim the chosen color.
     var idleColor: Color {
         switch self {
-        case .yellow: Color(red: 196 / 255, green: 164 / 255, blue: 106 / 255)
-        case .green: Color(red: 107 / 255, green: 143 / 255, blue: 94 / 255)
-        case .black: Color(red: 82 / 255, green: 82 / 255, blue: 91 / 255)
-        default: color.opacity(0.55)
+        case .green: BinGuide.organic.idleColor
+        case .black: BinGuide.residual.idleColor
+        case .yellow: BinGuide.cleanInorganic.idleColor
+        default: color.opacity(0.45)
         }
     }
 
     static func from(_ raw: String) -> BinColorToken {
         BinColorToken(rawValue: raw) ?? .green
+    }
+}
+
+private extension Color {
+    /// Same hue and saturation, less brightness - the design's top gradient stop is a
+    /// fraction of its bottom one.
+    func dimmedBrightness(_ factor: CGFloat) -> Color {
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard UIColor(self).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        else { return self }
+        return Color(
+            hue: Double(hue),
+            saturation: Double(saturation),
+            brightness: Double(brightness * factor),
+            opacity: Double(alpha)
+        )
     }
 }
 
@@ -106,8 +128,7 @@ final class BinStyleStore: ObservableObject {
         siteName = defaults.string(forKey: Keys.siteName) ?? Self.defaultSiteName
         if let data = defaults.data(forKey: Keys.customizations),
            let decoded = try? JSONDecoder().decode([BinCustomization].self, from: data),
-           Self.isValid(decoded)
-        {
+           Self.isValid(decoded) {
             customizations = decoded.sorted { $0.order < $1.order }
         } else {
             customizations = Self.defaultCustomizations()
@@ -259,11 +280,11 @@ final class BinStyleStore: ObservableObject {
             ),
             BinCustomization(
                 binID: BinGuide.cleanInorganic.id,
-                label: "Recyclable",
+                label: "Inorganic",
                 symbolName: BinIconOption.recycle.symbolName,
                 colorToken: BinColorToken.yellow.rawValue,
                 order: 2
-            ),
+            )
         ]
     }
 }

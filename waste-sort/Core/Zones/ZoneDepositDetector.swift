@@ -7,9 +7,21 @@ nonisolated struct ZoneDeposit: Identifiable, Equatable, Sendable {
     let id: UUID
     /// Tracker id the object carried when it was last seen, for cross-referencing the raw log.
     let trackID: Int
+    /// The bin verdict the system advised. When belief was decisive this is the model's
+    /// top class; when it was not, this is `BinGuide.fallbackBinID` — residual, the
+    /// regulation-safe stream.
     let classKey: String
     let className: String
+    /// Belief probability behind `classKey` (0…1). For fallback verdicts this is how
+    /// much evidence existed at all — deliberately unimpressive.
     let conf: Float
+    /// The model's own leader regardless of decisiveness, for diagnostics and CSV
+    /// post-analysis of where the engine had to overrule it.
+    let modelTopClassKey: String
+    /// True when the verdict was resolved by fallback rather than a confident read.
+    let wasUncertain: Bool
+    /// Lead of the top class over the runner-up (0…1). Small values flag coin flips.
+    let margin: Float
     /// Last box the object was seen in, normalized image space — inside the zone for an
     /// ordinary deposit, just short of it for a trajectory one.
     let boxXywhn: CGRect
@@ -63,6 +75,18 @@ nonisolated struct ZoneFrameResult: Equatable, Sendable {
     var throwFeedbackCues: [ThrowFeedbackCue] = []
     /// Objects whose preview should come down (left the wrong zone, or came back).
     var cancelledThrowFeedbackIDs: Set<UUID> = []
+}
+
+/// The frozen bin verdict for an object at the moment it vanishes.
+private nonisolated struct DepositVerdict: Equatable, Sendable {
+    let classKey: String
+    let className: String
+    /// Belief probability behind `classKey`.
+    let conf: Float
+    /// The model's own leader even when `classKey` overruled it via fallback.
+    let modelTopClassKey: String
+    let wasUncertain: Bool
+    let margin: Float
 }
 
 /// Decides when an item counts as thrown away.
@@ -122,6 +146,9 @@ nonisolated final class ZoneDepositDetector {
     /// zone, in normalized image widths. Roughly a hand's width: the model routinely loses an
     /// item in the last few centimetres — behind the hand releasing it, or under the lid — and
     /// the calibrated quad is the bin mouth, not the whole catchment around it.
+    /// Which decision math resolves the frozen verdict at vanish. Mirrored from
+    /// settings on the inference queue, same as the tracker's copy.
+    var pipeline: DecisionPipeline = .belief
     var trajectoryReach: CGFloat = 0.12
     /// Minimum smoothed speed, in normalized widths per second, for a direction of travel to
     /// mean anything. Below this the object was resting and the box was merely jittering.
@@ -154,17 +181,23 @@ nonisolated final class ZoneDepositDetector {
         let id = UUID()
         var trackID: Int
         var trackSegments = 1
-        /// Cumulative confidence per class, so a flicker to the wrong label does not
-        /// outvote a steady reading.
-        var classWeights: [String: (className: String, weight: Float, conf: Float)] = [:]
+        /// Fused class belief across the object's whole life. Recency decay is long
+        /// (deposit preset) so a flicker to the wrong label cannot outvote a steady
+        /// reading, while a genuinely different item later in life still can.
+        let belief = BeliefEngine(config: .deposit)
+        /// Lifetime window-vote math for the legacy pipeline. Idle under `.belief`.
+        var legacy = LegacyDecisionEngine()
         /// A Foundation-model confirmation, once one has been attached to this object.
         ///
-        /// Not a vote. The tally below sums confidence over every frame, so an item seen for
+        /// Not a vote. The verdicts below sum confidence over every frame, so an item seen for
         /// a second before the model answers has already banked far more weight for the
         /// detector's guess than the confirmation could ever outvote — and the model is
         /// asked precisely because that guess is the thing in doubt. A confirmation
-        /// therefore replaces the tally outright.
+        /// therefore replaces the verdict outright, whichever pipeline is active.
         var confirmed: (key: String, name: String, conf: Float)?
+        /// Distinct classes the model reported, for the `classesSeen` diagnostics.
+        private(set) var classesSeen = 0
+        private var seenClasses: Set<String> = []
         /// Evidence the object is not simply waste already lying in a bin: it was seen
         /// outside every zone at some point, or it was first seen inside a *closed* one.
         var arrivedFromOutside = false
@@ -205,7 +238,21 @@ nonisolated final class ZoneDepositDetector {
             self.lastSeenAt = time
         }
 
-        func note(_ sighting: Sighting, at time: CFAbsoluteTime, smoothing: CGFloat) {
+        func note(
+            _ sighting: Sighting,
+            at time: CFAbsoluteTime,
+            smoothing: CGFloat,
+            pipeline: DecisionPipeline
+        ) {
+            if pipeline == .legacy {
+                legacy.observe(
+                    classKey: sighting.classKey,
+                    className: sighting.className,
+                    conf: sighting.conf,
+                    at: time
+                )
+                return
+            }
             if detectedFrames > 0 {
                 let dt = CGFloat(max(time - lastSeenAt, 1e-3))
                 let instant = CGPoint(
@@ -223,23 +270,94 @@ nonisolated final class ZoneDepositDetector {
             if sighting.confirmedBinID != nil {
                 confirmed = (sighting.classKey, sighting.className, sighting.conf)
             }
-            let existing = classWeights[sighting.classKey]
-            classWeights[sighting.classKey] = (
+            if seenClasses.insert(sighting.classKey).inserted {
+                classesSeen += 1
+            }
+            if pipeline == .legacy {
+                legacy.observe(
+                    classKey: sighting.classKey,
+                    className: sighting.className,
+                    conf: sighting.conf,
+                    at: time
+                )
+                return
+            }
+            belief.observe(
+                classKey: sighting.classKey,
                 className: sighting.className,
-                weight: (existing?.weight ?? 0) + sighting.conf,
-                conf: sighting.conf
+                conf: sighting.conf,
+                at: time
             )
         }
 
-        /// What the item goes into the log as: the model's confirmation if there is one,
-        /// otherwise the class with the most confidence behind it across the object's life.
-        var verdictClass: (key: String, name: String, conf: Float) {
-            if let confirmed { return confirmed }
-            let best = classWeights.max { a, b in
-                a.value.weight == b.value.weight ? a.key < b.key : a.value.weight < b.value.weight
+        /// The object's bin verdict, frozen once when it vanishes so decay does not
+        /// keep running during the reacquisition window.
+        ///
+        /// A Foundation-model confirmation replaces the verdict outright. Decisive
+        /// beliefs report the winning class; anything else falls back to the safe
+        /// stream rather than parroting a coin flip as a confident answer.
+        func resolvedVerdict(at time: CFAbsoluteTime, pipeline: DecisionPipeline) -> DepositVerdict {
+            if let confirmed {
+                return DepositVerdict(
+                    classKey: confirmed.key,
+                    className: confirmed.name,
+                    conf: confirmed.conf,
+                    modelTopClassKey: confirmed.key,
+                    wasUncertain: false,
+                    margin: 1
+                )
             }
-            guard let best else { return (last.classKey, last.className, last.conf) }
-            return (best.key, best.value.className, best.value.conf)
+            if pipeline == .legacy {
+                // Main's verdict: lifetime confidence argmax, always confident.
+                let verdict = legacy.verdict()
+                return DepositVerdict(
+                    classKey: verdict.classKey,
+                    className: verdict.className,
+                    conf: max(verdict.weight, 0.001),
+                    modelTopClassKey: verdict.classKey,
+                    wasUncertain: false,
+                    margin: 1
+                )
+            }
+            let state = belief.currentState(at: time)
+            guard state.isDecided, !state.topKey.isEmpty else {
+                let fallback = BinGuide.bin(id: BinGuide.fallbackBinID)
+                return DepositVerdict(
+                    classKey: fallback.id,
+                    className: fallback.title,
+                    conf: Float(state.probabilities[state.topKey] ?? 0),
+                    modelTopClassKey: state.topKey,
+                    wasUncertain: true,
+                    margin: Float(state.margin)
+                )
+            }
+            return DepositVerdict(
+                classKey: state.topKey,
+                className: state.classNameByKey[state.topKey] ?? state.topKey,
+                conf: Float(state.probabilities[state.topKey] ?? 0),
+                modelTopClassKey: state.topKey,
+                wasUncertain: false,
+                margin: Float(state.margin)
+            )
+        }
+
+        /// Live category attribution for HUD cues (not scoring): the confirmation when
+        /// present, otherwise the active pipeline's current leader with no fallback.
+        func verdictClass(at time: CFAbsoluteTime, pipeline: DecisionPipeline) -> (key: String, name: String, conf: Float) {
+            if let confirmed { return confirmed }
+            if pipeline == .legacy {
+                let verdict = legacy.verdict()
+                return (verdict.classKey, verdict.className, max(verdict.weight, 0.001))
+            }
+            let state = belief.currentState(at: time)
+            guard !state.topKey.isEmpty else {
+                return (BinGuide.unknown.id, BinGuide.unknown.title, 0)
+            }
+            return (
+                state.topKey,
+                state.classNameByKey[state.topKey] ?? state.topKey,
+                Float(state.probabilities[state.topKey] ?? 0)
+            )
         }
     }
 
@@ -311,7 +429,7 @@ nonisolated final class ZoneDepositDetector {
             object.missingSince = nil
             object.pendingTarget = nil
             object.sawBinOpen = false
-            object.note(sighting, at: timestamp, smoothing: velocitySmoothing)
+            object.note(sighting, at: timestamp, smoothing: velocitySmoothing, pipeline: pipeline)
 
             if wasMissing, object.didEmitThrowFeedback {
                 cancelledThrowFeedbackIDs.insert(object.id)
@@ -358,7 +476,7 @@ nonisolated final class ZoneDepositDetector {
             if let id = expireInZoneIncorrectIfNeeded(object, at: timestamp) {
                 cancelledThrowFeedbackIDs.insert(id)
             }
-            if let cue = inZoneIncorrectCue(for: object, at: timestamp) {
+            if let cue = inZoneIncorrectCue(for: object, at: timestamp, pipeline: pipeline) {
                 throwFeedbackCues.append(cue)
             }
         }
@@ -381,42 +499,15 @@ nonisolated final class ZoneDepositDetector {
             if let id = expireInZoneIncorrectIfNeeded(object, at: timestamp) {
                 cancelledThrowFeedbackIDs.insert(id)
             }
-            if let cue = throwPreviewCue(for: object, at: timestamp) {
+            if let cue = throwPreviewCue(for: object, at: timestamp, pipeline: pipeline) {
                 throwFeedbackCues.append(cue)
             }
         }
 
-        let settled = objects.filter { object in
-            guard let missingSince = object.missingSince else { return false }
-            return timestamp - missingSince >= reacquireGrace
-        }
-        var deposits: [ZoneDeposit] = []
-        for object in settled {
-            deposits.append(contentsOf: deposit(from: object))
-        }
-        if !settled.isEmpty {
-            let dead = Set(settled.map(ObjectIdentifier.init))
-            objects.removeAll { dead.contains(ObjectIdentifier($0)) }
-            byTrackID = byTrackID.filter { !dead.contains(ObjectIdentifier($0.value)) }
-        }
-
-        var armedZoneIDs = Set<UUID>()
-        var settlingZoneIDs = Set<UUID>()
-        for object in objects {
-            if let target = object.pendingTarget {
-                settlingZoneIDs.insert(target.zoneID)
-                continue
-            }
-            guard object.missingSince == nil,
-                  object.arrivedFromOutside,
-                  let zoneID = object.zoneID,
-                  object.dwell >= requiredDwellFrames
-            else { continue }
-            armedZoneIDs.insert(zoneID)
-        }
+        let (deposits, armedZoneIDs, settlingZoneIDs) = reapAndArm(at: timestamp)
 
         return ZoneFrameResult(
-            deposits: deposits.sorted { $0.trackID < $1.trackID },
+            deposits: deposits,
             occupiedZoneIDs: occupied,
             armedZoneIDs: armedZoneIDs,
             settlingZoneIDs: settlingZoneIDs,
@@ -425,7 +516,13 @@ nonisolated final class ZoneDepositDetector {
         )
     }
 
-    private func throwPreviewCue(for object: TrackedObject, at timestamp: CFAbsoluteTime) -> ThrowFeedbackCue? {
+    private func throwPreviewCue(
+        for object: TrackedObject,
+        at timestamp: CFAbsoluteTime,
+        pipeline: DecisionPipeline
+    ) -> ThrowFeedbackCue? {
+        let dbgElapsed = timestamp - (object.missingSince ?? 0)
+        print("DBG-ELAPSED \(dbgElapsed) grace=\(effectiveThrowFeedbackGrace) pendingBin=\(object.pendingTarget?.binID ?? "nil")")
         guard !object.didEmitThrowFeedback,
               let missingSince = object.missingSince,
               let target = object.pendingTarget,
@@ -436,7 +533,8 @@ nonisolated final class ZoneDepositDetector {
             return nil
         }
         object.didEmitThrowFeedback = true
-        let isCorrect = BinGuide.info(for: object.verdictClass.key).id == target.binID
+        let vote = object.verdictClass(at: timestamp, pipeline: pipeline)
+        let isCorrect = BinGuide.isAcceptedDeposit(classKey: vote.key, zoneBinID: target.binID)
         return ThrowFeedbackCue(
             objectID: object.id,
             zoneBinID: target.binID,
@@ -445,7 +543,11 @@ nonisolated final class ZoneDepositDetector {
         )
     }
 
-    private func inZoneIncorrectCue(for object: TrackedObject, at timestamp: CFAbsoluteTime) -> ThrowFeedbackCue? {
+    private func inZoneIncorrectCue(
+        for object: TrackedObject,
+        at timestamp: CFAbsoluteTime,
+        pipeline: DecisionPipeline
+    ) -> ThrowFeedbackCue? {
         guard object.arrivedFromOutside,
               !object.didEmitInZoneIncorrect,
               object.missingSince == nil,
@@ -453,7 +555,7 @@ nonisolated final class ZoneDepositDetector {
               let entered = object.zoneEnteredAt,
               timestamp - entered >= throwFeedbackGrace
         else { return nil }
-        let category = BinGuide.info(for: object.verdictClass.key).id
+        let category = BinGuide.info(for: object.verdictClass(at: timestamp, pipeline: pipeline).key).id
         guard category != BinGuide.unknown.id, category != object.zoneBinID else { return nil }
         object.didEmitInZoneIncorrect = true
         object.lastWrongZoneBinID = object.zoneBinID
@@ -492,6 +594,42 @@ nonisolated final class ZoneDepositDetector {
         object.lastWrongZoneBinID = nil
         object.leftWrongZoneAt = nil
         return object.id
+    }
+
+    /// Scores everything whose reacquisition window ran out, drops it, and computes the
+    /// per-zone armed/settling sets the HUD reacts to.
+    private func reapAndArm(
+        at timestamp: CFAbsoluteTime
+    ) -> (deposits: [ZoneDeposit], armed: Set<UUID>, settling: Set<UUID>) {
+        let settled = objects.filter { object in
+            guard let missingSince = object.missingSince else { return false }
+            return timestamp - missingSince >= reacquireGrace
+        }
+        var deposits: [ZoneDeposit] = []
+        for object in settled {
+            deposits.append(contentsOf: deposit(from: object))
+        }
+        if !settled.isEmpty {
+            let dead = Set(settled.map(ObjectIdentifier.init))
+            objects.removeAll { dead.contains(ObjectIdentifier($0)) }
+            byTrackID = byTrackID.filter { !dead.contains(ObjectIdentifier($0.value)) }
+        }
+
+        var armedZoneIDs = Set<UUID>()
+        var settlingZoneIDs = Set<UUID>()
+        for object in objects {
+            if let target = object.pendingTarget {
+                settlingZoneIDs.insert(target.zoneID)
+                continue
+            }
+            guard object.missingSince == nil,
+                  object.arrivedFromOutside,
+                  let zoneID = object.zoneID,
+                  object.dwell >= requiredDwellFrames
+            else { continue }
+            armedZoneIDs.insert(zoneID)
+        }
+        return (deposits.sorted { $0.trackID < $1.trackID }, armedZoneIDs, settlingZoneIDs)
     }
 
     /// Resolves a live track to the object it belongs to, stitching across a dropout when
@@ -598,7 +736,7 @@ nonisolated final class ZoneDepositDetector {
                 CGPoint(x: probe.minX, y: probe.minY),
                 CGPoint(x: probe.maxX, y: probe.minY),
                 CGPoint(x: probe.maxX, y: probe.maxY),
-                CGPoint(x: probe.minX, y: probe.maxY),
+                CGPoint(x: probe.minX, y: probe.maxY)
             ]
             let hit = approaching.first { zone in samples.contains(where: zone.contains) }
             if let hit {
@@ -618,7 +756,7 @@ nonisolated final class ZoneDepositDetector {
         // Nothing goes into a closed bin.
         guard let target = object.pendingTarget, object.sawBinOpen else { return [] }
 
-        let verdict = object.verdictClass
+        let verdict = object.resolvedVerdict(at: object.missingSince ?? object.lastSeenAt, pipeline: pipeline)
         let box = target.viaTrajectory
             ? object.last.box
             : (object.lastInZone?.box ?? object.last.box)
@@ -626,19 +764,22 @@ nonisolated final class ZoneDepositDetector {
             ZoneDeposit(
                 id: object.id,
                 trackID: object.trackID,
-                classKey: verdict.key,
-                className: verdict.name,
+                classKey: verdict.classKey,
+                className: verdict.className,
                 conf: verdict.conf,
+                modelTopClassKey: verdict.modelTopClassKey,
+                wasUncertain: verdict.wasUncertain,
+                margin: verdict.margin,
                 boxXywhn: box,
                 zoneID: target.zoneID,
                 zoneName: target.zoneName,
                 zoneBinID: target.binID,
                 dwellFrames: target.viaTrajectory ? 0 : object.dwell,
                 trackSegments: object.trackSegments,
-                classesSeen: object.classWeights.count,
+                classesSeen: object.classesSeen,
                 viaTrajectory: target.viaTrajectory,
                 binWasOpen: object.sawBinOpen
-            ),
+            )
         ]
     }
 }

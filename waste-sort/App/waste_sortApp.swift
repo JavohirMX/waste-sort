@@ -6,9 +6,10 @@
 //
 
 import SwiftUI
+import TipKit
 
 @main
-struct waste_sortApp: App {
+struct WasteSortApp: App {
     @StateObject private var settings = AppSettings.shared
     @StateObject private var recording = RecordingController.shared
     @StateObject private var zoneStore = ZoneStore.shared
@@ -19,6 +20,7 @@ struct waste_sortApp: App {
 
     init() {
         BrandFont.register()
+        try? Tips.configure()
     }
 
     var body: some Scene {

@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftUI
 import UIKit
 
 /// Burns tracked boxes, class, confidence, and a clock onto a camera frame.
@@ -7,7 +8,7 @@ nonisolated enum DetectionOverlayCompositor {
         image: UIImage,
         tracks: [TrackedDetection],
         timestamp: Date,
-        rotation: LivePreviewRotation = .oneEighty,
+        rotation: LivePreviewRotation = .zero,
         mirror: Bool = false
     ) -> UIImage {
         let source = image.normalizedCGImage() ?? image
@@ -76,7 +77,7 @@ nonisolated enum DetectionOverlayCompositor {
         let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: UIColor.white,
+            .foregroundColor: UIColor.white
         ]
         let textSize = (label as NSString).size(withAttributes: attributes)
         let padding = CGSize(width: fontSize * 0.45, height: fontSize * 0.22)
@@ -109,14 +110,11 @@ nonisolated enum DetectionOverlayCompositor {
         canvasSize: CGSize,
         fontSize: CGFloat
     ) {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        let text = formatter.string(from: date)
+        let text = TimestampFormatters.overlayClock.string(from: date)
         let font = UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .semibold)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: UIColor.white,
+            .foregroundColor: UIColor.white
         ]
         let textSize = (text as NSString).size(withAttributes: attributes)
         let padding = CGSize(width: fontSize * 0.55, height: fontSize * 0.28)
@@ -145,34 +143,15 @@ nonisolated enum DetectionOverlayCompositor {
     }
 }
 
+/// Overlay-video styling derived from `BinGuide`, so burned-in labels can never
+/// drift from the live HUD's category metadata.
 nonisolated enum OverlayBinStyle {
     static func displayName(for classKey: String) -> String {
-        switch normalized(classKey) {
-        case "organic": return "ORGANIC"
-        case "residual": return "RESIDUAL"
-        case "clean_inorganic", "cleaninorganic", "inorganic": return "RECYCLABLE"
-        default: return "UNKNOWN"
-        }
+        BinGuide.info(for: classKey).displayName
     }
 
     static func uiColor(for classKey: String) -> UIColor {
-        switch normalized(classKey) {
-        case "organic":
-            return UIColor(red: 34 / 255, green: 197 / 255, blue: 94 / 255, alpha: 1)
-        case "residual":
-            return UIColor(red: 39 / 255, green: 39 / 255, blue: 42 / 255, alpha: 1)
-        case "clean_inorganic", "cleaninorganic", "inorganic":
-            return UIColor(red: 234 / 255, green: 179 / 255, blue: 8 / 255, alpha: 1)
-        default:
-            return UIColor(red: 113 / 255, green: 113 / 255, blue: 122 / 255, alpha: 1)
-        }
-    }
-
-    private static func normalized(_ classKey: String) -> String {
-        classKey
-            .lowercased()
-            .replacingOccurrences(of: " ", with: "_")
-            .replacingOccurrences(of: "-", with: "_")
+        UIColor(BinGuide.info(for: classKey).color)
     }
 }
 

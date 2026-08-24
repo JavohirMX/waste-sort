@@ -1,13 +1,21 @@
 import Foundation
+import os
 
 /// Session-scoped detection log. Appends JSONL while recording, then writes a Documents CSV on finish.
+///
+/// Thread safety: `append` is called from the YOLO inference queue while
+/// `startSession`/`finishSession`/`discardSession` run on the main thread.
+/// All mutable state is guarded by `stateLock`; file writes stay inline because
+/// JSONL payloads are small and ordering matters more than throughput here.
 final class DetectionLogStore {
     static let shared = DetectionLogStore()
 
     let documentsDirectory: URL
     private let supportDirectory: URL
     private let fileManager: FileManager
+    private let stateLock = NSLock()
 
+    // MARK: State guarded by stateLock
     private var meta: DetectionSessionMeta?
     private var events: [DetectionLogEvent] = []
     private var jsonlHandle: FileHandle?
@@ -25,7 +33,11 @@ final class DetectionLogStore {
         return decoder
     }
 
-    var isSessionActive: Bool { meta != nil }
+    var isSessionActive: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return meta != nil
+    }
 
     init(
         documentsDirectory: URL? = nil,
@@ -47,61 +59,99 @@ final class DetectionLogStore {
     }
 
     func startSession(id: String, startedAt: Date, filePrefix: String) {
-        discardSessionFiles()
-        let meta = DetectionSessionMeta(
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        discardLocked()
+        let newMeta = DetectionSessionMeta(
             sessionId: id,
             sessionStartedAt: startedAt,
             filePrefix: filePrefix
         )
-        self.meta = meta
+        meta = newMeta
         events = []
 
-        if let data = try? encoder.encode(meta) {
-            try? data.write(to: metaURL(for: id), options: .atomic)
+        do {
+            let data = try encoder.encode(newMeta)
+            try data.write(to: metaURL(for: id), options: .atomic)
+        } catch {
+            AppLog.persistence.error("Failed to write session meta \(id): \(error.localizedDescription)")
         }
 
         let jsonl = jsonlURL(for: id)
-        fileManager.createFile(atPath: jsonl.path, contents: nil)
-        jsonlHandle = try? FileHandle(forWritingTo: jsonl)
-        _ = try? jsonlHandle?.seekToEnd()
+        if !fileManager.createFile(atPath: jsonl.path, contents: nil) {
+            AppLog.persistence.error("Failed to create JSONL at \(jsonl.path)")
+        }
+        do {
+            let handle = try FileHandle(forWritingTo: jsonl)
+            try handle.seekToEnd()
+            jsonlHandle = handle
+        } catch {
+            AppLog.persistence.error("JSONL handle open failed for \(id): \(error.localizedDescription)")
+        }
     }
 
     func append(_ event: DetectionLogEvent) {
-        guard meta != nil else { return }
+        stateLock.lock()
+        guard meta != nil else {
+            stateLock.unlock()
+            return
+        }
         events.append(event)
-        guard let data = try? encoder.encode(event),
-              var line = String(data: data, encoding: .utf8)
-        else { return }
-        line.append("\n")
-        if let payload = line.data(using: .utf8) {
-            try? jsonlHandle?.write(contentsOf: payload)
-            try? jsonlHandle?.synchronize()
+
+        var payload: Data?
+        do {
+            var line = String(data: try encoder.encode(event), encoding: .utf8) ?? ""
+            line.append("\n")
+            payload = line.data(using: .utf8)
+        } catch {
+            AppLog.persistence.error("JSONL encode failed: \(error.localizedDescription)")
+        }
+        let handle = jsonlHandle
+        stateLock.unlock()
+
+        // Write outside the lock: FileHandle.write is itself synchronized and
+        // single-consumer here (only this method touches the handle), so
+        // ordering is preserved by call order on the inference queue.
+        if let payload {
+            do {
+                try handle?.write(contentsOf: payload)
+                try handle?.synchronize()
+            } catch {
+                AppLog.persistence.error("JSONL write failed: \(error.localizedDescription)")
+            }
         }
     }
 
     /// Writes Documents CSV (header-only when no events) and clears the active session.
     @discardableResult
     func finishSession() -> URL? {
-        guard let meta else { return nil }
-        closeJSONL()
-        let url = writeCSV(events: events, filePrefix: meta.filePrefix)
-        deleteSessionFiles(id: meta.sessionId)
+        stateLock.lock()
+        guard let currentMeta = meta else {
+            stateLock.unlock()
+            return nil
+        }
+        closeJSONLLocked()
+        let finishedEvents = events
         self.meta = nil
-        events = []
+        self.events = []
+        stateLock.unlock()
+
+        let url = writeCSV(events: finishedEvents, filePrefix: currentMeta.filePrefix)
+        deleteSessionFiles(id: currentMeta.sessionId)
         return url
     }
 
     /// Drops an in-progress session without writing a CSV (failed recording start).
     func discardSession() {
-        discardSessionFiles()
-        meta = nil
-        events = []
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        discardLocked()
     }
 
     /// Turns leftover JSONL sessions into Documents CSVs (crash / force-quit recovery).
     @discardableResult
     func recoverLeftoverSessions() -> [URL] {
-        guard meta == nil else { return [] }
+        guard !isSessionActive else { return [] }
 
         let listed = (try? fileManager.contentsOfDirectory(
             at: supportDirectory,
@@ -115,6 +165,7 @@ final class DetectionLogStore {
             guard let data = try? Data(contentsOf: metaFile),
                   let leftover = try? decoder.decode(DetectionSessionMeta.self, from: data)
             else {
+                AppLog.persistence.error("Discarding unreadable leftover meta \(metaFile.lastPathComponent)")
                 try? fileManager.removeItem(at: metaFile)
                 continue
             }
@@ -122,10 +173,23 @@ final class DetectionLogStore {
             let recoveredEvents = loadEvents(from: jsonl)
             if let csv = writeCSV(events: recoveredEvents, filePrefix: leftover.filePrefix) {
                 written.append(csv)
+            } else {
+                AppLog.persistence.error("Recovery CSV write failed for \(leftover.filePrefix)")
             }
             deleteSessionFiles(id: leftover.sessionId)
         }
         return written
+    }
+
+    // MARK: - Private (call with stateLock held unless noted)
+
+    private func discardLocked() {
+        closeJSONLLocked()
+        if let meta {
+            deleteSessionFiles(id: meta.sessionId)
+        }
+        meta = nil
+        events = []
     }
 
     private func writeCSV(events: [DetectionLogEvent], filePrefix: String) -> URL? {
@@ -136,6 +200,7 @@ final class DetectionLogStore {
             try body.write(to: url, atomically: true, encoding: .utf8)
             return url
         } catch {
+            AppLog.persistence.error("CSV write failed for \(filePrefix): \(error.localizedDescription)")
             return nil
         }
     }
@@ -149,25 +214,22 @@ final class DetectionLogStore {
         }
     }
 
-    private func jsonlURL(for sessionId: String) -> URL {
+    private nonisolated func jsonlURL(for sessionId: String) -> URL {
         supportDirectory.appendingPathComponent("active-\(sessionId).jsonl")
     }
 
-    private func metaURL(for sessionId: String) -> URL {
+    private nonisolated func metaURL(for sessionId: String) -> URL {
         supportDirectory.appendingPathComponent("active-\(sessionId).json")
     }
 
-    private func closeJSONL() {
-        try? jsonlHandle?.synchronize()
-        try? jsonlHandle?.close()
-        jsonlHandle = nil
-    }
-
-    private func discardSessionFiles() {
-        closeJSONL()
-        if let meta {
-            deleteSessionFiles(id: meta.sessionId)
+    private func closeJSONLLocked() {
+        do {
+            try jsonlHandle?.synchronize()
+            try jsonlHandle?.close()
+        } catch {
+            AppLog.persistence.error("JSONL close failed: \(error.localizedDescription)")
         }
+        jsonlHandle = nil
     }
 
     private func deleteSessionFiles(id: String) {

@@ -54,7 +54,7 @@ struct DetectionGeometryTests {
             CGPoint(x: topLeft.minX, y: topLeft.minY),
             CGPoint(x: topLeft.maxX, y: topLeft.minY),
             CGPoint(x: topLeft.maxX, y: topLeft.maxY),
-            CGPoint(x: topLeft.minX, y: topLeft.maxY),
+            CGPoint(x: topLeft.minX, y: topLeft.maxY)
         ].map { DetectionGeometry.rotateNormalized($0, by: rotation) }
 
         let minX = corners.map(\.x).min() ?? 0
@@ -72,13 +72,13 @@ struct DetectionGeometryTests {
         let sizes = [
             (CGSize(width: 1920, height: 1080), CGSize(width: 834, height: 1194)),
             (CGSize(width: 1080, height: 1920), CGSize(width: 1194, height: 834)),
-            (CGSize(width: 1280, height: 720), CGSize(width: 1280, height: 720)),
+            (CGSize(width: 1280, height: 720), CGSize(width: 1280, height: 720))
         ]
         let points = [
             CGPoint(x: 0, y: 0),
             CGPoint(x: 0.5, y: 0.5),
             CGPoint(x: 0.2, y: 0.87),
-            CGPoint(x: 1, y: 1),
+            CGPoint(x: 1, y: 1)
         ]
         for (imageSize, viewSize) in sizes {
             for mirror in [false, true] {
@@ -124,7 +124,7 @@ struct DetectionGeometryTests {
             CGPoint(x: rect.minX, y: rect.minY),
             CGPoint(x: rect.maxX, y: rect.minY),
             CGPoint(x: rect.maxX, y: rect.maxY),
-            CGPoint(x: rect.minX, y: rect.maxY),
+            CGPoint(x: rect.minX, y: rect.maxY)
         ].map {
             DetectionGeometry.mapDisplayPoint(
                 normalized: $0,

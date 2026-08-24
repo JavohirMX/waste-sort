@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="c-green" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#3ED46E"/>
+      <stop offset="100%" stop-color="#149A45"/>
+    </linearGradient>
+    <linearGradient id="c-amber" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#DD9A06"/>
+      <stop offset="100%" stop-color="#FFD34D"/>
+    </linearGradient>
+    <linearGradient id="c-steel" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#68707A"/>
+      <stop offset="100%" stop-color="#3A3F47"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#F7F9F8"/>
+
+  <g transform="translate(0 64)">
+    <!-- hub ring -->
+    <circle cx="512" cy="512" r="84" fill="none" stroke="#16323F" stroke-width="24"/>
+
+    <!-- top arrow: organic (green) -->
+    <g>
+      <rect x="464" y="92" width="96" height="178" rx="48" fill="url(#c-green)"/>
+      <path d="M 414 252 L 610 252 L 512 374 Z" fill="#2FBF5F" stroke="#2FBF5F" stroke-width="20" stroke-linejoin="round"/>
+    </g>
+
+    <!-- lower-right arrow: recyclable (amber) -->
+    <g transform="rotate(120 512 512)">
+      <rect x="464" y="92" width="96" height="178" rx="48" fill="url(#c-amber)"/>
+      <path d="M 414 252 L 610 252 L 512 374 Z" fill="#EDAE11" stroke="#EDAE11" stroke-width="20" stroke-linejoin="round"/>
+    </g>
+
+    <!-- lower-left arrow: residual (steel) -->
+    <g transform="rotate(240 512 512)">
+      <rect x="464" y="92" width="96" height="178" rx="48" fill="url(#c-steel)"/>
+      <path d="M 414 252 L 610 252 L 512 374 Z" fill="#4A5158" stroke="#4A5158" stroke-width="20" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

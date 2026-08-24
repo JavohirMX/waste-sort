@@ -38,7 +38,7 @@ final class ZoneStore: ObservableObject {
         didSet { defaults.set(throwFeedbackGrace, forKey: Keys.throwFeedbackGrace) }
     }
 
-    /// Drives the inline calibration mode on the Live tab.
+    /// Drives the inline calibration mode on the live camera screen.
     @Published var isEditingZones = false
 
     private let defaults: UserDefaults
@@ -63,8 +63,7 @@ final class ZoneStore: ObservableObject {
         self.defaults = defaults
 
         if let data = defaults.data(forKey: Keys.zones),
-           let decoded = try? JSONDecoder().decode([DropZone].self, from: data)
-        {
+           let decoded = try? JSONDecoder().decode([DropZone].self, from: data) {
             zones = decoded
         } else {
             zones = DropZone.defaults(

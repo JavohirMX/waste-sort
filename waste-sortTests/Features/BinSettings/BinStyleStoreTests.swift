@@ -59,7 +59,7 @@ struct BinStyleStoreTests {
         let reversed = [
             BinGuide.cleanInorganic.id,
             BinGuide.residual.id,
-            BinGuide.organic.id,
+            BinGuide.organic.id
         ]
         store.reorder(
             orderedBinIDs: reversed,

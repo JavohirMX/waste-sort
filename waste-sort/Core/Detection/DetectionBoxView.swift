@@ -336,7 +336,8 @@ struct DetectionBoxOverlay: View {
                         confidence: track.conf,
                         style: style,
                         isCoasting: track.isCoasting,
-                        confirmation: confirmation.state(for: track.id)
+                        confirmation: confirmation.state(for: track.id),
+                        isUncertain: track.beliefUncertain
                     )
                 }
             }
@@ -366,6 +367,10 @@ struct DetectionBoxView: View {
     var isCoasting: Bool = false
     /// What the on-device confirmation layer is doing with this item, if anything.
     var confirmation: TrackConfirmation = .idle
+    /// True when the belief engine cannot back the label. Dashes the border and adds a
+    /// question-mark chip so the kiosk never presents a coin flip as a verdict — even
+    /// while the confirmation layer is otherwise idle.
+    var isUncertain: Bool = false
 
     /// Decays from 1 to 0 over `Theme.confirmFlashDuration` the moment a verdict lands.
     @State private var flash: Double = 0
@@ -504,7 +509,8 @@ struct DetectionBoxView: View {
         case .thinking, .pending:
             return StrokeStyle(lineWidth: Theme.boxStrokeWidth, dash: Theme.confirmThinkingDash)
         case .idle:
-            return StrokeStyle(lineWidth: Theme.boxStrokeWidth)
+            // No confirmation intent, but the belief engine can still be unsure.
+            return StrokeStyle(lineWidth: Theme.boxStrokeWidth, dash: isUncertain ? [6, 4] : [])
         }
     }
 
@@ -514,6 +520,14 @@ struct DetectionBoxView: View {
         let turns = date.timeIntervalSinceReferenceDate / Theme.confirmThinkingPulsePeriod
         let wave = 0.5 + 0.5 * sin(turns * 2 * .pi)
         return Theme.confirmThinkingOpacity + Theme.confirmThinkingPulseAmount * wave
+    }
+
+    /// Small question mark appended to the badge for unsure items.
+    private var uncertaintyDot: some View {
+        Image(systemName: "questionmark.circle.fill")
+            .font(.system(size: capsuleFontSize, weight: .bold))
+            .foregroundStyle(.white)
+            .symbolRenderingMode(.hierarchical)
     }
 
     private var percentText: String {
@@ -532,6 +546,9 @@ struct DetectionBoxView: View {
                 Image(systemName: bin.symbolName)
                     .font(.system(size: iconOnlyFontSize, weight: .bold))
                     .foregroundStyle(.white)
+                if isUncertain {
+                    uncertaintyDot
+                }
             }
         } else {
             HStack(spacing: 4 * scale) {
@@ -550,6 +567,9 @@ struct DetectionBoxView: View {
                         .font(.system(size: capsuleFontSize, weight: .bold).monospacedDigit())
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
+                }
+                if isUncertain {
+                    uncertaintyDot
                 }
             }
             .foregroundStyle(.white)

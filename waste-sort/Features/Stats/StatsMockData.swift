@@ -4,16 +4,16 @@ import Foundation
 nonisolated enum StatsMockData {
     /// Design mock “bins filled” counts (not destination throw totals).
     static let binsFilled: [String: Int] = [
-        BinGuide.organic.id: 6,
-        BinGuide.residual.id: 8,
-        BinGuide.cleanInorganic.id: 3,
+        BinGuide.organic.id: 4,
+        BinGuide.residual.id: 6,
+        BinGuide.cleanInorganic.id: 8
     ]
 
     /// Design mock category bar heights (sum 142) for Daily overlay — taller organic fill on 0…100 domain.
     static let categoryCounts: [String: Int] = [
         BinGuide.organic.id: 80,
         BinGuide.residual.id: 42,
-        BinGuide.cleanInorganic.id: 20,
+        BinGuide.cleanInorganic.id: 20
     ]
 
     /// Stable UUIDs so snapshots stay comparable in tests.
@@ -35,15 +35,15 @@ nonisolated enum StatsMockData {
     static func dailyTimelineBuckets(now: Date = Date(), calendar: Calendar = .current) -> [StatsTimeBucket] {
         let startOfDay = calendar.startOfDay(for: now)
         // Design: ~68 at 7am → slight rise → dip ~50 → climb → plateau ~190 ~5:30pm → ~140 at 7pm.
-        let points: [(hour: Int, minute: Int, generated: Int, misplaced: Int)] = [
-            (7, 0, 68, 18),
-            (8, 30, 72, 20),
-            (10, 30, 50, 10),
-            (13, 0, 85, 25),
-            (15, 0, 160, 60),
-            (16, 0, 180, 78),
-            (17, 30, 190, 82),
-            (19, 0, 140, 55),
+        let points: [DesignPoint] = [
+            DesignPoint(hour: 7, minute: 0, generated: 68, misplaced: 18),
+            DesignPoint(hour: 8, minute: 30, generated: 72, misplaced: 20),
+            DesignPoint(hour: 10, minute: 30, generated: 50, misplaced: 10),
+            DesignPoint(hour: 13, minute: 0, generated: 85, misplaced: 25),
+            DesignPoint(hour: 15, minute: 0, generated: 160, misplaced: 60),
+            DesignPoint(hour: 16, minute: 0, generated: 180, misplaced: 78),
+            DesignPoint(hour: 17, minute: 30, generated: 190, misplaced: 82),
+            DesignPoint(hour: 19, minute: 0, generated: 140, misplaced: 55)
         ]
         return points.compactMap { point in
             guard let hourDate = calendar.date(byAdding: .hour, value: point.hour, to: startOfDay),
@@ -59,6 +59,14 @@ nonisolated enum StatsMockData {
         }
     }
 
+    /// Design vertex for the daily timeline: time-of-day plus generated/misplaced counts.
+    private struct DesignPoint {
+        let hour: Int
+        let minute: Int
+        let generated: Int
+        let misplaced: Int
+    }
+
     /// ~142 throws today; category mix skewed like the bar design (organic tallest).
     private static func todayEvents(now: Date, calendar: Calendar) -> [ZoneEventRecord] {
         let startOfDay = calendar.startOfDay(for: now)
@@ -67,12 +75,12 @@ nonisolated enum StatsMockData {
             BinGuide.organic.id, BinGuide.organic.id, BinGuide.organic.id,
             BinGuide.organic.id, BinGuide.organic.id,
             BinGuide.residual.id, BinGuide.residual.id, BinGuide.residual.id,
-            BinGuide.cleanInorganic.id,
+            BinGuide.cleanInorganic.id
         ]
         // Spread across day for history; timeline chart uses dailyTimelineBuckets when mock is on.
         let hourWeights: [Int: Int] = [
             7: 8, 8: 9, 9: 10, 10: 8, 11: 9, 12: 12,
-            13: 13, 14: 14, 15: 15, 16: 16, 17: 14, 18: 9, 19: 5,
+            13: 13, 14: 14, 15: 15, 16: 16, 17: 14, 18: 9, 19: 5
         ]
         var records: [ZoneEventRecord] = []
         var seed = 0

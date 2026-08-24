@@ -16,7 +16,7 @@ nonisolated final class AnnotatedVideoWriter: @unchecked Sendable {
 
     init(
         outputURL: URL,
-        rotation: LivePreviewRotation = .oneEighty,
+        rotation: LivePreviewRotation = .zero,
         mirror: Bool = false
     ) {
         self.outputURL = outputURL
@@ -112,8 +112,8 @@ nonisolated final class AnnotatedVideoWriter: @unchecked Sendable {
             AVVideoWidthKey: evenWidth,
             AVVideoHeightKey: evenHeight,
             AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: evenWidth * evenHeight * 4,
-            ],
+                AVVideoAverageBitRateKey: evenWidth * evenHeight * 4
+            ]
         ]
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         input.expectsMediaDataInRealTime = true
@@ -125,7 +125,7 @@ nonisolated final class AnnotatedVideoWriter: @unchecked Sendable {
             sourcePixelBufferAttributes: [
                 kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
                 kCVPixelBufferWidthKey as String: evenWidth,
-                kCVPixelBufferHeightKey as String: evenHeight,
+                kCVPixelBufferHeightKey as String: evenHeight
             ]
         )
         guard writer.startWriting() else { return false }
@@ -166,7 +166,7 @@ nonisolated final class AnnotatedVideoWriter: @unchecked Sendable {
         var buffer: CVPixelBuffer?
         let attrs: [CFString: Any] = [
             kCVPixelBufferCGImageCompatibilityKey: true,
-            kCVPixelBufferCGBitmapContextCompatibilityKey: true,
+            kCVPixelBufferCGBitmapContextCompatibilityKey: true
         ]
         let status = CVPixelBufferCreate(
             kCFAllocatorDefault,

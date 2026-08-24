@@ -26,8 +26,7 @@ enum CameraCaptureAdjuster {
     private static func applyExposure(_ controls: CameraCaptureControls, to device: AVCaptureDevice) {
         if controls.exposureLocked {
             if device.isExposureModeSupported(.continuousAutoExposure),
-               device.exposureMode != .locked
-            {
+               device.exposureMode != .locked {
                 device.exposureMode = .continuousAutoExposure
             }
             if device.isExposureModeSupported(.locked) {

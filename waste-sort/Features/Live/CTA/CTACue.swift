@@ -23,7 +23,11 @@ enum CTACueMapper {
     ) -> [CTACue] {
         tracks.flatMap { track -> [CTACue] in
             guard !track.isCoasting else { return [] }
-            let binIDs = BinGuide.barBinIDs(for: track.classKey)
+            // Unsure items are pointed at the fallback stream, never the label's bin(s);
+            // dirty recyclable legitimately cues two bars via `barBinIDs`.
+            let binIDs = track.beliefUncertain
+                ? [BinGuide.fallbackBinID]
+                : BinGuide.barBinIDs(for: track.classKey)
             guard !binIDs.isEmpty else { return [] }
             let rect = DetectionGeometry.mapDisplayRect(
                 normalized: track.displayXywhn,
@@ -37,7 +41,10 @@ enum CTACueMapper {
             return binIDs.map { CTACue(trackID: track.id, binID: $0, displayRect: rect) }
         }
     }
+}
 
+extension CTACueMapper {
+    /// Distinct bins the current cues point at, for bar highlighting.
     static func activeBinIDs(from cues: [CTACue]) -> Set<String> {
         Set(cues.map(\.binID))
     }

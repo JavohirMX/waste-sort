@@ -28,7 +28,7 @@ enum GlassChrome {
                 .background {
                     Circle()
                         .fill(.clear)
-                        .glassEffect(.regular, in: Circle())
+                        .glassEffect(.regular.interactive(), in: Circle())
                 }
         }
         .buttonStyle(.plain)

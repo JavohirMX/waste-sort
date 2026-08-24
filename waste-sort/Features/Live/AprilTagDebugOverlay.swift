@@ -17,7 +17,7 @@ struct AprilTagDebugOverlay: View {
         zones: [DropZone],
         imageSize: CGSize,
         viewSize: CGSize,
-        rotation: LivePreviewRotation = .oneEighty,
+        rotation: LivePreviewRotation = .zero,
         mirror: Bool = false,
         stats: AprilTagFrameStats? = nil
     ) {

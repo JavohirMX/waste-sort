@@ -77,7 +77,7 @@ enum CameraDeviceCatalog {
                 .builtInDualWideCamera,
                 .builtInTripleCamera,
                 .builtInTrueDepthCamera,
-                .external,
+                .external
             ],
             mediaType: .video,
             position: .unspecified
@@ -90,20 +90,17 @@ enum CameraDeviceCatalog {
 
         if preferenceID != CameraPreference.autoID,
            let match = options.first(where: { $0.id == preferenceID }),
-           let device = device(forUniqueID: match.id)
-        {
+           let device = device(forUniqueID: match.id) {
             return device
         }
 
         if let external = options.first(where: { $0.kind == .external }),
-           let device = device(forUniqueID: external.id)
-        {
+           let device = device(forUniqueID: external.id) {
             return device
         }
 
         if let back = options.first(where: { $0.kind == .builtInBack }),
-           let device = device(forUniqueID: back.id)
-        {
+           let device = device(forUniqueID: back.id) {
             return device
         }
 

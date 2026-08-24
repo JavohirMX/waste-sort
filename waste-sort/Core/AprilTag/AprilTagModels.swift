@@ -78,6 +78,10 @@ struct AprilTagStatusFrame: Equatable, Sendable {
     /// Diagnostics from the most recent detection pass, for the debug overlay. Nil when
     /// AprilTag detection is off.
     var detectorStats: AprilTagFrameStats?
+    /// Non-nil when the tag detector itself failed to initialize; lid gating is inert.
+    /// Surfaced in the live HUD because empty detections would otherwise look like
+    /// "no tags in view" forever.
+    var detectorFailureReason: String?
 
     nonisolated var closedZoneIDs: Set<UUID> {
         Set(statuses.compactMap { zoneID, status in
@@ -95,12 +99,14 @@ struct AprilTagStatusFrame: Equatable, Sendable {
         statuses: [UUID: BinOpenness] = [:],
         detectedTags: [TrackedAprilTag] = [],
         timestamp: CFAbsoluteTime = CFAbsoluteTimeGetCurrent(),
-        detectorStats: AprilTagFrameStats? = nil
+        detectorStats: AprilTagFrameStats? = nil,
+        detectorFailureReason: String? = nil
     ) {
         self.statuses = statuses
         self.detectedTags = detectedTags
         self.timestamp = timestamp
         self.detectorStats = detectorStats
+        self.detectorFailureReason = detectorFailureReason
     }
 }
 

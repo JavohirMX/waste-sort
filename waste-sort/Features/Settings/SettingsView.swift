@@ -64,8 +64,7 @@ struct SettingsView: View {
             ) { _ in
                 refreshCameras()
                 if settings.preferredCameraID != CameraPreference.autoID,
-                   !cameraOptions.contains(where: { $0.id == settings.preferredCameraID })
-                {
+                   !cameraOptions.contains(where: { $0.id == settings.preferredCameraID }) {
                     settings.preferredCameraID = CameraPreference.autoID
                 }
             }
@@ -133,8 +132,7 @@ struct SettingsView: View {
             }
             .onChange(of: settings.preferredCameraID) { _, newValue in
                 if newValue != CameraPreference.autoID,
-                   !cameraOptions.contains(where: { $0.id == newValue })
-                {
+                   !cameraOptions.contains(where: { $0.id == newValue }) {
                     settings.preferredCameraID = CameraPreference.autoID
                 }
             }
@@ -215,7 +213,11 @@ struct SettingsView: View {
 
             SettingsIntSliderRow(
                 title: "Dwell frames",
-                help: "How many frames the model must actually see an item inside a zone before it can be counted. Frames where the box is frozen after a lost detection do not count. Higher = fewer accidental counts when something passes over a bin.",
+                help: """
+                    How many frames the model must actually see an item inside a zone before it can be counted. \
+                    Frames where the box is frozen after a lost detection do not count. \
+                    Higher = fewer accidental counts when something passes over a bin.
+                    """,
                 value: Binding(
                     get: { zoneStore.dwellFrames },
                     set: { zoneStore.dwellFrames = $0 }
@@ -225,7 +227,11 @@ struct SettingsView: View {
 
             SettingsSliderRow(
                 title: "Reacquire window",
-                help: "How long an item that vanishes is given to reappear before it is judged. The model blinks and relabels constantly; anything that comes back inside this window is the same item continuing, not a throw. Also the delay between a real throw and it showing up in History.",
+                help: """
+                    How long an item that vanishes is given to reappear before it is judged. The model blinks and relabels constantly; \
+                    anything that comes back inside this window is the same item continuing, not a throw. \
+                    Also the delay between a real throw and it showing up in History.
+                    """,
                 valueText: String(format: "%.1fs", zoneStore.reacquireGrace),
                 value: Binding(
                     get: { zoneStore.reacquireGrace },
@@ -342,7 +348,13 @@ struct SettingsView: View {
             Text("AprilTag Openness")
                 .foregroundStyle(BinGuide.organic.color)
         } footer: {
-            Text("Uses camera to detect when bins are physically opened via inside-mounted tag16h5 AprilTags. Detection range sets capture resolution and how hard the detector works per frame - raise it if tags near the bins go unseen, lower it if the frame rate drops. Closed delay is how long a tag can stay missing before the bin is marked closed.")
+            Text(
+                """
+                Uses camera to detect when bins are physically opened via inside-mounted tag16h5 AprilTags. \
+                Detection range sets capture resolution and how hard the detector works per frame - raise it if tags near the bins go unseen, \
+                lower it if the frame rate drops. Closed delay is how long a tag can stay missing before the bin is marked closed.
+                """
+            )
         }
     }
 
@@ -416,6 +428,8 @@ struct SettingsView: View {
                 step: 0.05
             )
             Toggle("Show FPS", isOn: $settings.showFPS)
+            Toggle("Speak bin on deposit", isOn: $settings.voiceGuidanceEnabled)
+            Toggle("Scan product barcodes", isOn: $settings.barcodeAssistEnabled)
             Toggle("Show last deposit on Live", isOn: $settings.showLastDepositOnLive)
             Toggle("Throw feedback sounds", isOn: $settings.throwFeedbackSoundsEnabled)
         } header: {
@@ -426,6 +440,7 @@ struct SettingsView: View {
                 "Shown on the live camera when waste is detected. Choose one visual guide at a time. "
                     + "Box badges can show an icon, category name, and confidence percent; placement moves the badge around each box. "
                     + "Show FPS draws a plain FPS label on the live camera, bottom left. "
+                    + "Voice guidance speaks which bin received a deposit - useful when the screen is hard to see from where you stand. "
                     + "The last-deposit chip is a developer overlay; tap it for this session's deposits. History also lives in Stats. "
                     + "Throw feedback sounds play on a scored throw even if the silent switch is on."
             )
@@ -522,6 +537,12 @@ struct SettingsView: View {
     @ViewBuilder
     private var liveTrackingSection: some View {
         Section {
+            Picker("Decision engine", selection: $settings.decisionPipeline) {
+                ForEach(DecisionPipeline.allCases, id: \.self) { pipeline in
+                    Text(pipeline.displayName).tag(pipeline)
+                }
+            }
+            .pickerStyle(.segmented)
             SettingsIntSliderRow(
                 title: "Confirm frames",
                 help: "How many frames an item must appear before it shows. Higher = fewer false flashes, slower to appear.",
@@ -551,11 +572,21 @@ struct SettingsView: View {
                 step: 0.05
             )
             SettingsSliderRow(
-                title: "Label stickiness",
-                help: "How long a new bin must lead (by confidence) before the label changes. Higher = less flicker, slower to correct.",
-                valueText: String(format: "%.2f s", settings.classLockWindow),
-                value: $settings.classLockWindow,
-                range: 0.10...1.00,
+                title: "Verdict certainty",
+                help: "How sure the app must be before it commits to a bin. "
+                    + "Higher = fewer confident mistakes, more 'not sure' items.",
+                valueText: percent(settings.beliefThreshold),
+                value: $settings.beliefThreshold,
+                range: 0.30...0.95,
+                step: 0.05
+            )
+            SettingsSliderRow(
+                title: "Verdict margin",
+                help: "How far the leading category must sit ahead of the runner-up. "
+                    + "Higher = borderline items are treated as unsure instead of guessed.",
+                valueText: decimal(settings.beliefMargin),
+                value: $settings.beliefMargin,
+                range: 0.00...0.60,
                 step: 0.05
             )
             SettingsSliderRow(
@@ -582,11 +613,16 @@ struct SettingsView: View {
                 range: 0.5...5.0,
                 step: 0.1
             )
+            Toggle("Verbose detection log", isOn: $settings.verboseDetectionLogging)
         } header: {
             Text("Live tracking")
                 .foregroundStyle(BinGuide.cleanInorganic.color)
         } footer: {
-            Text("These only affect the camera overlay. Throw scoring still uses a lifetime vote of the raw model class.")
+            Text(
+                "Verdict certainty and margin only act on the Belief engine; unsure items are guided to the residual bin. "
+                    + "Legacy confidence replays the old math with no uncertainty concept, and appearance/recheck assists go inert. "
+                    + "Verbose logging writes every tracked frame to the session CSV for offline replay."
+            )
         }
     }
 
@@ -594,8 +630,11 @@ struct SettingsView: View {
         guard recording.hasLiveSession else {
             return "The live camera must be running before you can start a recording."
         }
-        let saves =
-            "Saves a raw clip to Photos, an overlay clip (boxes, labels, timestamps) to Photos and Files, and a detection CSV to Files (On My iPad/iPhone → Sortla). Records the camera feed only for the raw clip. Saves if you stop, or if the app is backgrounded or closed."
+        let saves = """
+            Saves a raw clip to Photos, an overlay clip (boxes, labels, timestamps) to Photos and Files, \
+            and a detection CSV to Files (On My iPad/iPhone → Sortla). Records the camera feed only for the raw clip. \
+            Saves if you stop, or if the app is backgrounded or closed.
+            """
         if settings.autoRecordOnOpen {
             return "Starts automatically when the app opens or returns to the foreground. \(saves)"
         }
@@ -664,13 +703,17 @@ private struct SettingsSliderRow: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
+            // Keep the slider its own accessibility element so VoiceOver can
+            // adjust it; combining the row would collapse it to static text.
             Slider(value: $value, in: range, step: step)
+                .accessibilityLabel(title)
+                .accessibilityValue(valueText)
+                .accessibilityHint(help)
             Text(help)
                 .font(.system(.footnote, design: .default))
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
     }
 }
 

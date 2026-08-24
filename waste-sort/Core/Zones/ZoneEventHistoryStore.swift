@@ -14,7 +14,7 @@ nonisolated struct ZoneEventRecord: Codable, Identifiable, Equatable, Sendable {
     var isCorrect: Bool
     /// True when the item was credited by where it was heading rather than by being seen
     /// inside the zone. Optional so pre-upgrade JSONL still decodes.
-    var viaTrajectory: Bool? = nil
+    var viaTrajectory: Bool?
     var binWasOpen: Bool
 
     init(
@@ -92,7 +92,7 @@ nonisolated struct ZoneEventRecord: Codable, Identifiable, Equatable, Sendable {
             isCorrect ? "true" : "false",
             binWasOpen ? "true" : "false",
             String(format: "%.4f", confidence),
-            viaTrajectory.map { $0 ? "true" : "false" } ?? "",
+            viaTrajectory.map { $0 ? "true" : "false" } ?? ""
         ].joined(separator: ",")
     }
 

@@ -100,7 +100,15 @@ struct OnboardingCameraPreview: UIViewRepresentable {
 
         var previewLayer: AVCaptureVideoPreviewLayer {
             // Safe: `layerClass` guarantees the backing layer's type.
+            // swiftlint:disable:next force_cast
             layer as! AVCaptureVideoPreviewLayer
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            if let connection = previewLayer.connection, connection.isVideoOrientationSupported {
+                connection.videoOrientation = .portrait
+            }
         }
     }
 }

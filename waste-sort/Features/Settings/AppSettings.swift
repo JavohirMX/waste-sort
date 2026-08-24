@@ -10,12 +10,40 @@ enum WasteSortConfig {
     static let defaultMaxMisses = 3
     static let defaultTrackerIou = 0.3
     static let defaultCrossClassIou = 0.30
-    static let defaultClassLockWindow = 0.40
+    /// Belief-engine verdict gate for both the overlay label and the deposit scoring.
+    static let defaultBeliefThreshold = 0.55
+    static let defaultBeliefMargin = 0.15
+    /// Overlay policy: short memory so labels track the item currently in hand.
+    static let defaultBeliefDisplayHalfLife = 0.80
+    /// Deposit policy: near-lifetime memory so a throw is scored on everything seen.
+    static let defaultBeliefDepositHalfLife = 4.0
+    static let defaultBeliefSwitchConfirmations = 2
+    static let defaultBeliefMinEvidenceEvents = 2
+    static let defaultBeliefMinEvidenceDepositEvents = 3
+    /// Color/texture prior fused into beliefs when the camera frame is available.
+    static let defaultAppearanceAssistEnabled = true
+    static let defaultAppearanceWeight = 0.35
+    /// Minimum wall-clock seconds between appearance samples (per pipeline, all boxes).
+    static let defaultAppearanceInterval = 0.25
+    /// Crop-and-recheck escalation for unsure items.
+    static let defaultRecheckAssistEnabled = true
+    /// How long a track must stay unsure before the zoom pass fires.
+    static let defaultRecheckDelay = 0.6
+    /// Minimum seconds between re-checks of the same item.
+    static let defaultRecheckCooldown = 2.0
+    /// Multiplier on the re-check confidence when injected as belief evidence.
+    static let defaultRecheckWeight = 1.5
+    /// Which decision math produces bin advice. Belief is the production engine;
+    /// legacy replays main's pre-belief math for A/B comparison.
+    static let defaultDecisionPipeline = DecisionPipeline.belief
+    /// Per-frame track events for offline decision-pipeline replays.
+    /// Heavy but cheap enough at kiosk scale; on by default so sessions are always replayable.
+    static let defaultVerboseDetectionLogging = true
     static let defaultEmaAlpha = 0.4
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8
     static let defaultModelName = WasteSortModel.bestv35.resourceName
-    static let defaultLiveRotation = LivePreviewRotation.oneEighty
+    static let defaultLiveRotation = LivePreviewRotation.zero
     static let defaultLiveMirror = false
     static let defaultShowConfidence = false
     static let defaultShowBoxIcon = true
@@ -34,6 +62,8 @@ enum WasteSortConfig {
     static let defaultAutoRecordOnOpen = false
     static let defaultShowFPS = false
     static let defaultUseMockStats = true
+    static let defaultVoiceGuidanceEnabled = false
+    static let defaultBarcodeAssistEnabled = true
     static let defaultHasCompletedOnboarding = false
     static let defaultFoundationConfirmation = false
     static let defaultFoundationVerdictLog = false
@@ -46,11 +76,17 @@ struct RuntimeSettings: Equatable {
     var confidence: Double
     var iou: Double
     var maxItems: Int
+    var decisionPipeline: DecisionPipeline
+    var barcodeAssistEnabled: Bool
+    var appearanceAssistEnabled: Bool
+    var recheckAssistEnabled: Bool
+    var verboseDetectionLogging: Bool
     var confirmHits: Int
     var maxMisses: Int
     var trackerIou: Double
     var crossClassIou: Double
-    var classLockWindow: Double
+    var beliefThreshold: Double
+    var beliefMargin: Double
     var emaAlpha: Double
     var boxInflate: Double
     var maxSpeed: Double
@@ -107,8 +143,13 @@ final class AppSettings: ObservableObject {
     @Published var crossClassIou: Double {
         didSet { persist(crossClassIou, key: Keys.crossClassIou) }
     }
-    @Published var classLockWindow: Double {
-        didSet { persist(classLockWindow, key: Keys.classLockWindow) }
+    /// Belief-engine gate: probability the top class must reach for a confident verdict.
+    @Published var beliefThreshold: Double {
+        didSet { persist(beliefThreshold, key: Keys.beliefThreshold) }
+    }
+    /// Belief-engine gate: required lead of the top class over the runner-up.
+    @Published var beliefMargin: Double {
+        didSet { persist(beliefMargin, key: Keys.beliefMargin) }
     }
     @Published var emaAlpha: Double {
         didSet { persist(emaAlpha, key: Keys.emaAlpha) }
@@ -184,6 +225,33 @@ final class AppSettings: ObservableObject {
     @Published var useMockStats: Bool {
         didSet { persist(useMockStats, key: Keys.useMockStats) }
     }
+    /// Spoken deposit confirmations for hands-free kiosk operation.
+    @Published var voiceGuidanceEnabled: Bool {
+        didSet { persist(voiceGuidanceEnabled, key: Keys.voiceGuidanceEnabled) }
+    }
+    /// Throttled Vision pass surfacing product barcodes alongside YOLO results.
+    @Published var barcodeAssistEnabled: Bool {
+        didSet { persist(barcodeAssistEnabled, key: Keys.barcodeAssistEnabled) }
+    }
+    /// Soft color/texture prior fused into bin decisions when frames allow sampling.
+    @Published var appearanceAssistEnabled: Bool {
+        didSet { persist(appearanceAssistEnabled, key: Keys.appearanceAssistEnabled) }
+    }
+    /// Zoom-in second pass for items the engine cannot place confidently.
+    @Published var recheckAssistEnabled: Bool {
+        didSet { persist(recheckAssistEnabled, key: Keys.recheckAssistEnabled) }
+    }
+    /// Switches the bin-decision math without leaving the app: the belief engine
+    /// versus main's pre-belief confidence vote. Assists (appearance prior, zoom
+    /// re-check) only act on beliefs and go inert under legacy.
+    @Published var decisionPipeline: DecisionPipeline {
+        didSet { persist(decisionPipeline.rawValue, key: Keys.decisionPipeline) }
+    }
+    /// Emits one CSV event per tracked item per frame so sessions can be replayed
+    /// through the offline decision bake-off (`Core/Evaluation`).
+    @Published var verboseDetectionLogging: Bool {
+        didSet { persist(verboseDetectionLogging, key: Keys.verboseDetectionLogging) }
+    }
     /// Gates the first-launch onboarding flow. Intentionally left out of `resetToDefaults()`
     /// so restoring tuning values does not relaunch the tutorial — Settings offers a
     /// dedicated "Show onboarding again" action instead.
@@ -226,11 +294,17 @@ final class AppSettings: ObservableObject {
             confidence: confidence,
             iou: iou,
             maxItems: maxItems,
+            decisionPipeline: decisionPipeline,
+            barcodeAssistEnabled: barcodeAssistEnabled,
+            appearanceAssistEnabled: appearanceAssistEnabled,
+            recheckAssistEnabled: recheckAssistEnabled,
+            verboseDetectionLogging: verboseDetectionLogging,
             confirmHits: confirmHits,
             maxMisses: maxMisses,
             trackerIou: trackerIou,
             crossClassIou: crossClassIou,
-            classLockWindow: classLockWindow,
+            beliefThreshold: beliefThreshold,
+            beliefMargin: beliefMargin,
             emaAlpha: emaAlpha,
             boxInflate: boxInflate,
             maxSpeed: maxSpeed,
@@ -258,7 +332,8 @@ final class AppSettings: ObservableObject {
         static let maxMisses = "settings.maxMisses.v2"
         static let trackerIou = "settings.trackerIou"
         static let crossClassIou = "settings.crossClassIou"
-        static let classLockWindow = "settings.classLockWindow"
+        static let beliefThreshold = "settings.beliefThreshold"
+        static let beliefMargin = "settings.beliefMargin"
         static let emaAlpha = "settings.emaAlpha"
         static let boxInflate = "settings.boxInflate"
         /// v2 picks up lower association speed without requiring a manual reset.
@@ -284,6 +359,12 @@ final class AppSettings: ObservableObject {
         static let autoRecordOnOpen = "settings.autoRecordOnOpen"
         static let showFPS = "settings.showFPS"
         static let useMockStats = "settings.useMockStats"
+        static let voiceGuidanceEnabled = "settings.voiceGuidanceEnabled"
+        static let barcodeAssistEnabled = "settings.barcodeAssistEnabled"
+        static let decisionPipeline = "settings.decisionPipeline"
+        static let appearanceAssistEnabled = "settings.appearanceAssistEnabled"
+        static let recheckAssistEnabled = "settings.recheckAssistEnabled"
+        static let verboseDetectionLogging = "settings.verboseDetectionLogging"
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
         static let foundationConfirmation = "settings.foundationConfirmation"
         static let foundationVerdictLog = "settings.foundationVerdictLog"
@@ -300,13 +381,13 @@ final class AppSettings: ObservableObject {
         maxItems = Self.loadInt(defaults, Keys.maxItems, WasteSortConfig.defaultMaxItems)
         confirmHits = Self.loadInt(defaults, Keys.confirmHits, WasteSortConfig.defaultConfirmHits)
         maxMisses = Self.loadInt(defaults, Keys.maxMisses, WasteSortConfig.defaultMaxMisses)
+        decisionPipeline = DecisionPipeline(
+            rawValue: Self.loadString(defaults, Keys.decisionPipeline, WasteSortConfig.defaultDecisionPipeline.rawValue)
+        ) ?? WasteSortConfig.defaultDecisionPipeline
         trackerIou = Self.loadDouble(defaults, Keys.trackerIou, WasteSortConfig.defaultTrackerIou)
         crossClassIou = Self.loadDouble(defaults, Keys.crossClassIou, WasteSortConfig.defaultCrossClassIou)
-        classLockWindow = Self.loadDouble(
-            defaults,
-            Keys.classLockWindow,
-            WasteSortConfig.defaultClassLockWindow
-        )
+        beliefThreshold = Self.loadDouble(defaults, Keys.beliefThreshold, WasteSortConfig.defaultBeliefThreshold)
+        beliefMargin = Self.loadDouble(defaults, Keys.beliefMargin, WasteSortConfig.defaultBeliefMargin)
         emaAlpha = Self.loadDouble(defaults, Keys.emaAlpha, WasteSortConfig.defaultEmaAlpha)
         boxInflate = Self.loadDouble(defaults, Keys.boxInflate, WasteSortConfig.defaultBoxInflate)
         maxSpeed = Self.loadDouble(defaults, Keys.maxSpeed, WasteSortConfig.defaultMaxSpeed)
@@ -365,6 +446,11 @@ final class AppSettings: ObservableObject {
         )
         showFPS = Self.loadBool(defaults, Keys.showFPS, WasteSortConfig.defaultShowFPS)
         useMockStats = Self.loadBool(defaults, Keys.useMockStats, WasteSortConfig.defaultUseMockStats)
+        voiceGuidanceEnabled = Self.loadBool(defaults, Keys.voiceGuidanceEnabled, WasteSortConfig.defaultVoiceGuidanceEnabled)
+        barcodeAssistEnabled = Self.loadBool(defaults, Keys.barcodeAssistEnabled, WasteSortConfig.defaultBarcodeAssistEnabled)
+        appearanceAssistEnabled = Self.loadBool(defaults, Keys.appearanceAssistEnabled, WasteSortConfig.defaultAppearanceAssistEnabled)
+        recheckAssistEnabled = Self.loadBool(defaults, Keys.recheckAssistEnabled, WasteSortConfig.defaultRecheckAssistEnabled)
+        verboseDetectionLogging = Self.loadBool(defaults, Keys.verboseDetectionLogging, WasteSortConfig.defaultVerboseDetectionLogging)
         hasCompletedOnboarding = Self.loadBool(
             defaults,
             Keys.hasCompletedOnboarding,
@@ -399,8 +485,10 @@ final class AppSettings: ObservableObject {
         confirmHits = WasteSortConfig.defaultConfirmHits
         maxMisses = WasteSortConfig.defaultMaxMisses
         trackerIou = WasteSortConfig.defaultTrackerIou
+        decisionPipeline = WasteSortConfig.defaultDecisionPipeline
         crossClassIou = WasteSortConfig.defaultCrossClassIou
-        classLockWindow = WasteSortConfig.defaultClassLockWindow
+        beliefThreshold = WasteSortConfig.defaultBeliefThreshold
+        beliefMargin = WasteSortConfig.defaultBeliefMargin
         emaAlpha = WasteSortConfig.defaultEmaAlpha
         boxInflate = WasteSortConfig.defaultBoxInflate
         maxSpeed = WasteSortConfig.defaultMaxSpeed
@@ -419,6 +507,11 @@ final class AppSettings: ObservableObject {
         autoRecordOnOpen = WasteSortConfig.defaultAutoRecordOnOpen
         showFPS = WasteSortConfig.defaultShowFPS
         useMockStats = WasteSortConfig.defaultUseMockStats
+        voiceGuidanceEnabled = WasteSortConfig.defaultVoiceGuidanceEnabled
+        barcodeAssistEnabled = WasteSortConfig.defaultBarcodeAssistEnabled
+        appearanceAssistEnabled = WasteSortConfig.defaultAppearanceAssistEnabled
+        recheckAssistEnabled = WasteSortConfig.defaultRecheckAssistEnabled
+        verboseDetectionLogging = WasteSortConfig.defaultVerboseDetectionLogging
         foundationConfirmationEnabled = WasteSortConfig.defaultFoundationConfirmation
         foundationVerdictLogEnabled = WasteSortConfig.defaultFoundationVerdictLog
         showLastDepositOnLive = WasteSortConfig.defaultShowLastDepositOnLive

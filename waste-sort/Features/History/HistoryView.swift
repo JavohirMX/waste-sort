@@ -87,7 +87,7 @@ struct HistoryView: View {
             Text(
                 zoneStore.zones.isEmpty
                     ? "Add drop zones in Settings → Zones, then items released into a zone appear here."
-                    : "Items are recorded when they are released inside a drop zone on the Live tab."
+                    : "Items are recorded when they are released inside a drop zone on the live camera."
             )
         }
     }

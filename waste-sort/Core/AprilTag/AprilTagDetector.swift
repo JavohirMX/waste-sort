@@ -33,6 +33,9 @@ final class AprilTagDetector: @unchecked Sendable {
     /// must never wait behind a detection pass that holds `lock` for tens of milliseconds.
     private let statsLock = NSLock()
     private var stats = AprilTagFrameStats()
+    /// Non-nil when the C detector could not be created. While set, every detection
+    /// returns empty - i.e. lid gating silently degrades unless the UI surfaces this.
+    private var configurationError: String?
     private var _tuning: AprilTagDetectionTuning
 
     init(
@@ -56,19 +59,31 @@ final class AprilTagDetector: @unchecked Sendable {
         return stats
     }
 
-    func configureDetector(family: String) {
-        lock.lock()
-        defer { lock.unlock() }
+    /// Why the detector is unavailable, if it is. Cheap to poll from the UI.
+    var configurationFailureReason: String? {
+        statsLock.lock()
+        defer { statsLock.unlock() }
+        return configurationError
+    }
 
+    func configureDetector(family: String) {
         let tagFamily: TagFamily = family.lowercased().contains("16h5") ? .tag16h5 : .tag36h11
         do {
             let det = try Detector(families: [tagFamily])
             det.threadCount = max(2, min(4, ProcessInfo.processInfo.activeProcessorCount))
+            lock.lock()
             self.detector = det
             self.appliedTuning = nil
             applyTuningLocked()
+            lock.unlock()
+            statsLock.lock()
+            configurationError = nil
+            statsLock.unlock()
         } catch {
-            print("[AprilTagDetector] Error initializing detector: \(error)")
+            AppLog.vision.error("AprilTag detector init failed (\(family)): \(error.localizedDescription)")
+            statsLock.lock()
+            configurationError = error.localizedDescription
+            statsLock.unlock()
         }
     }
 

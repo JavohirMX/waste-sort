@@ -8,6 +8,8 @@ struct RawDetection: Equatable, Sendable {
     let conf: Float
     /// Normalized rect (0…1) in image space, origin top-left.
     let xywhn: CGRect
+    /// Soft color/texture evidence sampled inside the box, when appearance assist is on.
+    var appearancePrior: AppearancePrior?
 }
 
 /// Confirmed track ready for overlay drawing and counting.
@@ -27,9 +29,15 @@ nonisolated struct TrackedDetection: Identifiable, Equatable, Sendable {
     /// comes from a real detection this frame; anything higher means it is frozen in
     /// place, still drawn but no longer evidence that the object is there.
     var misses: Int = 0
-    /// This frame's YOLO class. Empty means the same as `classKey`.
+    /// This frame's belief leader. Empty means the same as `classKey`.
     var rawClassKey: String = ""
+    /// Belief probability of this frame's leader (0 when nothing was seen yet).
     var rawConf: Float = 0
+    /// True while the belief engine would not back `classKey` with a verdict —
+    /// the UI should present this as "not sure", not as a confident answer.
+    var beliefUncertain: Bool = false
+    /// Lead of the belief leader over the runner-up, 0…1. Small values flag coin flips.
+    var beliefMargin: Float = 0
     /// Set once the on-device Foundation model has named this item, and never cleared while
     /// the item stays on screen. The tracker itself never sets this — the confirmation layer
     /// does, on the way out — and it deliberately leaves `rawClassKey` alone so the log can
@@ -54,9 +62,14 @@ nonisolated struct TrackedDetection: Identifiable, Equatable, Sendable {
     }
 }
 
-/// Associates per-frame detections across time with EMA box smoothing and a time-window
-/// confidence vote for the overlay label. Unmatched tracks briefly freeze in place
+/// Associates per-frame detections across time with EMA box smoothing and a per-object
+/// `BeliefEngine` vote for the overlay label. Unmatched tracks briefly freeze in place
 /// (no velocity coast on display) then drop.
+///
+/// Label authority is the engine, not any single frame: confidences accumulate with
+/// recency decay, and the label only moves when a challenger stays decisively ahead.
+/// Tracks also carry the engine's verdict quality (`beliefUncertain`/`beliefMargin`)
+/// so the UI can be honest about coin-flip classifications instead of guessing.
 final class DetectionTracker {
     var iouThreshold: CGFloat = 0.3
     var confirmHits: Int = 2
@@ -69,19 +82,20 @@ final class DetectionTracker {
     var missVelocityDecay: CGFloat = 0.25
     /// Overlap required to keep the same track when YOLO changes class.
     /// Capped at `iouThreshold` so a relabel cannot fall into a dead zone.
-    var crossClassIouThreshold: CGFloat = CGFloat(WasteSortConfig.defaultCrossClassIou)
-    /// Wall-clock window the challenger class must lead (by summed confidence) before
-    /// the overlay label switches.
-    var classLockWindow: CFTimeInterval = WasteSortConfig.defaultClassLockWindow
+    var crossClassIouThreshold = CGFloat(WasteSortConfig.defaultCrossClassIou)
+    /// Which decision math owns labels and uncertainty reporting. Under `.legacy` every
+    /// track also runs a `LegacyDecisionEngine` and belief-specific channels go quiet.
+    var pipeline: DecisionPipeline = .belief
+    /// Belief knobs mirrored onto every track's engine each frame, so settings changes
+    /// reach engines created at different times.
+    var beliefHalfLife: CFTimeInterval = WasteSortConfig.defaultBeliefDisplayHalfLife
+    var beliefDecideThreshold: Double = WasteSortConfig.defaultBeliefThreshold
+    var beliefDecideMargin: Double = WasteSortConfig.defaultBeliefMargin
+    /// Total injected weight per appearance sample. Small on purpose: the prior nudges,
+    /// the model decides.
+    var appearanceEvidenceWeight: Double = WasteSortConfig.defaultAppearanceWeight
     /// Hide a younger confirmed track when it sits on top of an older one.
     var emitOverlapIou: CGFloat = 0.45
-
-    private struct ClassSample {
-        var t: CFAbsoluteTime
-        var classKey: String
-        var className: String
-        var conf: Float
-    }
 
     private struct Track {
         let id: Int
@@ -98,7 +112,15 @@ final class DetectionTracker {
         var confirmed: Bool
         var matched: Bool
         var t: CFAbsoluteTime
-        var samples: [ClassSample]
+        let belief: BeliefEngine
+        /// Window-vote math for the legacy pipeline. Idle under `.belief`.
+        var legacy = LegacyDecisionEngine()
+        /// Last engine verdict, refreshed only on matched frames. Coasting frames
+        /// replay it instead of advancing the engine a second time.
+        var lastBelief: BeliefState?
+        /// This frame's unfiltered model answer, kept separate from the belief so
+        /// consumers can see both what the engine settled on and what YOLO just said.
+        var lastRaw: RawDetection?
     }
 
     private var tracks: [Track] = []
@@ -118,6 +140,12 @@ final class DetectionTracker {
         let filtered = detections
             .filter { BinGuide.info(for: $0.className).id != "unknown" }
             .sorted { $0.conf > $1.conf }
+
+        for i in tracks.indices {
+            tracks[i].belief.config.halfLife = beliefHalfLife
+            tracks[i].belief.config.decideThreshold = beliefDecideThreshold
+            tracks[i].belief.config.decideMargin = beliefDecideMargin
+        }
 
         for i in tracks.indices {
             let dt = max(timestamp - tracks[i].t, 1e-3)
@@ -151,12 +179,8 @@ final class DetectionTracker {
         for detIndex in leftover {
             let det = filtered[detIndex]
             if overlapsExistingTrack(det) { continue }
-            let sample = ClassSample(
-                t: timestamp,
-                classKey: det.classKey,
-                className: det.className,
-                conf: det.conf
-            )
+            let belief = BeliefEngine(config: .display)
+            belief.observe(classKey: det.classKey, className: det.className, conf: det.conf, at: timestamp)
             let track = Track(
                 id: nextID,
                 classKey: det.classKey,
@@ -172,7 +196,9 @@ final class DetectionTracker {
                 confirmed: confirmHits <= 1,
                 matched: true,
                 t: timestamp,
-                samples: [sample]
+                belief: belief,
+                lastBelief: nil,
+                lastRaw: det
             )
             nextID += 1
             tracks.append(track)
@@ -199,8 +225,54 @@ final class DetectionTracker {
         return suppressOverlapping(tracks.filter(\.confirmed)).map { emit($0) }
     }
 
+    /// Fuses a completed zoom re-check into a track's belief. Real model output, so it
+    /// counts toward the minimum-evidence gate; `weight` is pre-boosted by the caller.
+    /// Called from `update`'s queue after draining the recheck buffer.
+    func injectRecheck(
+        trackID: Int,
+        classKey: String,
+        className: String,
+        conf: Float,
+        weight: Float,
+        at timestamp: CFAbsoluteTime
+    ) {
+        guard pipeline == .belief,
+              let i = tracks.firstIndex(where: { $0.id == trackID }) else { return }
+        tracks[i].belief.inject(
+            classKey: classKey,
+            className: className,
+            weight: Double(weight),
+            at: timestamp,
+            countsAsEvidence: true
+        )
+        tracks[i].lastBelief = tracks[i].belief.currentState(at: timestamp)
+        if let state = tracks[i].lastBelief,
+           let locked = state.lockedClassKey, locked != tracks[i].classKey {
+            tracks[i].classKey = locked
+            tracks[i].className = state.classNameByKey[locked] ?? className
+            tracks[i].lockedConf = Float(state.probabilities[locked] ?? 0)
+        }
+    }
+
     private func emit(_ track: Track) -> TrackedDetection {
-        let last = track.samples.last
+        // Legacy has no uncertainty concept: it always answers as if sure, which is
+        // exactly the behavior the toggle exists to reproduce.
+        guard pipeline == .belief else {
+            return TrackedDetection(
+                id: track.id,
+                classKey: track.classKey,
+                className: track.className,
+                conf: track.lockedConf,
+                displayXywhn: inflate(track.displayXywhn),
+                misses: track.misses,
+                rawClassKey: "",
+                rawConf: 0,
+                beliefUncertain: false,
+                beliefMargin: 0
+            )
+        }
+        let state = track.lastBelief
+        let raw = track.lastRaw
         return TrackedDetection(
             id: track.id,
             classKey: track.classKey,
@@ -208,8 +280,10 @@ final class DetectionTracker {
             conf: track.lockedConf,
             displayXywhn: inflate(track.displayXywhn),
             misses: track.misses,
-            rawClassKey: last?.classKey ?? track.classKey,
-            rawConf: last?.conf ?? track.lockedConf
+            rawClassKey: raw?.classKey ?? "",
+            rawConf: raw?.conf ?? 0,
+            beliefUncertain: track.confirmed ? (state?.isUncertain ?? true) : false,
+            beliefMargin: state.map { Float($0.margin) } ?? 0
         )
     }
 
@@ -260,16 +334,14 @@ final class DetectionTracker {
         tracks[i].xywhn = det.xywhn
         tracks[i].displayXywhn = ema(tracks[i].displayXywhn, det.xywhn)
         tracks[i].t = timestamp
-        tracks[i].samples.append(
-            ClassSample(t: timestamp, classKey: det.classKey, className: det.className, conf: det.conf)
-        )
-        let cutoff = timestamp - classLockWindow
-        tracks[i].samples.removeAll { $0.t < cutoff }
+        tracks[i].lastRaw = det
 
         if !tracks[i].confirmed {
             if det.classKey == tracks[i].classKey {
                 tracks[i].hits += 1
             } else {
+                // Confirmation needs agreeing frames; a disagreeing frame restarts the
+                // count under the challenger. The engine sees everything regardless.
                 tracks[i].classKey = det.classKey
                 tracks[i].className = det.className
                 tracks[i].hits = 1
@@ -278,36 +350,61 @@ final class DetectionTracker {
             if tracks[i].hits >= confirmHits {
                 tracks[i].confirmed = true
             }
+        } else if det.classKey == tracks[i].classKey {
+            tracks[i].lockedConf = det.conf
+        }
+
+        if pipeline == .legacy {
+            // Main's math: window vote owns the label once the window fills. No belief,
+            // no appearance channel, no uncertainty.
+            tracks[i].legacy.observe(
+                classKey: det.classKey,
+                className: det.className,
+                conf: det.conf,
+                at: timestamp
+            )
+            let voted = tracks[i].legacy.label
+            if voted != tracks[i].classKey {
+                tracks[i].classKey = voted
+                tracks[i].className = BinGuide.bin(id: voted).title
+            }
             return
         }
 
-        if det.classKey == tracks[i].classKey {
-            tracks[i].lockedConf = det.conf
+        tracks[i].belief.observe(
+            classKey: det.classKey,
+            className: det.className,
+            conf: det.conf,
+            at: timestamp
+        )
+        // Soft color/texture evidence rides along when sampled this frame; it shifts
+        // shares without counting toward the minimum-evidence gate.
+        if let prior = det.appearancePrior {
+            for (key, share) in prior.shares {
+                tracks[i].belief.inject(
+                    classKey: key,
+                    className: BinGuide.bin(id: key).title,
+                    weight: share * appearanceEvidenceWeight,
+                    at: timestamp,
+                    countsAsEvidence: false
+                )
+            }
         }
-        guard let first = tracks[i].samples.first, let last = tracks[i].samples.last,
-              last.t - first.t >= classLockWindow
-        else { return }
-        applyVote(trackIndex: i)
+        let state = tracks[i].belief.currentState(at: timestamp)
+        tracks[i].lastBelief = state
+        // The engine's stable lock outranks the raw class once it exists; this is what
+        // absorbs a single-frame flicker without waiting for the window to agree.
+        if let locked = state.lockedClassKey, locked != tracks[i].classKey, trackConfirmedLongEnough(i) {
+            tracks[i].classKey = locked
+            tracks[i].className = state.classNameByKey[locked] ?? det.className
+            tracks[i].lockedConf = Float(state.probabilities[locked] ?? 0)
+        }
     }
 
-    private func applyVote(trackIndex i: Int) {
-        var weights: [String: Float] = [:]
-        var names: [String: String] = [:]
-        var lastConf: [String: Float] = [:]
-        for sample in tracks[i].samples {
-            weights[sample.classKey, default: 0] += sample.conf
-            names[sample.classKey] = sample.className
-            lastConf[sample.classKey] = sample.conf
-        }
-        let current = tracks[i].classKey
-        let currentWeight = weights[current] ?? 0
-        guard let best = weights.max(by: { a, b in
-            a.value == b.value ? a.key > b.key : a.value < b.value
-        }) else { return }
-        guard best.key != current, best.value > currentWeight else { return }
-        tracks[i].classKey = best.key
-        tracks[i].className = names[best.key] ?? tracks[i].className
-        tracks[i].lockedConf = lastConf[best.key] ?? tracks[i].lockedConf
+    /// Guards label flips until confirmation finished, so `confirmHits` disagreement
+    /// handling stays authoritative for newborn tracks.
+    private func trackConfirmedLongEnough(_ i: Int) -> Bool {
+        tracks[i].confirmed
     }
 
     private func ema(_ prev: CGRect, _ new: CGRect) -> CGRect {

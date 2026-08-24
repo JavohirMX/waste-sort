@@ -15,7 +15,7 @@ struct StatsView: View {
     @State private var siteNameDraft = ""
 
     /// Used when Stats is shown as an overlay (slide from right) instead of a cover.
-    var onClose: (() -> Void)? = nil
+    var onClose: (() -> Void)?
 
     private var events: [ZoneEventRecord] {
         settings.useMockStats ? StatsMockData.events() : history.events
@@ -172,14 +172,14 @@ struct StatsView: View {
         control.setTitleTextAttributes(
             [
                 .foregroundColor: UIColor(white: 0.28, alpha: 1),
-                .font: UIFont.systemFont(ofSize: 16, weight: .medium),
+                .font: UIFont.systemFont(ofSize: 16, weight: .medium)
             ],
             for: .normal
         )
         control.setTitleTextAttributes(
             [
                 .foregroundColor: UIColor(white: 0.12, alpha: 1),
-                .font: UIFont.systemFont(ofSize: 16, weight: .semibold),
+                .font: UIFont.systemFont(ofSize: 16, weight: .semibold)
             ],
             for: .selected
         )
@@ -255,7 +255,7 @@ struct StatsView: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("\(snapshot.generatedTotal)")
-                    .font(.system(size: isWide ? 51 : 40, weight: .regular, design: .default).monospacedDigit())
+                    .font(.system(size: isWide ? 51 : 40, weight: .bold, design: .default).monospacedDigit())
                     .foregroundStyle(Color(white: 0.12))
                 Text("items")
                     .font(.system(size: isWide ? 20 : 16, weight: .medium, design: .default))
@@ -269,7 +269,7 @@ struct StatsView: View {
                         Circle()
                             .fill(bin.color)
                             .frame(width: 11, height: 11)
-                        Text(bin.displayName.capitalized)
+                        Text(bin.id == BinGuide.cleanInorganic.id ? "Recyclable" : bin.displayName.capitalized)
                             .font(.system(size: isWide ? 16 : 14, weight: .medium, design: .default))
                             .foregroundStyle(Color(white: 0.4))
                     }
@@ -285,14 +285,14 @@ struct StatsView: View {
     private var categoryBars: some View {
         let peak = displayCategoryCounts.map(\.count).max() ?? 0
         let yMax: Int = {
-            if useMockDailyBars { return 100 }
+            if useMockDailyBars { return 150 }
             return max(150, Int((Double(peak) * 1.1 / 50).rounded(.up) * 50))
         }()
         let ticks = stride(from: 0, through: yMax, by: 50).map { $0 }
 
         return GeometryReader { geo in
             let trackHeight = max(geo.size.height - 4, 160)
-            let barWidth: CGFloat = isWide ? 104 : 72
+            let barWidth: CGFloat = isWide ? 96 : 68
             let yLabelWidth: CGFloat = 28
             let chartWidth = max(geo.size.width - yLabelWidth, 120)
 
@@ -311,18 +311,18 @@ struct StatsView: View {
                         .position(x: 12, y: y)
                 }
 
-                HStack(alignment: .bottom, spacing: isWide ? 28 : 18) {
+                HStack(alignment: .bottom, spacing: isWide ? 24 : 16) {
                     ForEach(binStyle.orderedBins) { bin in
                         let count = displayCategoryCounts.first { $0.binID == bin.id }?.count ?? 0
                         let fillRatio = CGFloat(count) / CGFloat(max(yMax, 1))
-                        let fillHeight = max(trackHeight * fillRatio, count > 0 ? 36 : 0)
+                        let fillHeight = max(trackHeight * fillRatio, count > 0 ? 44 : 0)
 
                         ZStack(alignment: .bottom) {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(Color(white: 0.92))
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(Color(white: 0.93))
                                 .frame(width: barWidth, height: trackHeight)
 
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
                                 .fill(bin.color)
                                 .frame(width: barWidth, height: fillHeight)
                                 .overlay(alignment: .bottom) {
@@ -346,24 +346,36 @@ struct StatsView: View {
 
     private var binsFilledCard: some View {
         StatsCardSurface {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: isWide ? 18 : 12) {
                 Text("Bins filled")
-                    .font(.system(size: isWide ? 19 : 17, weight: .medium, design: .default))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: isWide ? 19 : 17, weight: .semibold, design: .default))
+                    .foregroundStyle(Color(red: 0.0, green: 0.38, blue: 0.85))
+                    .underline()
 
-                if !settings.useMockStats, snapshot.isEmpty {
-                    Text("No waste recorded yet")
-                        .font(.system(size: 16, weight: .regular, design: .default))
-                        .foregroundStyle(.secondary)
+                VStack(spacing: isWide ? 12 : 8) {
+                    ForEach(binStyle.orderedBins) { bin in
+                        let count = binsFilledCounts.first { $0.binID == bin.id }?.count ?? 0
+                        HStack(spacing: 14) {
+                            Image(systemName: bin.symbolName)
+                                .font(.system(size: isWide ? 22 : 18, weight: .bold))
+                                .foregroundStyle(bin.color)
+
+                            Text(bin.id == BinGuide.cleanInorganic.id ? "Recyclable" : bin.displayName.capitalized)
+                                .font(.system(size: isWide ? 18 : 15, weight: .medium, design: .default))
+                                .foregroundStyle(Color(white: 0.40))
+
+                            Spacer()
+
+                            Text("\(count)")
+                                .font(.system(size: isWide ? 22 : 18, weight: .bold, design: .default).monospacedDigit())
+                                .foregroundStyle(Color(white: 0.12))
+                        }
+                        .padding(.horizontal, isWide ? 20 : 14)
+                        .padding(.vertical, isWide ? 14 : 10)
+                        .background(Color(white: 0.97), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
                 }
-
-                BinsFilledArtwork(
-                    bins: binStyle.orderedBins,
-                    counts: binsFilledCounts,
-                    isWide: isWide
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .scaleEffect(1.06)
+                .frame(maxHeight: .infinity, alignment: .center)
             }
         }
     }
@@ -382,7 +394,7 @@ struct StatsView: View {
                             y: .value("Items", bucket.generated),
                             series: .value("Series", "Generated")
                         )
-                        .foregroundStyle(Color(red: 0.12, green: 0.42, blue: 0.98))
+                        .foregroundStyle(Color(red: 0.0, green: 0.48, blue: 1.0))
                         .lineStyle(StrokeStyle(lineWidth: 4.5, lineCap: .round, lineJoin: .round))
                         .interpolationMethod(.linear)
 
@@ -427,16 +439,16 @@ struct StatsView: View {
 
                 VStack(alignment: .trailing, spacing: 0) {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("Correctly placed")
-                            .font(.system(size: 15, weight: .medium, design: .default))
-                            .foregroundStyle(Color(white: 0.45))
+                        Text("Correct Bin")
+                            .font(.system(size: isWide ? 20 : 16, weight: .medium, design: .default))
+                            .foregroundStyle(Color(white: 0.12))
                         HStack(alignment: .firstTextBaseline, spacing: 2) {
                             Text("\(snapshot.correctlyPlacedPercent)")
-                                .font(.system(size: isWide ? 48 : 36, weight: .regular, design: .default).monospacedDigit())
+                                .font(.system(size: isWide ? 48 : 36, weight: .bold, design: .default).monospacedDigit())
                                 .foregroundStyle(Color(white: 0.12))
                             Text("%")
-                                .font(.system(size: 16, weight: .medium, design: .default))
-                                .foregroundStyle(Color(white: 0.35))
+                                .font(.system(size: isWide ? 48 : 36, weight: .bold, design: .default))
+                                .foregroundStyle(Color(white: 0.12))
                         }
                     }
 
@@ -444,8 +456,8 @@ struct StatsView: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         legendRow(
-                            color: Color(red: 0.12, green: 0.42, blue: 0.98),
-                            label: "Generated waste",
+                            color: Color(red: 0.0, green: 0.48, blue: 1.0),
+                            label: "Correct bin",
                             dashed: false
                         )
                         legendRow(
@@ -615,7 +627,7 @@ private struct BinsFilledArtwork: View {
     private static let artOrder = [
         BinGuide.organic.id,
         BinGuide.residual.id,
-        BinGuide.cleanInorganic.id,
+        BinGuide.cleanInorganic.id
     ]
 
     var body: some View {

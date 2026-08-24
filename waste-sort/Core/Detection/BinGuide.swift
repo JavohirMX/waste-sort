@@ -36,7 +36,8 @@ nonisolated enum BinGuide {
         color: Color(red: 39 / 255, green: 39 / 255, blue: 42 / 255),
         idleColor: Color(red: 82 / 255, green: 82 / 255, blue: 91 / 255),
         symbolName: "trash.fill",
-        instructions: "Tissues, diapers, sanitary products, styrofoam, multilayer sachets, mixed or unrecognizable waste, and items soiled beyond rinsing. Also anything that is not recyclable material."
+                instructions: "Tissues, diapers, sanitary products, styrofoam, multilayer sachets, mixed or unrecognizable waste, and items soiled beyond rinsing. Also anything that is not"
+        + "recyclable material."
     )
 
     static let cleanInorganic = BinInfo(
@@ -48,7 +49,8 @@ nonisolated enum BinGuide {
         color: Color(red: 234 / 255, green: 179 / 255, blue: 8 / 255),
         idleColor: Color(red: 196 / 255, green: 164 / 255, blue: 106 / 255),
         symbolName: "arrow.3.trianglepath",
-        instructions: "Empty and dry plastic (bottles, cups, clean bags and film), metal, glass, clean paper, cardboard, and sticky notes. Default for recyclable types only when leftover food, drink, sauce, or oil looks unlikely."
+                instructions: "Empty and dry plastic (bottles, cups, clean bags and film), metal, glass, clean paper, cardboard, and sticky notes. Default for recyclable types only when"
+        + "leftover food, drink, sauce, or oil looks unlikely."
     )
 
     /// Overlay-only: a recyclable type that may still be dirty. Not a fourth physical bin,
@@ -62,7 +64,8 @@ nonisolated enum BinGuide {
         color: Color(red: 39 / 255, green: 39 / 255, blue: 42 / 255),
         idleColor: Color(red: 82 / 255, green: 82 / 255, blue: 91 / 255),
         symbolName: "arrow.3.trianglepath",
-        instructions: "Use when the item is recyclable material AND leftover food, drink, sauce, or oil looks possible — even if you are only about 40–50% sure. Prefer this over recyclable whenever dirt is a real possibility. Rinse then recyclable; throw as-is then residual. Never a non-recyclable type."
+                instructions: "Use when the item is recyclable material AND leftover food, drink, sauce, or oil looks possible — even if you are only about 40–50% sure. Prefer this over"
+        + "recyclable whenever dirt is a real possibility. Rinse then recyclable; throw as-is then residual. Never a non-recyclable type."
     )
 
     static let unknown = BinInfo(
@@ -78,6 +81,12 @@ nonisolated enum BinGuide {
     )
 
     static let all: [BinInfo] = [organic, residual, cleanInorganic]
+
+    /// The stream unsure items are pointed at. Bali's regulation (Pergub 47/2019
+    /// Pasal 6: what can be neither composted nor recycled goes to TPA), and a
+    /// contaminated recyclable ruins its whole batch. So when the belief engine is
+    /// unsure, the honest answer is residual — never a coin-flip guess at recycling.
+    static let fallbackBinID = residual.id
 
     static func normalizedKey(_ className: String) -> String {
         className
@@ -127,5 +136,16 @@ nonisolated enum BinGuide {
             return zoneBinID == residual.id || zoneBinID == cleanInorganic.id
         }
         return item == zoneBinID
+    }
+}
+
+extension TrackedDetection {
+    /// The bin the system should point the user at for this track. When the belief
+    /// engine cannot back a verdict, guidance falls to `fallbackBinID` so an unsure
+    /// item is pointed at the last-resort stream instead of a coin-flip guess.
+    /// Deposit scoring mirrors this via `ZoneDeposit.classKey`, keeping advice and
+    /// scoring consistent.
+    var advisedBinID: String {
+        beliefUncertain ? BinGuide.fallbackBinID : BinGuide.bin(id: BinGuide.info(for: classKey).id).id
     }
 }

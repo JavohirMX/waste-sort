@@ -22,6 +22,21 @@ final class VideoFrameColorProxy: NSObject, AVCaptureVideoDataOutputSampleBuffer
     }()
     private var showingProcessedPreview = false
 
+    /// `captureOutput` runs on the camera queue; `uninstall` on the caller's
+    /// (main) thread. Guard the shared flag with the same lock as controls.
+    private var isShowingProcessedPreview: Bool {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return showingProcessedPreview
+        }
+        set {
+            lock.lock()
+            showingProcessedPreview = newValue
+            lock.unlock()
+        }
+    }
+
     var frameTap: ((CVPixelBuffer) -> Void)? {
         get {
             lock.lock()
@@ -80,7 +95,7 @@ final class VideoFrameColorProxy: NSObject, AVCaptureVideoDataOutputSampleBuffer
             }
         }
         _frameTap = nil
-        showingProcessedPreview = false
+        isShowingProcessedPreview = false
         processedPreviewLayer.removeFromSuperlayer()
         processedPreviewLayer.contents = nil
         processedPreviewLayer.isHidden = true
@@ -122,8 +137,7 @@ final class VideoFrameColorProxy: NSObject, AVCaptureVideoDataOutputSampleBuffer
             processedPreviewLayer.removeFromSuperlayer()
             let insertIndex: UInt32
             if let preview = nativePreviewLayer ?? YOLOViewPredictorAccess.videoCapture(in: view)?.previewLayer,
-               let previewIndex = view.layer.sublayers?.firstIndex(of: preview)
-            {
+               let previewIndex = view.layer.sublayers?.firstIndex(of: preview) {
                 insertIndex = UInt32(previewIndex + 1)
             } else {
                 insertIndex = 1
@@ -135,8 +149,8 @@ final class VideoFrameColorProxy: NSObject, AVCaptureVideoDataOutputSampleBuffer
 
     private func showProcessedPreview(from pixelBuffer: CVPixelBuffer) {
         guard let cgImage = FrameColorAdjuster.makeCGImage(from: pixelBuffer) else { return }
-        if !showingProcessedPreview {
-            showingProcessedPreview = true
+        if !isShowingProcessedPreview {
+            isShowingProcessedPreview = true
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.nativePreviewLayer?.isHidden = true
@@ -151,8 +165,8 @@ final class VideoFrameColorProxy: NSObject, AVCaptureVideoDataOutputSampleBuffer
     }
 
     private func showNativePreview() {
-        guard showingProcessedPreview else { return }
-        showingProcessedPreview = false
+        guard isShowingProcessedPreview else { return }
+        isShowingProcessedPreview = false
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.processedPreviewLayer.contents = nil

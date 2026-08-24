@@ -39,8 +39,10 @@ struct StatsAggregatorTests {
         let snapshot = StatsAggregator.snapshot(events: [], period: .daily, now: now, calendar: calendar)
         #expect(snapshot.generatedTotal == 0)
         #expect(snapshot.isEmpty)
-        #expect(snapshot.categoryCounts.allSatisfy { $0.count == 0 })
-        #expect(snapshot.destinationCounts.allSatisfy { $0.count == 0 })
+        // StatsCategoryCount.count is an Int payload, not a collection count;
+        // isEmpty does not exist, so empty_count is a false positive here.
+        #expect(snapshot.categoryCounts.allSatisfy { $0.count == 0 }) // swiftlint:disable:this empty_count
+        #expect(snapshot.destinationCounts.allSatisfy { $0.count == 0 }) // swiftlint:disable:this empty_count
         #expect(snapshot.timeBuckets.count == 13)
         #expect(snapshot.timeBuckets.allSatisfy { $0.generated == 0 && $0.misplaced == 0 })
     }
@@ -51,7 +53,7 @@ struct StatsAggregatorTests {
         let events = [
             event(at: date(2026, 8, 21, 8), classKey: "organic", zoneBinID: "organic", isCorrect: true),
             event(at: date(2026, 8, 21, 16), classKey: "residual", zoneBinID: "organic", isCorrect: false),
-            event(at: date(2026, 8, 20, 12), classKey: "organic", zoneBinID: "organic", isCorrect: true),
+            event(at: date(2026, 8, 20, 12), classKey: "organic", zoneBinID: "organic", isCorrect: true)
         ]
         let snapshot = StatsAggregator.snapshot(
             events: events,
@@ -87,7 +89,7 @@ struct StatsAggregatorTests {
         let outside = week.start.addingTimeInterval(-3600)
         let events = [
             event(at: inside, classKey: "organic", zoneBinID: "organic", isCorrect: true),
-            event(at: outside, classKey: "residual", zoneBinID: "residual", isCorrect: true),
+            event(at: outside, classKey: "residual", zoneBinID: "residual", isCorrect: true)
         ]
         let snapshot = StatsAggregator.snapshot(
             events: events,
@@ -105,7 +107,7 @@ struct StatsAggregatorTests {
         let events = [
             event(at: date(2026, 8, 21, 10), classKey: "organic", zoneBinID: "organic", isCorrect: true),
             event(at: date(2026, 8, 21, 11), classKey: "organic", zoneBinID: "residual", isCorrect: false),
-            event(at: date(2026, 8, 21, 12), classKey: "residual", zoneBinID: "clean_inorganic", isCorrect: false),
+            event(at: date(2026, 8, 21, 12), classKey: "residual", zoneBinID: "clean_inorganic", isCorrect: false)
         ]
         let snapshot = StatsAggregator.snapshot(
             events: events,
@@ -153,9 +155,9 @@ struct StatsMockDataTests {
 
     @Test("bins filled mock overlay matches design")
     func binsFilledOverlay() {
-        #expect(StatsMockData.binsFilled[BinGuide.organic.id] == 6)
-        #expect(StatsMockData.binsFilled[BinGuide.residual.id] == 8)
-        #expect(StatsMockData.binsFilled[BinGuide.cleanInorganic.id] == 3)
+        #expect(StatsMockData.binsFilled[BinGuide.organic.id] == 4)
+        #expect(StatsMockData.binsFilled[BinGuide.residual.id] == 6)
+        #expect(StatsMockData.binsFilled[BinGuide.cleanInorganic.id] == 8)
     }
 
     @Test("category bar mock overlay sums to 142")

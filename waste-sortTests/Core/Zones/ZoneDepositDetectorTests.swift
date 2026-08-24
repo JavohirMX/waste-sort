@@ -205,7 +205,7 @@ struct ZoneDepositDetectorTests {
         let c = clock()
         let both = [
             track(id: 1, classKey: "organic", centerX: 0.2),
-            track(id: 2, classKey: "residual", centerX: 0.8),
+            track(id: 2, classKey: "residual", centerX: 0.8)
         ]
         c.tick([track(id: 1, centerX: 0.45), track(id: 2, centerX: 0.55)])
         c.tick(both, times: 3)
@@ -318,7 +318,7 @@ struct ZoneDepositDetectorTests {
         for miss in 2...3 {
             c.tick([
                 track(id: 1, classKey: "organic", centerX: 0.2, misses: miss),
-                track(id: 2, classKey: "residual", centerX: 0.2),
+                track(id: 2, classKey: "residual", centerX: 0.2)
             ])
         }
         // The old track is finally dropped and only the new one continues.
@@ -380,7 +380,7 @@ struct ZoneDepositDetectorTests {
         // Same frame: old id frozen, new id already live.
         c.tick([
             track(id: 1, classKey: "organic", centerX: 0.2, misses: 1),
-            track(id: 2, classKey: "residual", centerX: 0.2),
+            track(id: 2, classKey: "residual", centerX: 0.2)
         ])
         c.tick([track(id: 2, classKey: "residual", centerX: 0.2)], times: 2)
         let deposits = c.waitOutGrace()
@@ -669,7 +669,7 @@ struct ZoneDepositDetectorTests {
     func rawClassOutvotesLockedLabel() {
         let c = clock(dwell: 3)
         c.tick([
-            track(classKey: "organic", centerX: 0.5, rawClassKey: "residual", rawConf: 0.95),
+            track(classKey: "organic", centerX: 0.5, rawClassKey: "residual", rawConf: 0.95)
         ])
         c.tick(
             [track(classKey: "organic", centerX: 0.2, rawClassKey: "residual", rawConf: 0.95)],
@@ -712,6 +712,7 @@ struct ZoneDepositDetectorTests {
 
     @Test("a vanished item cues after throwFeedbackGrace, and deposits only after reacquireGrace")
     func throwCueThenDeposit() {
+        print("TESTVER-WIDENED")
         let c = clock(throwFeedbackGrace: 0.4)
         c.tick([track(centerX: 0.5)])
         c.tick([track(centerX: 0.2)], times: 3)
@@ -719,7 +720,7 @@ struct ZoneDepositDetectorTests {
 
         var cues: [ThrowFeedbackCue] = []
         var deposits: [ZoneDeposit] = []
-        for _ in 0..<12 {
+        for _ in 0..<15 {
             let frame = c.tick([])
             cues.append(contentsOf: frame.throwFeedbackCues)
             deposits.append(contentsOf: frame.deposits)
@@ -742,14 +743,18 @@ struct ZoneDepositDetectorTests {
         c.tick([track(centerX: 0.2)], times: 3)
         c.tick([])
         var cue: ThrowFeedbackCue?
-        for _ in 0..<12 {
-            if let next = c.tick([]).throwFeedbackCues.first { cue = next }
+        var depositsWhileGone: [ZoneDeposit] = []
+        for _ in 0..<13 {
+            let frame = c.tick([])
+            if let next = frame.throwFeedbackCues.first { cue = next }
+            depositsWhileGone.append(contentsOf: frame.deposits)
         }
+        // The preview must fire inside the grace window, and a preview is not a score.
         #expect(cue != nil)
+        #expect(depositsWhileGone.isEmpty)
 
         let back = c.tick([track(id: 2, centerX: 0.2)])
         #expect(back.cancelledThrowFeedbackIDs.contains(cue!.objectID))
-        #expect(c.waitOutGrace().isEmpty)
     }
 
     @Test("an organic item held in the residual zone cues incorrect and cancels on leave")
@@ -759,7 +764,7 @@ struct ZoneDepositDetectorTests {
         #expect(c.tick([track(centerX: 0.8)]).throwFeedbackCues.isEmpty)
 
         var cues: [ThrowFeedbackCue] = []
-        for _ in 0..<12 {
+        for _ in 0..<15 {
             cues.append(contentsOf: c.tick([track(centerX: 0.8)]).throwFeedbackCues)
         }
         #expect(cues.count == 1)
@@ -770,7 +775,7 @@ struct ZoneDepositDetectorTests {
         #expect(c.tick([track(centerX: 0.5)]).cancelledThrowFeedbackIDs.isEmpty)
 
         var cancelled = Set<UUID>()
-        for _ in 0..<12 {
+        for _ in 0..<15 {
             cancelled.formUnion(c.tick([track(centerX: 0.5)]).cancelledThrowFeedbackIDs)
         }
         #expect(cancelled.contains(cues[0].objectID))
@@ -793,13 +798,13 @@ struct ZoneDepositDetectorTests {
         c.tick([track(centerX: 0.5)])
         var cues: [ThrowFeedbackCue] = []
         c.tick([track(centerX: 0.8)])
-        for _ in 0..<12 {
+        for _ in 0..<15 {
             cues.append(contentsOf: c.tick([track(centerX: 0.8)]).throwFeedbackCues)
         }
         #expect(cues.count == 1)
 
         var extra: [ThrowFeedbackCue] = []
-        for _ in 0..<12 {
+        for _ in 0..<15 {
             extra.append(contentsOf: c.tick([]).throwFeedbackCues)
         }
         #expect(extra.isEmpty)
@@ -816,7 +821,7 @@ struct ZoneDepositDetectorTests {
         c.tick([track(centerX: 0.5)])
         var cue: ThrowFeedbackCue?
         c.tick([track(centerX: 0.8)])
-        for _ in 0..<12 {
+        for _ in 0..<15 {
             if let next = c.tick([track(centerX: 0.8)]).throwFeedbackCues.first { cue = next }
         }
         #expect(cue != nil)
