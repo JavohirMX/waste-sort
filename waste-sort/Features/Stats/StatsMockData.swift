@@ -4,9 +4,9 @@ import Foundation
 nonisolated enum StatsMockData {
     /// Design mock “bins filled” counts (not destination throw totals).
     static let binsFilled: [String: Int] = [
-        BinGuide.organic.id: 6,
-        BinGuide.residual.id: 8,
-        BinGuide.cleanInorganic.id: 3
+        BinGuide.organic.id: 4,
+        BinGuide.residual.id: 6,
+        BinGuide.cleanInorganic.id: 8
     ]
 
     /// Design mock category bar heights (sum 142) for Daily overlay — taller organic fill on 0…100 domain.
