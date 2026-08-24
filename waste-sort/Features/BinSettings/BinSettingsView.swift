@@ -49,13 +49,13 @@ struct BinSettingsView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("Bin Settings")
-                    .font(.system(size: isWide ? 42 : 34, weight: .bold, design: .default))
-                    .foregroundStyle(Color(white: 0.12))
+                    .font(.system(size: isWide ? 45 : 34, weight: .bold, design: .default))
+                    .foregroundStyle(Color.black)
                 Text("Drag the cards so they can match your actual bins, left to right")
-                    .font(.system(size: isWide ? 17 : 14, weight: .regular, design: .default))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: isWide ? 24 : 16, weight: .regular, design: .default))
+                    .foregroundStyle(Color(red: 121 / 255, green: 121 / 255, blue: 121 / 255))
             }
 
             Spacer(minLength: 0)
@@ -69,49 +69,62 @@ struct BinSettingsView: View {
             binStyle.resetToDefaults()
         } label: {
             Label("Reset to Default", systemImage: "arrow.counterclockwise")
-                .font(.system(size: isWide ? 13 : 12, weight: .medium, design: .default))
+                .font(.system(size: isWide ? 16 : 13, weight: .medium, design: .default))
+                .foregroundStyle(Color(white: 0.10))
+                .padding(.horizontal, isWide ? 20 : 14)
+                .padding(.vertical, isWide ? 12 : 8)
+                .background {
+                    Capsule(style: .continuous)
+                        .fill(.clear)
+                        .glassEffect(.regular.interactive(), in: Capsule(style: .continuous))
+                }
         }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
-        .tint(Color(white: 0.25))
+        .buttonStyle(.plain)
+        .accessibilityLabel("Reset to Default")
     }
 
     /// The design anchors the whole screen on where people actually stand, so the bins can
     /// be dragged into the order they are seen in rather than an abstract one.
     private var orientationStrip: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: isWide ? 12 : 6) {
             Image(systemName: "person.3.fill")
-                .font(.system(size: isWide ? 26 : 22, weight: .semibold))
-                .foregroundStyle(Color(white: 0.2))
+                .font(.system(size: isWide ? 64 : 32, weight: .regular))
+                .foregroundStyle(Color.black)
             Text("People interact with the bins from here")
-                .font(.system(size: isWide ? 14 : 12, weight: .regular, design: .default))
-                .foregroundStyle(Color(white: 0.35))
+                .font(.system(size: isWide ? 22 : 14, weight: .regular, design: .default))
+                .foregroundStyle(Color.black)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, isWide ? 20 : 14)
+        .padding(.vertical, isWide ? 28 : 14)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.white.opacity(0.6))
+                .fill(Color.white.opacity(0.50))
         )
     }
 
     private var saveFooter: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             Button {
                 dismiss()
             } label: {
                 Text("Save")
-                    .font(.system(size: isWide ? 17 : 15, weight: .semibold, design: .default))
-                    .frame(maxWidth: isWide ? 460 : .infinity)
+                    .font(.system(size: isWide ? 24 : 17, weight: .bold, design: .default))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: isWide ? 517 : .infinity)
+                    .frame(height: isWide ? 78 : 50)
+                    .background(
+                        Color(red: 52 / 255, green: 199 / 255, blue: 89 / 255),
+                        in: Capsule(style: .continuous)
+                    )
+                    .glassEffect(.clear.interactive(), in: Capsule(style: .continuous))
+                    .contentShape(Capsule(style: .continuous))
             }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.roundedRectangle(radius: 12))
-            .controlSize(.large)
-            .tint(BinPalette.organic)
+            .buttonStyle(.plain)
+            .shadow(color: .black.opacity(0.04), radius: 15, y: 8)
 
             Text("Preview")
-                .font(.system(size: isWide ? 13 : 12, weight: .regular, design: .default))
-                .foregroundStyle(.secondary)
+                .font(.system(size: isWide ? 22 : 14, weight: .medium, design: .default))
+                .foregroundStyle(Color.black.opacity(0.40))
         }
         .frame(maxWidth: .infinity)
     }
@@ -146,6 +159,8 @@ struct BinSettingsView: View {
                             onSave: saveDraft
                         )
                         .presentationCompactAdaptation(.popover)
+                        .presentationBackground(.ultraThinMaterial)
+                        .presentationCornerRadius(20)
                     }
                     .onTapGesture {
                         draft = binStyle.customization(for: bin.id)
@@ -243,43 +258,53 @@ private struct BinArrangementCard: View {
     var isWide: Bool = true
     var onEdit: () -> Void
 
-    private var cornerRadius: CGFloat { isWide ? 20 : 16 }
+    private var cornerRadius: CGFloat { 20 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: isWide ? 6 : 4) {
+        VStack(alignment: .leading, spacing: isWide ? 8 : 4) {
             Spacer(minLength: 0)
 
-            HStack(spacing: isWide ? 9 : 7) {
+            HStack(spacing: isWide ? 10 : 7) {
                 Image(systemName: bin.symbolName)
-                    .font(.system(size: isWide ? 21 : 17, weight: .bold))
+                    .font(.system(size: isWide ? 34 : 21, weight: .bold))
                 Text(bin.displayName.capitalized)
-                    .font(.system(size: isWide ? 21 : 17, weight: .bold, design: .default))
+                    .font(.system(size: isWide ? 34 : 21, weight: .bold, design: .default))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
             .foregroundStyle(.white)
 
             Text(bin.instructions)
-                .font(.system(size: isWide ? 14 : 12, weight: .regular, design: .default))
-                .foregroundStyle(.white.opacity(0.9))
+                .font(.system(size: isWide ? 22 : 14, weight: .regular, design: .default))
+                .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        .padding(isWide ? 18 : 13)
+        .padding(isWide ? 24 : 16)
         .background(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(bin.color)
+                .fill(
+                    LinearGradient(
+                        colors: [bin.barGradient.top.opacity(0.80), bin.barGradient.bottom.opacity(0.80)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
         )
         .overlay(alignment: .topTrailing) {
             Button(action: onEdit) {
                 Image(systemName: "pencil")
-                    .font(.system(size: isWide ? 13 : 11, weight: .semibold))
+                    .font(.system(size: isWide ? 19 : 14, weight: .bold))
+                    .foregroundStyle(Color(white: 0.10))
+                    .frame(width: isWide ? 50 : 36, height: isWide ? 50 : 36)
+                    .background {
+                        Circle()
+                            .fill(.clear)
+                            .glassEffect(.regular.interactive(), in: Circle())
+                    }
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .controlSize(.small)
-            .tint(Color(white: 0.25))
-            .padding(isWide ? 12 : 9)
+            .buttonStyle(.plain)
+            .padding(isWide ? 14 : 9)
             .accessibilityLabel("Edit \(bin.displayName.capitalized)")
         }
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -300,11 +325,16 @@ private struct BinDetailsEditor: View {
             HStack {
                 Button(action: onCancel) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color(white: 0.25))
+                        .frame(width: 32, height: 32)
+                        .background {
+                            Circle()
+                                .fill(.clear)
+                                .glassEffect(.regular.interactive(), in: Circle())
+                        }
                 }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.circle)
-                .tint(Color(white: 0.25))
+                .buttonStyle(.plain)
                 .accessibilityLabel("Cancel")
 
                 Spacer()
@@ -318,9 +348,12 @@ private struct BinDetailsEditor: View {
                 Button(action: onSave) {
                     Image(systemName: "checkmark")
                         .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color(red: 0 / 255, green: 122 / 255, blue: 255 / 255), in: Circle())
+                        .glassEffect(.clear.interactive(), in: Circle())
                 }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.circle)
+                .buttonStyle(.plain)
                 .accessibilityLabel("Save")
             }
 
@@ -385,7 +418,9 @@ private struct BinDetailsEditor: View {
         }
         .padding(20)
         .frame(width: Self.cardSize.width, height: Self.cardSize.height, alignment: .top)
-        .background(.white)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .shadow(color: .black.opacity(0.30), radius: 50, y: 10)
     }
 
     /// The panel is a fixed floating card in the design rather than a sheet that grows.

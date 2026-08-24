@@ -22,6 +22,8 @@ enum Theme {
     static let ctaDropdownMessage = "Open the bin and throw it here."
     /// Standing instruction along the bottom of the live screen.
     static let liveSortingHint = "Separate waste items to help us identify them."
+    static let disclaimerHeight: CGFloat = 224
+    static let disclaimerFontSize: CGFloat = 22
 
     static let zoneStrokeWidth: CGFloat = 3
     static let zoneFillOpacity: Double = 0.14

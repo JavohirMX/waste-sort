@@ -42,6 +42,13 @@ struct CategoryBar: View {
         // The rim is what makes the tray read as glass: the segments are translucent, so
         // without an inset there is nothing left of the material to see.
         .padding(Theme.barGlassInset * hudTextScale)
+        .background {
+            RoundedRectangle(
+                cornerRadius: Theme.barCornerRadius * hudTextScale,
+                style: .continuous
+            )
+            .fill(Color.black.opacity(0.10))
+        }
         .glassEffect(
             .regular,
             in: RoundedRectangle(
@@ -81,6 +88,7 @@ private struct CategorySegment: View {
                 .lineLimit(1)
         }
         .foregroundStyle(.white)
+        .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
         .padding(.horizontal, Theme.barSegmentHPadding * scale)
         .padding(.vertical, Theme.barSegmentVPadding * scale)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

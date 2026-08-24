@@ -38,6 +38,10 @@ struct LiveCameraView: View {
         return detectedTagFailure
     }
 
+    private var hudTextScale: CGFloat {
+        CGFloat(settings.hudTextScale)
+    }
+
     /// The design surfaces the cleanable hint only while something is bound for residual
     /// without the pipeline being sure of it - the case rinsing would still change.
     private var showsCleanableHint: Bool {
@@ -244,15 +248,17 @@ struct LiveCameraView: View {
                         if showsCleanableHint {
                             CleanableHintChip()
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.leading, Theme.hudInset)
+                                .padding(.leading, 20)
                                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
 
                         ZStack(alignment: .bottom) {
                             Text(Theme.liveSortingHint)
-                                .font(.system(size: 11, weight: .regular, design: .default))
-                                .foregroundStyle(.white.opacity(0.75))
+                                .font(BrandFont.body(Theme.disclaimerFontSize * hudTextScale, weight: .regular))
+                                .foregroundStyle(Color.white.opacity(0.80))
                                 .multilineTextAlignment(.center)
+                                .frame(maxWidth: .infinity)
+                                .padding(.bottom, 20 * hudTextScale)
 
                             HStack(alignment: .bottom) {
                                 if settings.showFPS {
@@ -260,15 +266,28 @@ struct LiveCameraView: View {
                                         .font(.system(.caption, design: .default).monospacedDigit())
                                         .foregroundStyle(.white.opacity(0.9))
                                         .accessibilityLabel("\(fps) frames per second")
-                                        .padding(.leading, Theme.hudInset)
                                 }
                                 Spacer(minLength: 0)
                                 statsGlassButton
                             }
+                            .padding(.horizontal, 20 * hudTextScale)
+                            .padding(.bottom, 20 * hudTextScale)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: Theme.disclaimerHeight * hudTextScale, alignment: .bottom)
+                        .background {
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .clear, location: 0.0),
+                                    .init(color: Color.black.opacity(0.31), location: 1.0)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .ignoresSafeArea(edges: .bottom)
                         }
                     }
                     .animation(.easeInOut(duration: Theme.animationDuration), value: showsCleanableHint)
-                    .padding(.bottom, Theme.hudInset)
                 }
             }
         }
