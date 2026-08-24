@@ -63,6 +63,9 @@ final class DetectionTracker {
     /// Overlap required to keep the same track when YOLO changes class.
     /// Capped at `iouThreshold` so a relabel cannot fall into a dead zone.
     var crossClassIouThreshold = CGFloat(WasteSortConfig.defaultCrossClassIou)
+    /// Which decision math owns labels and uncertainty reporting. Under `.legacy` every
+    /// track also runs a `LegacyDecisionEngine` and belief-specific channels go quiet.
+    var pipeline: DecisionPipeline = .belief
     /// Belief knobs mirrored onto every track's engine each frame, so settings changes
     /// reach engines created at different times.
     var beliefHalfLife: CFTimeInterval = WasteSortConfig.defaultBeliefDisplayHalfLife
@@ -90,6 +93,8 @@ final class DetectionTracker {
         var matched: Bool
         var t: CFAbsoluteTime
         let belief: BeliefEngine
+        /// Window-vote math for the legacy pipeline. Idle under `.belief`.
+        var legacy = LegacyDecisionEngine()
         /// Last engine verdict, refreshed only on matched frames. Coasting frames
         /// replay it instead of advancing the engine a second time.
         var lastBelief: BeliefState?
@@ -211,7 +216,8 @@ final class DetectionTracker {
         weight: Float,
         at timestamp: CFAbsoluteTime
     ) {
-        guard let i = tracks.firstIndex(where: { $0.id == trackID }) else { return }
+        guard pipeline == .belief,
+              let i = tracks.firstIndex(where: { $0.id == trackID }) else { return }
         tracks[i].belief.inject(
             classKey: classKey,
             className: className,
@@ -229,6 +235,22 @@ final class DetectionTracker {
     }
 
     private func emit(_ track: Track) -> TrackedDetection {
+        // Legacy has no uncertainty concept: it always answers as if sure, which is
+        // exactly the behavior the toggle exists to reproduce.
+        guard pipeline == .belief else {
+            return TrackedDetection(
+                id: track.id,
+                classKey: track.classKey,
+                className: track.className,
+                conf: track.lockedConf,
+                displayXywhn: inflate(track.displayXywhn),
+                misses: track.misses,
+                rawClassKey: "",
+                rawConf: 0,
+                beliefUncertain: false,
+                beliefMargin: 0
+            )
+        }
         let state = track.lastBelief
         let raw = track.lastRaw
         return TrackedDetection(
@@ -310,6 +332,23 @@ final class DetectionTracker {
             }
         } else if det.classKey == tracks[i].classKey {
             tracks[i].lockedConf = det.conf
+        }
+
+        if pipeline == .legacy {
+            // Main's math: window vote owns the label once the window fills. No belief,
+            // no appearance channel, no uncertainty.
+            tracks[i].legacy.observe(
+                classKey: det.classKey,
+                className: det.className,
+                conf: det.conf,
+                at: timestamp
+            )
+            let voted = tracks[i].legacy.label
+            if voted != tracks[i].classKey {
+                tracks[i].classKey = voted
+                tracks[i].className = BinGuide.bin(id: voted).title
+            }
+            return
         }
 
         tracks[i].belief.observe(

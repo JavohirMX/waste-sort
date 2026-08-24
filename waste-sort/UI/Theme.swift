@@ -20,6 +20,8 @@ enum Theme {
     static let ctaHighlightPulseAmount: Double = 0.06
     static let ctaHighlightPulsePeriod: TimeInterval = 1.4
     static let ctaDropdownMessage = "Open the bin and throw it here."
+    /// Standing instruction along the bottom of the live screen.
+    static let liveSortingHint = "Separate waste items to help us identify them."
 
     static let zoneStrokeWidth: CGFloat = 3
     static let zoneFillOpacity: Double = 0.14
@@ -31,7 +33,10 @@ enum Theme {
     /// Dwell met — dropping it now would be recorded.
     static let zoneArmedDash: [CGFloat] = [14, 5]
 
-    static let statsBackground = Color(red: 245 / 255, green: 239 / 255, blue: 228 / 255)
+    /// Page background across the Stats and Bin Settings screens - `#DEEDE2` in the
+    /// design, which draws both on the same light green rather than the two different
+    /// creams the app had been using.
+    static let statsBackground = Color(red: 222 / 255, green: 237 / 255, blue: 226 / 255)
 
     // MARK: - Bin Labels bar
     //

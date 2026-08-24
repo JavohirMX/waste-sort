@@ -78,7 +78,9 @@ Unrecognized classes are ignored in the live bar. Unsure items (dashed box, ques
 
 The gate that decides: **confidently-wrong verdict count** — answers that were wrong while claiming certainty. Raw argmax accuracy can be won by alphabetical luck; the bundled fixtures deliberately include one flap where legacy's tie-break coin lands on truth, plus one recency-trap where legacy genuinely beats belief, so the comparison documents tradeoffs rather than cheerleading. Current result on the bundled mix: belief produces 1 confident-wrong verdict vs main's 3.
 
-To settle it with real data instead of synthetic scenarios: enable **Verbose detection logging** in Settings before recording — every tracked item then emits a per-frame `frame` row to the session CSV. Convert those rows into `DecisionScenario` fixtures (ground-truth labels come from reviewing the recorded clip), re-run the evaluator, and let the same gate decide.
+To settle it with real data instead of synthetic scenarios: enable **Verbose detection logging** (on by default) before recording — every tracked item then emits a per-frame `frame` row to the session CSV. Convert those rows into `DecisionScenario` fixtures (ground-truth labels come from reviewing the recorded clip), re-run the evaluator, and let the same gate decide.
+
+The same choice exists at runtime: Settings → Live tracking → **Decision engine** switches between `Belief engine` and `Legacy confidence` without leaving the app. The legacy path runs the exact math above via `LegacyDecisionEngine` — including its quirks (the window vote only fires on bit-exact cutoff alignment, so confirmed labels mostly stick; relabels reach users through track respawns). Appearance and recheck assists feed beliefs and go inert under legacy.
 
 ### Roadmap: material taxonomy (v4 model)
 

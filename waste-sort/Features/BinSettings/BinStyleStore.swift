@@ -53,8 +53,8 @@ enum BinColorToken: String, CaseIterable, Identifiable {
         switch self {
         case .red: .red
         case .orange: .orange
-        case .yellow: Color(red: 234 / 255, green: 179 / 255, blue: 8 / 255)
-        case .green: Color(red: 34 / 255, green: 197 / 255, blue: 94 / 255)
+        case .yellow: BinPalette.inorganic
+        case .green: BinPalette.organic
         case .mint: .mint
         case .teal: .teal
         case .cyan: .cyan
@@ -63,7 +63,7 @@ enum BinColorToken: String, CaseIterable, Identifiable {
         case .purple: .purple
         case .pink: .pink
         case .brown: .brown
-        case .black: Color(red: 39 / 255, green: 39 / 255, blue: 42 / 255)
+        case .black: BinPalette.residual
         }
     }
 
@@ -281,7 +281,7 @@ final class BinStyleStore: ObservableObject {
             ),
             BinCustomization(
                 binID: BinGuide.cleanInorganic.id,
-                label: "Recyclable",
+                label: "Inorganic",
                 symbolName: BinIconOption.recycle.symbolName,
                 colorToken: BinColorToken.yellow.rawValue,
                 order: 2

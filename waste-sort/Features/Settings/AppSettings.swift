@@ -33,8 +33,12 @@ enum WasteSortConfig {
     static let defaultRecheckCooldown = 2.0
     /// Multiplier on the re-check confidence when injected as belief evidence.
     static let defaultRecheckWeight = 1.5
-    /// Per-frame track events for offline decision-pipeline replays. Heavy; off by default.
-    static let defaultVerboseDetectionLogging = false
+    /// Which decision math produces bin advice. Belief is the production engine;
+    /// legacy replays main's pre-belief math for A/B comparison.
+    static let defaultDecisionPipeline = DecisionPipeline.belief
+    /// Per-frame track events for offline decision-pipeline replays.
+    /// Heavy but cheap enough at kiosk scale; on by default so sessions are always replayable.
+    static let defaultVerboseDetectionLogging = true
     static let defaultEmaAlpha = 0.4
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8
@@ -68,6 +72,7 @@ struct RuntimeSettings: Equatable {
     var confidence: Double
     var iou: Double
     var maxItems: Int
+    var decisionPipeline: DecisionPipeline
     var barcodeAssistEnabled: Bool
     var appearanceAssistEnabled: Bool
     var recheckAssistEnabled: Bool
@@ -232,6 +237,12 @@ final class AppSettings: ObservableObject {
     @Published var recheckAssistEnabled: Bool {
         didSet { persist(recheckAssistEnabled, key: Keys.recheckAssistEnabled) }
     }
+    /// Switches the bin-decision math without leaving the app: the belief engine
+    /// versus main's pre-belief confidence vote. Assists (appearance prior, zoom
+    /// re-check) only act on beliefs and go inert under legacy.
+    @Published var decisionPipeline: DecisionPipeline {
+        didSet { persist(decisionPipeline.rawValue, key: Keys.decisionPipeline) }
+    }
     /// Emits one CSV event per tracked item per frame so sessions can be replayed
     /// through the offline decision bake-off (`Core/Evaluation`).
     @Published var verboseDetectionLogging: Bool {
@@ -263,6 +274,7 @@ final class AppSettings: ObservableObject {
             confidence: confidence,
             iou: iou,
             maxItems: maxItems,
+            decisionPipeline: decisionPipeline,
             barcodeAssistEnabled: barcodeAssistEnabled,
             appearanceAssistEnabled: appearanceAssistEnabled,
             recheckAssistEnabled: recheckAssistEnabled,
@@ -329,6 +341,7 @@ final class AppSettings: ObservableObject {
         static let useMockStats = "settings.useMockStats"
         static let voiceGuidanceEnabled = "settings.voiceGuidanceEnabled"
         static let barcodeAssistEnabled = "settings.barcodeAssistEnabled"
+        static let decisionPipeline = "settings.decisionPipeline"
         static let appearanceAssistEnabled = "settings.appearanceAssistEnabled"
         static let recheckAssistEnabled = "settings.recheckAssistEnabled"
         static let verboseDetectionLogging = "settings.verboseDetectionLogging"
@@ -344,6 +357,9 @@ final class AppSettings: ObservableObject {
         maxItems = Self.loadInt(defaults, Keys.maxItems, WasteSortConfig.defaultMaxItems)
         confirmHits = Self.loadInt(defaults, Keys.confirmHits, WasteSortConfig.defaultConfirmHits)
         maxMisses = Self.loadInt(defaults, Keys.maxMisses, WasteSortConfig.defaultMaxMisses)
+        decisionPipeline = DecisionPipeline(
+            rawValue: Self.loadString(defaults, Keys.decisionPipeline, WasteSortConfig.defaultDecisionPipeline.rawValue)
+        ) ?? WasteSortConfig.defaultDecisionPipeline
         trackerIou = Self.loadDouble(defaults, Keys.trackerIou, WasteSortConfig.defaultTrackerIou)
         crossClassIou = Self.loadDouble(defaults, Keys.crossClassIou, WasteSortConfig.defaultCrossClassIou)
         beliefThreshold = Self.loadDouble(
@@ -449,6 +465,7 @@ final class AppSettings: ObservableObject {
         confirmHits = WasteSortConfig.defaultConfirmHits
         maxMisses = WasteSortConfig.defaultMaxMisses
         trackerIou = WasteSortConfig.defaultTrackerIou
+        decisionPipeline = WasteSortConfig.defaultDecisionPipeline
         crossClassIou = WasteSortConfig.defaultCrossClassIou
         beliefThreshold = WasteSortConfig.defaultBeliefThreshold
         beliefMargin = WasteSortConfig.defaultBeliefMargin

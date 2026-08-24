@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct BinSettingsView: View {
     @EnvironmentObject private var binStyle: BinStyleStore
@@ -10,6 +9,9 @@ struct BinSettingsView: View {
 
     @State private var draft: BinCustomization?
     @State private var draggingID: String?
+    /// Visual offset of the lifted card, and the correction applied each time it changes slot.
+    @State private var dragTranslation: CGFloat = 0
+    @State private var dragRebase: CGFloat = 0
 
     private var isWide: Bool { horizontalSizeClass == .regular }
 
@@ -17,18 +19,17 @@ struct BinSettingsView: View {
         ZStack {
             Theme.statsBackground.ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: isWide ? 28 : 20) {
+            VStack(alignment: .leading, spacing: isWide ? 24 : 16) {
                 header
                     .padding(.leading, 56)
 
                 binCardsRow
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                Text("Drag and Drop to sort, tap to edit details.")
-                    .font(.system(size: isWide ? 17 : 15, weight: .regular, design: .default))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.bottom, isWide ? 20 : 12)
+                orientationStrip
+
+                saveFooter
+                    .padding(.bottom, isWide ? 8 : 4)
             }
             .padding(.horizontal, GlassChrome.pageInset)
             .padding(.top, 20)
@@ -44,74 +45,179 @@ struct BinSettingsView: View {
             .padding(.top, 16)
             .padding(.leading, GlassChrome.pageInset)
         }
-        .sheet(item: $draft) { presented in
-            BinDetailsEditor(
-                draft: Binding(
-                    get: { draft ?? presented },
-                    set: { draft = $0 }
-                ),
-                onCancel: discardDraft,
-                onSave: saveDraft
-            )
-            .presentationDetents([.height(420), .medium])
-            .presentationDragIndicator(.visible)
-        }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Bin Settings")
-                .font(.system(size: isWide ? 42 : 34, weight: .bold, design: .default))
-                .foregroundStyle(Color(white: 0.12))
-            Text("How are your bins arranged?")
-                .font(.system(size: isWide ? 20 : 17, weight: .regular, design: .default))
-                .foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Bin Settings")
+                    .font(.system(size: isWide ? 42 : 34, weight: .bold, design: .default))
+                    .foregroundStyle(Color(white: 0.12))
+                Text("Drag the cards so they can match your actual bins, left to right")
+                    .font(.system(size: isWide ? 17 : 14, weight: .regular, design: .default))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            resetButton
         }
     }
 
-    private var binCardsRow: some View {
-        HStack(spacing: isWide ? 22 : 14) {
-            ForEach(binStyle.orderedBins) { bin in
-                BinArrangementCard(bin: bin, isWide: isWide)
-                    .opacity(draggingID == bin.id ? 0.55 : 1)
-                    .onTapGesture {
-                        draft = binStyle.customization(for: bin.id)
-                    }
-                    .onDrag {
-                        draggingID = bin.id
-                        return NSItemProvider(object: bin.id as NSString)
-                    }
-                    .onDrop(
-                        of: [UTType.text],
-                        delegate: BinReorderDropDelegate(
-                            targetID: bin.id,
-                            draggingID: $draggingID,
-                            orderedIDs: binStyle.orderedBins.map(\.id),
-                            onMove: applyReorder
-                        )
-                    )
-            }
+    private var resetButton: some View {
+        Button {
+            binStyle.resetToDefaults()
+        } label: {
+            Label("Reset to Default", systemImage: "arrow.counterclockwise")
+                .font(.system(size: isWide ? 13 : 12, weight: .medium, design: .default))
         }
-        .padding(isWide ? 28 : 18)
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .tint(Color(white: 0.25))
+    }
+
+    /// The design anchors the whole screen on where people actually stand, so the bins can
+    /// be dragged into the order they are seen in rather than an abstract one.
+    private var orientationStrip: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "person.3.fill")
+                .font(.system(size: isWide ? 26 : 22, weight: .semibold))
+                .foregroundStyle(Color(white: 0.2))
+            Text("People interact with the bins from here")
+                .font(.system(size: isWide ? 14 : 12, weight: .regular, design: .default))
+                .foregroundStyle(Color(white: 0.35))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, isWide ? 20 : 14)
         .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(Color.white.opacity(0.55))
-                .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.white.opacity(0.6))
         )
     }
 
-    private func applyReorder(from sourceID: String, to targetID: String) {
+    private var saveFooter: some View {
+        VStack(spacing: 6) {
+            Button {
+                dismiss()
+            } label: {
+                Text("Save")
+                    .font(.system(size: isWide ? 17 : 15, weight: .semibold, design: .default))
+                    .frame(maxWidth: isWide ? 460 : .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.roundedRectangle(radius: 12))
+            .controlSize(.large)
+            .tint(BinPalette.organic)
+
+            Text("Preview")
+                .font(.system(size: isWide ? 13 : 12, weight: .regular, design: .default))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var binCardsRow: some View {
+        let bins = binStyle.orderedBins
+        let spacing: CGFloat = isWide ? 22 : 14
+
+        return GeometryReader { geo in
+            let count = max(bins.count, 1)
+            let cardWidth = (geo.size.width - spacing * CGFloat(count - 1)) / CGFloat(count)
+            let step = cardWidth + spacing
+
+            HStack(spacing: spacing) {
+                ForEach(bins) { bin in
+                    let lifted = draggingID == bin.id
+                    BinArrangementCard(bin: bin, isWide: isWide) {
+                        draft = binStyle.customization(for: bin.id)
+                    }
+                    .frame(width: cardWidth)
+                    .scaleEffect(lifted ? 1.06 : 1)
+                    .shadow(color: .black.opacity(lifted ? 0.25 : 0), radius: 20, y: 12)
+                    .offset(x: lifted ? dragTranslation : 0)
+                    .zIndex(lifted ? 1 : 0)
+                    .popover(item: popoverBinding(for: bin.id)) { presented in
+                        BinDetailsEditor(
+                            draft: Binding(
+                                get: { draft ?? presented },
+                                set: { draft = $0 }
+                            ),
+                            onCancel: discardDraft,
+                            onSave: saveDraft
+                        )
+                        .presentationCompactAdaptation(.popover)
+                    }
+                    .onTapGesture {
+                        draft = binStyle.customization(for: bin.id)
+                    }
+                    .gesture(reorderGesture(for: bin.id, step: step))
+                }
+            }
+            .frame(height: geo.size.height)
+        }
+    }
+
+    /// Home-screen style rearranging: the lifted card tracks the finger while the others
+    /// spring into the gap behind it, and the order commits as each slot is crossed rather
+    /// than once on drop.
+    private func reorderGesture(for binID: String, step: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                if draggingID == nil {
+                    dragRebase = 0
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                        draggingID = binID
+                    }
+                    HapticsService.shared.fire(.lightTap)
+                }
+                guard draggingID == binID else { return }
+                dragTranslation = value.translation.width + dragRebase
+                relocate(binID, step: step)
+            }
+            .onEnded { _ in
+                guard draggingID == binID else { return }
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.75)) {
+                    dragTranslation = 0
+                    dragRebase = 0
+                    draggingID = nil
+                }
+            }
+    }
+
+    /// Swaps as soon as the card passes into a neighbouring slot, then rebases the visual
+    /// offset by the distance it just jumped so it stays put under the finger.
+    private func relocate(_ binID: String, step: CGFloat) {
+        guard step > 0 else { return }
         var ids = binStyle.orderedBins.map(\.id)
-        guard let from = ids.firstIndex(of: sourceID),
-              let to = ids.firstIndex(of: targetID),
-              from != to
-        else { return }
-        ids.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
-        binStyle.reorder(
-            orderedBinIDs: ids,
-            zoneStore: zoneStore,
-            rotation: settings.liveRotation,
-            mirror: settings.liveMirror
+        guard let current = ids.firstIndex(of: binID) else { return }
+        let target = min(max(current + Int((dragTranslation / step).rounded()), 0), ids.count - 1)
+        guard target != current else { return }
+
+        ids.move(
+            fromOffsets: IndexSet(integer: current),
+            toOffset: target > current ? target + 1 : target
+        )
+        let jump = CGFloat(target - current) * step
+        dragRebase -= jump
+        dragTranslation -= jump
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
+            binStyle.reorder(
+                orderedBinIDs: ids,
+                zoneStore: zoneStore,
+                rotation: settings.liveRotation,
+                mirror: settings.liveMirror
+            )
+        }
+        HapticsService.shared.fire(.lightTap)
+    }
+
+    /// One popover per card, so the panel anchors to the bin it edits the way the design
+    /// floats it beside the card rather than sliding it up from the bottom.
+    private func popoverBinding(for binID: String) -> Binding<BinCustomization?> {
+        Binding(
+            get: { draft?.binID == binID ? draft : nil },
+            set: { draft = $0 }
         )
     }
 
@@ -130,40 +236,54 @@ struct BinSettingsView: View {
     }
 }
 
+/// A bin as the design draws it: flat accent, name and description settled into the
+/// bottom-left, and an explicit pencil rather than relying on the card itself being tapped.
 private struct BinArrangementCard: View {
     let bin: BinInfo
     var isWide: Bool = true
+    var onEdit: () -> Void
+
+    private var cornerRadius: CGFloat { isWide ? 20 : 16 }
 
     var body: some View {
-        VStack(spacing: isWide ? 22 : 16) {
+        VStack(alignment: .leading, spacing: isWide ? 6 : 4) {
             Spacer(minLength: 0)
-            Image(systemName: bin.symbolName)
-                .font(.system(size: isWide ? 48 : 36, weight: .bold))
-                .foregroundStyle(.white)
-            Text(bin.displayName)
-                .font(.system(size: isWide ? 18 : 15, weight: .bold, design: .default))
-                .tracking(0.9)
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.7)
-            Spacer(minLength: 0)
+
+            HStack(spacing: isWide ? 9 : 7) {
+                Image(systemName: bin.symbolName)
+                    .font(.system(size: isWide ? 21 : 17, weight: .bold))
+                Text(bin.displayName.capitalized)
+                    .font(.system(size: isWide ? 21 : 17, weight: .bold, design: .default))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .foregroundStyle(.white)
+
+            Text(bin.instructions)
+                .font(.system(size: isWide ? 14 : 12, weight: .regular, design: .default))
+                .foregroundStyle(.white.opacity(0.9))
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(isWide ? 22 : 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        .padding(isWide ? 18 : 13)
         .background(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [bin.color, bin.color.opacity(0.75)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .shadow(color: bin.color.opacity(0.35), radius: 12, y: 5)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(bin.color)
         )
-        .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .accessibilityElement(children: .ignore)
+        .overlay(alignment: .topTrailing) {
+            Button(action: onEdit) {
+                Image(systemName: "pencil")
+                    .font(.system(size: isWide ? 13 : 11, weight: .semibold))
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .controlSize(.small)
+            .tint(Color(white: 0.25))
+            .padding(isWide ? 12 : 9)
+            .accessibilityLabel("Edit \(bin.displayName.capitalized)")
+        }
+        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(bin.displayName)
         .accessibilityHint("Double tap to edit. Drag to reorder.")
     }
@@ -176,16 +296,15 @@ private struct BinDetailsEditor: View {
     var onSave: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             HStack {
                 Button(action: onCancel) {
                     Image(systemName: "xmark")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color(white: 0.25))
-                        .frame(width: 34, height: 34)
-                        .background(Color(white: 0.9), in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.circle)
+                .tint(Color(white: 0.25))
                 .accessibilityLabel("Cancel")
 
                 Spacer()
@@ -199,11 +318,9 @@ private struct BinDetailsEditor: View {
                 Button(action: onSave) {
                     Image(systemName: "checkmark")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
-                        .background(Color.accentColor, in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.circle)
                 .accessibilityLabel("Save")
             }
 
@@ -236,53 +353,43 @@ private struct BinDetailsEditor: View {
             }
             .buttonStyle(.plain)
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Colour")
-                    .font(.system(size: 16, weight: .medium, design: .default))
-                    .foregroundStyle(Color(white: 0.12))
-
-                LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 7),
-                    spacing: 10
-                ) {
-                    ForEach(BinColorToken.allCases) { token in
-                        let selected = draft.colorToken == token.rawValue
-                        Button {
-                            draft.colorToken = token.rawValue
-                        } label: {
-                            Circle()
-                                .fill(token.color)
-                                .frame(width: 28, height: 28)
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(
-                                            selected ? Color.accentColor : Color.black.opacity(0.12),
-                                            lineWidth: selected ? 2.5 : 1
-                                        )
-                                )
-                                .overlay {
-                                    if selected {
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 11, weight: .bold))
-                                            .foregroundStyle(token == .yellow || token == .mint ? Color(white: 0.2) : .white)
-                                    }
-                                }
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(token.rawValue.capitalized)
-                        .accessibilityAddTraits(selected ? .isSelected : [])
+            Menu {
+                ForEach(BinColorToken.allCases) { token in
+                    Button {
+                        draft.colorToken = token.rawValue
+                    } label: {
+                        Label(
+                            token.rawValue.capitalized,
+                            systemImage: draft.colorToken == token.rawValue
+                                ? "checkmark.circle.fill"
+                                : "circle.fill"
+                        )
                     }
                 }
-                .padding(12)
-                .background(Color(white: 0.9), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            } label: {
+                detailRow(title: "Colour") {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(BinColorToken.from(draft.colorToken).color)
+                            .frame(width: 18, height: 18)
+                            .overlay(Circle().strokeBorder(.black.opacity(0.12), lineWidth: 1))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
+            .buttonStyle(.plain)
 
             Spacer(minLength: 0)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color(red: 0.98, green: 0.97, blue: 0.94))
+        .padding(20)
+        .frame(width: Self.cardSize.width, height: Self.cardSize.height, alignment: .top)
+        .background(.white)
     }
+
+    /// The panel is a fixed floating card in the design rather than a sheet that grows.
+    static let cardSize = CGSize(width: 382, height: 256)
 
     private var labelBinding: Binding<String> {
         Binding(
@@ -303,29 +410,8 @@ private struct BinDetailsEditor: View {
             trailing()
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 14)
-        .background(Color(white: 0.9), in: Capsule())
-    }
-}
-
-private struct BinReorderDropDelegate: DropDelegate {
-    let targetID: String
-    @Binding var draggingID: String?
-    let orderedIDs: [String]
-    let onMove: (String, String) -> Void
-
-    func dropEntered(info: DropInfo) {
-        guard let draggingID, draggingID != targetID else { return }
-        onMove(draggingID, targetID)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggingID = nil
-        return true
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+        .padding(.vertical, 11)
+        .background(Color(white: 0.93), in: Capsule())
     }
 }
 

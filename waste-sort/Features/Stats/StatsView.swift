@@ -255,7 +255,7 @@ struct StatsView: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("\(snapshot.generatedTotal)")
-                    .font(.system(size: isWide ? 51 : 40, weight: .regular, design: .default).monospacedDigit())
+                    .font(.system(size: isWide ? 51 : 40, weight: .bold, design: .default).monospacedDigit())
                     .foregroundStyle(Color(white: 0.12))
                 Text("items")
                     .font(.system(size: isWide ? 20 : 16, weight: .medium, design: .default))
@@ -427,16 +427,16 @@ struct StatsView: View {
 
                 VStack(alignment: .trailing, spacing: 0) {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("Correctly placed")
-                            .font(.system(size: 15, weight: .medium, design: .default))
-                            .foregroundStyle(Color(white: 0.45))
+                        Text("Correct Bin")
+                            .font(.system(size: isWide ? 20 : 16, weight: .medium, design: .default))
+                            .foregroundStyle(Color(white: 0.12))
                         HStack(alignment: .firstTextBaseline, spacing: 2) {
                             Text("\(snapshot.correctlyPlacedPercent)")
-                                .font(.system(size: isWide ? 48 : 36, weight: .regular, design: .default).monospacedDigit())
+                                .font(.system(size: isWide ? 48 : 36, weight: .bold, design: .default).monospacedDigit())
                                 .foregroundStyle(Color(white: 0.12))
                             Text("%")
-                                .font(.system(size: 16, weight: .medium, design: .default))
-                                .foregroundStyle(Color(white: 0.35))
+                                .font(.system(size: isWide ? 48 : 36, weight: .bold, design: .default))
+                                .foregroundStyle(Color(white: 0.12))
                         }
                     }
 

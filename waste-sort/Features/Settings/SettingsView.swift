@@ -477,6 +477,12 @@ struct SettingsView: View {
     @ViewBuilder
     private var liveTrackingSection: some View {
         Section {
+            Picker("Decision engine", selection: $settings.decisionPipeline) {
+                ForEach(DecisionPipeline.allCases, id: \.self) { pipeline in
+                    Text(pipeline.displayName).tag(pipeline)
+                }
+            }
+            .pickerStyle(.segmented)
             SettingsIntSliderRow(
                 title: "Confirm frames",
                 help: "How many frames an item must appear before it shows. Higher = fewer false flashes, slower to appear.",
@@ -547,11 +553,16 @@ struct SettingsView: View {
                 range: 0.5...5.0,
                 step: 0.1
             )
+            Toggle("Verbose detection log", isOn: $settings.verboseDetectionLogging)
         } header: {
             Text("Live tracking")
                 .foregroundStyle(BinGuide.cleanInorganic.color)
         } footer: {
-            Text("These only affect the camera overlay. Throw scoring uses the same certainty gates with a longer memory, and unsure items are guided to the residual bin.")
+            Text(
+                "Verdict certainty and margin only act on the Belief engine; unsure items are guided to the residual bin. "
+                    + "Legacy confidence replays the old math with no uncertainty concept, and appearance/recheck assists go inert. "
+                    + "Verbose logging writes every tracked frame to the session CSV for offline replay."
+            )
         }
     }
 

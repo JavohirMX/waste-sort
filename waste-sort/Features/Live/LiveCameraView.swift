@@ -38,6 +38,12 @@ struct LiveCameraView: View {
         return detectedTagFailure
     }
 
+    /// The design surfaces the cleanable hint only while something is bound for residual
+    /// without the pipeline being sure of it - the case rinsing would still change.
+    private var showsCleanableHint: Bool {
+        tracks.contains { $0.beliefUncertain && $0.advisedBinID == BinGuide.residual.id }
+    }
+
     private var activeBinIDs: Set<String> {
         Set(counts.compactMap { key, value in
             value > 0 ? key : nil
@@ -234,17 +240,34 @@ struct LiveCameraView: View {
                     .padding(.horizontal, Theme.hudInset)
                     .padding(.bottom, Theme.hudInset)
                 } else {
-                    HStack(alignment: .bottom) {
-                        if settings.showFPS {
-                            Text("\(fps) FPS")
-                                .font(.system(.caption, design: .default).monospacedDigit())
-                                .foregroundStyle(.white.opacity(0.9))
-                                .accessibilityLabel("\(fps) frames per second")
+                    VStack(spacing: 10) {
+                        if showsCleanableHint {
+                            CleanableHintChip()
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.leading, Theme.hudInset)
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
-                        Spacer(minLength: 0)
-                        statsGlassButton
+
+                        ZStack(alignment: .bottom) {
+                            Text(Theme.liveSortingHint)
+                                .font(.system(size: 11, weight: .regular, design: .default))
+                                .foregroundStyle(.white.opacity(0.75))
+                                .multilineTextAlignment(.center)
+
+                            HStack(alignment: .bottom) {
+                                if settings.showFPS {
+                                    Text("\(fps) FPS")
+                                        .font(.system(.caption, design: .default).monospacedDigit())
+                                        .foregroundStyle(.white.opacity(0.9))
+                                        .accessibilityLabel("\(fps) frames per second")
+                                        .padding(.leading, Theme.hudInset)
+                                }
+                                Spacer(minLength: 0)
+                                statsGlassButton
+                            }
+                        }
                     }
+                    .animation(.easeInOut(duration: Theme.animationDuration), value: showsCleanableHint)
                     .padding(.bottom, Theme.hudInset)
                 }
             }

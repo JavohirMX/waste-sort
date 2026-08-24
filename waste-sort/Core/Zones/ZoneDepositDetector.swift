@@ -123,6 +123,9 @@ nonisolated final class ZoneDepositDetector {
     /// zone, in normalized image widths. Roughly a hand's width: the model routinely loses an
     /// item in the last few centimetres — behind the hand releasing it, or under the lid — and
     /// the calibrated quad is the bin mouth, not the whole catchment around it.
+    /// Which decision math resolves the frozen verdict at vanish. Mirrored from
+    /// settings on the inference queue, same as the tracker's copy.
+    var pipeline: DecisionPipeline = .belief
     var trajectoryReach: CGFloat = 0.12
     /// Minimum smoothed speed, in normalized widths per second, for a direction of travel to
     /// mean anything. Below this the object was resting and the box was merely jittering.
@@ -157,6 +160,8 @@ nonisolated final class ZoneDepositDetector {
         /// (deposit preset) so a flicker to the wrong label cannot outvote a steady
         /// reading, while a genuinely different item later in life still can.
         let belief = BeliefEngine(config: .deposit)
+        /// Lifetime window-vote math for the legacy pipeline. Idle under `.belief`.
+        var legacy = LegacyDecisionEngine()
         /// Distinct classes the model reported, for the `classesSeen` diagnostics.
         private(set) var classesSeen = 0
         private var seenClasses: Set<String> = []
@@ -189,7 +194,21 @@ nonisolated final class ZoneDepositDetector {
             self.lastSeenAt = time
         }
 
-        func note(_ sighting: Sighting, at time: CFAbsoluteTime, smoothing: CGFloat) {
+        func note(
+            _ sighting: Sighting,
+            at time: CFAbsoluteTime,
+            smoothing: CGFloat,
+            pipeline: DecisionPipeline
+        ) {
+            if pipeline == .legacy {
+                legacy.observe(
+                    classKey: sighting.classKey,
+                    className: sighting.className,
+                    conf: sighting.conf,
+                    at: time
+                )
+                return
+            }
             if detectedFrames > 0 {
                 let dt = CGFloat(max(time - lastSeenAt, 1e-3))
                 let instant = CGPoint(
@@ -220,7 +239,19 @@ nonisolated final class ZoneDepositDetector {
         ///
         /// Decisive beliefs report the winning class; anything else falls back to the
         /// safe stream rather than parroting a coin flip as a confident answer.
-        func resolvedVerdict(at time: CFAbsoluteTime) -> DepositVerdict {
+        func resolvedVerdict(at time: CFAbsoluteTime, pipeline: DecisionPipeline) -> DepositVerdict {
+            if pipeline == .legacy {
+                // Main's verdict: lifetime confidence argmax, always confident.
+                let verdict = legacy.verdict()
+                return DepositVerdict(
+                    classKey: verdict.classKey,
+                    className: verdict.className,
+                    conf: max(verdict.weight, 0.001),
+                    modelTopClassKey: verdict.classKey,
+                    wasUncertain: false,
+                    margin: 1
+                )
+            }
             let state = belief.currentState(at: time)
             guard state.isDecided, !state.topKey.isEmpty else {
                 let fallback = BinGuide.bin(id: BinGuide.fallbackBinID)
@@ -304,7 +335,7 @@ nonisolated final class ZoneDepositDetector {
             object.missingSince = nil
             object.pendingTarget = nil
             object.sawBinOpen = false
-            object.note(sighting, at: timestamp, smoothing: velocitySmoothing)
+            object.note(sighting, at: timestamp, smoothing: velocitySmoothing, pipeline: pipeline)
 
             guard let zone = zones.first(where: { $0.contains(sighting.center) }) else {
                 // Outside every zone: this is what earns the right to be counted later.
@@ -513,7 +544,7 @@ nonisolated final class ZoneDepositDetector {
         // Nothing goes into a closed bin.
         guard let target = object.pendingTarget, object.sawBinOpen else { return [] }
 
-        let verdict = object.resolvedVerdict(at: object.missingSince ?? object.lastSeenAt)
+        let verdict = object.resolvedVerdict(at: object.missingSince ?? object.lastSeenAt, pipeline: pipeline)
         let box = target.viaTrajectory
             ? object.last.box
             : (object.lastInZone?.box ?? object.last.box)

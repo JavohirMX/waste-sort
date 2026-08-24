@@ -188,7 +188,7 @@ struct PhotoSortView: View {
         }
         return fused[index].wasUncertain
             ? "UNSURE → \(BinGuide.bin(id: fused[index].classKey).displayName)"
-            : fused[index].className
+            : BinGuide.bin(id: fused[index].classKey).displayName
     }
 
     /// Two-button resolution for an unsure photo item; photo mode is not
@@ -198,12 +198,12 @@ struct PhotoSortView: View {
             Text("Not sure about this one?")
                 .font(.system(.footnote, design: .default))
                 .foregroundStyle(.secondary)
-            Button("Recyclable") { overrides[index] = BinGuide.cleanInorganic.id }
+            Button("Inorganic") { overrides[index] = BinGuide.cleanInorganic.id }
                 .buttonStyle(.bordered)
                 .tint(BinGuide.cleanInorganic.color)
             Button("Residual") { overrides[index] = BinGuide.residual.id }
                 .buttonStyle(.borderedProminent)
-                .tint(Color(red: 82 / 255, green: 82 / 255, blue: 91 / 255))
+                .tint(BinGuide.residual.color)
         }
     }
 

@@ -1,5 +1,22 @@
 import SwiftUI
 
+/// The bin accents as the hi-fi draws them.
+///
+/// Every Figma frame pulled so far resolves bins to Apple's system accents, while the app
+/// had shipped the Tailwind ramp (green-500 `#22c55e`, yellow-500 `#eab308`, zinc-800
+/// `#27272a`). Boxes, badges, charts, chips and bar segments all read from here so a
+/// detection box can never disagree with the segment it points at.
+nonisolated enum BinPalette {
+    /// `Accents/Green`, the value `Theme.onboardingAccent` also carries.
+    static let organic = Color(red: 53 / 255, green: 202 / 255, blue: 90 / 255)
+    static let organicShade = Color(red: 31 / 255, green: 122 / 255, blue: 54 / 255)
+    static let residual = Color(red: 51 / 255, green: 51 / 255, blue: 51 / 255)
+    static let residualShade = Color.black
+    /// `Accents/Yellow`.
+    static let inorganic = Color(red: 255 / 255, green: 204 / 255, blue: 0 / 255)
+    static let inorganicShade = Color(red: 204 / 255, green: 163 / 255, blue: 0 / 255)
+}
+
 /// A top-bar segment's fill, as drawn in the design: a vertical gradient running from
 /// `bottom` up to `top`, carried at `idleAlpha` while the bin is not in frame and at
 /// `Theme.segmentDetectedOpacity` once it is.
@@ -30,14 +47,14 @@ nonisolated enum BinGuide {
         displayName: "ORGANIC",
         category: "organic",
         bin: "Green / Brown Bin (Organic)",
-        color: Color(red: 34 / 255, green: 197 / 255, blue: 94 / 255),
+        color: BinPalette.organic,
         barGradient: BinBarGradient(
-            bottom: Color(red: 53 / 255, green: 202 / 255, blue: 90 / 255),
-            top: Color(red: 31 / 255, green: 122 / 255, blue: 54 / 255),
+            bottom: BinPalette.organic,
+            top: BinPalette.organicShade,
             idleAlpha: 0.18
         ),
         symbolName: "leaf.fill",
-        instructions: "Food scraps, peels, plant matter. Keep free of plastic film and packaging."
+        instructions: "Food scraps, tea bags, napkins"
     )
 
     static let residual = BinInfo(
@@ -46,31 +63,31 @@ nonisolated enum BinGuide {
         displayName: "RESIDUAL",
         category: "residual",
         bin: "Black / Grey Bin (Residual)",
-        color: Color(red: 39 / 255, green: 39 / 255, blue: 42 / 255),
+        color: BinPalette.residual,
         barGradient: BinBarGradient(
-            bottom: Color(red: 51 / 255, green: 51 / 255, blue: 51 / 255),
-            top: .black,
+            bottom: BinPalette.residual,
+            top: BinPalette.residualShade,
             idleAlpha: 0.24
         ),
         symbolName: "trash.fill",
-        instructions: "Soft plastic film, dirty packaging, tissues, mixed or contaminated items."
+        instructions: "Food wrapper, tissue, sachets"
     )
 
     static let cleanInorganic = BinInfo(
         id: "clean_inorganic",
         title: "recyclable",
-        displayName: "RECYCLABLE",
+        displayName: "INORGANIC",
         category: "recyclable",
         bin: "Blue / Yellow Bin (Recyclable)",
-        color: Color(red: 234 / 255, green: 179 / 255, blue: 8 / 255),
+        color: BinPalette.inorganic,
         // The design only draws this bin selected, so its idle alpha follows Organic's.
         barGradient: BinBarGradient(
-            bottom: Color(red: 255 / 255, green: 204 / 255, blue: 0 / 255),
-            top: Color(red: 204 / 255, green: 163 / 255, blue: 0 / 255),
+            bottom: BinPalette.inorganic,
+            top: BinPalette.inorganicShade,
             idleAlpha: 0.18
         ),
         symbolName: "arrow.3.trianglepath",
-        instructions: "Clean rigid plastic, metal cans, glass, clean paper/cardboard. Empty and dry."
+        instructions: "Bottles, cans, clean plastic"
     )
 
     static let unknown = BinInfo(

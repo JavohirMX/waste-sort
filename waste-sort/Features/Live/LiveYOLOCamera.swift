@@ -274,7 +274,10 @@ struct LiveYOLOCamera: UIViewRepresentable {
             case .starting, .recording, .stopping: true
             // Appearance priors and the zoom re-check both need frames while idle;
             // without them the kiosk's main mode would run blind to those signals.
-            case .idle: inputs.settings.appearanceAssistEnabled || inputs.settings.recheckAssistEnabled
+            // Both assists feed beliefs, so they are inert under the legacy pipeline.
+            case .idle:
+                inputs.settings.decisionPipeline == .belief
+                    && (inputs.settings.appearanceAssistEnabled || inputs.settings.recheckAssistEnabled)
             case .saving: false
             }
             var captureToggle: Bool?
@@ -287,6 +290,8 @@ struct LiveYOLOCamera: UIViewRepresentable {
             // Tracker/deposit knobs live on the inference queue: applying them here
             // from the immutable snapshot keeps main-thread writes out of these objects.
             tracker.iouThreshold = CGFloat(inputs.settings.trackerIou)
+            tracker.pipeline = inputs.settings.decisionPipeline
+            depositDetector.pipeline = inputs.settings.decisionPipeline
             tracker.confirmHits = inputs.settings.confirmHits
             tracker.maxMisses = inputs.settings.maxMisses
             tracker.crossClassIouThreshold = CGFloat(inputs.settings.crossClassIou)
@@ -305,7 +310,8 @@ struct LiveYOLOCamera: UIViewRepresentable {
             let minConf = Float(inputs.settings.confidence)
             drainRecheckOutcomes()
             var priorsByKey: [Int: AppearancePrior] = [:]
-            if inputs.settings.appearanceAssistEnabled, let image = result.originalImage {
+            if inputs.settings.appearanceAssistEnabled, inputs.settings.decisionPipeline == .belief,
+               let image = result.originalImage {
                 priorsByKey = sampleAppearancePriors(image: image, boxes: result.boxes)
             }
             let raw: [RawDetection] = result.boxes.compactMap { box in
@@ -320,7 +326,8 @@ struct LiveYOLOCamera: UIViewRepresentable {
                 )
             }
             let tracked = tracker.update(raw)
-            if inputs.settings.recheckAssistEnabled, let image = result.originalImage {
+            if inputs.settings.recheckAssistEnabled, inputs.settings.decisionPipeline == .belief,
+               let image = result.originalImage {
                 requestRechecks(
                     for: tracked,
                     image: image,
