@@ -25,15 +25,8 @@ struct CategoryBar: View {
                     isPulsing: ctaStyle == .pulseLabel && detected,
                     cornerIndex: index,
                     cornerCount: bins.count,
-                    textScale: hudTextScale
+                    scale: hudTextScale
                 )
-                .overlay(alignment: .trailing) {
-                    if index < bins.count - 1 {
-                        Rectangle()
-                            .fill(Color.white.opacity(0.18))
-                            .frame(width: 1)
-                    }
-                }
                 .background {
                     GeometryReader { geo in
                         Color.clear.preference(
@@ -45,14 +38,18 @@ struct CategoryBar: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: Theme.barHeight)
-        .background {
-            Color.clear
-                .glassEffect(
-                    .regular,
-                    in: RoundedRectangle(cornerRadius: Theme.barCornerRadius, style: .continuous)
-                )
-        }
+        .frame(height: (Theme.barTrayHeight - Theme.barGlassInset * 2) * hudTextScale)
+        // The rim is what makes the tray read as glass: the segments are translucent, so
+        // without an inset there is nothing left of the material to see.
+        .padding(Theme.barGlassInset * hudTextScale)
+        .glassEffect(
+            .regular,
+            in: RoundedRectangle(
+                cornerRadius: Theme.barCornerRadius * hudTextScale,
+                style: .continuous
+            )
+        )
+        .padding(Theme.barPageInset * hudTextScale)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
     }
@@ -72,22 +69,22 @@ private struct CategorySegment: View {
     let isPulsing: Bool
     let cornerIndex: Int
     let cornerCount: Int
-    var textScale: CGFloat = 1
+    var scale: CGFloat = 1
 
     var body: some View {
-        HStack(spacing: 8 * textScale) {
+        HStack(spacing: Theme.barIconGap * scale) {
             Image(systemName: bin.symbolName)
-                .font(.system(size: 16 * textScale, weight: .semibold))
+                .font(BrandFont.body(Theme.barFontSize * scale, weight: .bold))
             Text(bin.displayName)
-                .font(.system(size: 14 * textScale, weight: .semibold))
-                .tracking(0.6)
+                .font(BrandFont.body(Theme.barFontSize * scale, weight: .bold))
+                .tracking(Theme.barTracking * scale)
                 .lineLimit(1)
         }
-        .foregroundStyle(.white.opacity(isDetected ? 1.0 : 0.72))
+        .foregroundStyle(.white)
+        .padding(.horizontal, Theme.barSegmentHPadding * scale)
+        .padding(.vertical, Theme.barSegmentVPadding * scale)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background((isDetected ? bin.color : bin.idleColor).opacity(
-            isDetected ? Theme.segmentDetectedOpacity : Theme.segmentIdleOpacity
-        ))
+        .background(fill)
         .clipShape(segmentShape)
         .compositingGroup()
         .modifier(CTAPulseModifier(isActive: isPulsing))
@@ -95,8 +92,20 @@ private struct CategorySegment: View {
         .animation(.easeInOut(duration: Theme.animationDuration), value: isDetected)
     }
 
+    /// The bin's drawn gradient, brightest along the bottom edge. Only the alpha changes
+    /// with detection, so an idle segment stays a wash the glass shows through.
+    private var fill: LinearGradient {
+        let gradient = bin.barGradient
+        let alpha = isDetected ? Theme.segmentDetectedOpacity : gradient.idleAlpha
+        return LinearGradient(
+            colors: [gradient.top.opacity(alpha), gradient.bottom.opacity(alpha)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
     private var segmentShape: UnevenRoundedRectangle {
-        let radius = Theme.barCornerRadius
+        let radius = Theme.barSegmentRadius * scale
         return UnevenRoundedRectangle(
             topLeadingRadius: cornerIndex == 0 ? radius : 0,
             bottomLeadingRadius: cornerIndex == 0 ? radius : 0,
@@ -126,8 +135,9 @@ private struct CTAPulseModifier: ViewModifier {
 
 #Preview {
     ZStack {
-        Color.gray
+        LinearGradient(colors: [.teal, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing)
         CategoryBar(counts: ["residual": 2, "clean_inorganic": 1], ctaStyle: .pulseLabel)
             .padding()
     }
+    .ignoresSafeArea()
 }

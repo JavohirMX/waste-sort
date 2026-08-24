@@ -122,6 +122,22 @@ final class DetectionSessionLogger {
                     )
                 )
             }
+
+            if settings.verboseDetectionLogging {
+                // One row per tracked item per frame — the fixture stream the offline
+                // decision bake-off replays. Heavy, hence opt-in.
+                events.append(
+                    Self.event(
+                        now: now,
+                        sessionId: sessionId,
+                        sessionStartedAt: sessionStartedAt,
+                        track: track,
+                        fps: fps,
+                        settings: settings,
+                        eventType: DetectionLogEvent.eventTypeFrame
+                    )
+                )
+            }
         }
 
         for deposit in deposits {

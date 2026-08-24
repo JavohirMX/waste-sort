@@ -1,15 +1,24 @@
 import SwiftUI
 
+/// A top-bar segment's fill, as drawn in the design: a vertical gradient running from
+/// `bottom` up to `top`, carried at `idleAlpha` while the bin is not in frame and at
+/// `Theme.segmentDetectedOpacity` once it is.
+nonisolated struct BinBarGradient: Hashable, Sendable {
+    let bottom: Color
+    let top: Color
+    let idleAlpha: Double
+}
+
 nonisolated struct BinInfo: Identifiable, Hashable {
     let id: String
     let title: String
     let displayName: String
     let category: String
     let bin: String
-    /// Saturated color used for active bar segments, boxes, and badges.
+    /// Saturated color used for boxes and badges.
     let color: Color
-    /// Softer tint used when the category is not currently detected.
-    let idleColor: Color
+    /// The top bar's gradient for this bin.
+    let barGradient: BinBarGradient
     let symbolName: String
     let instructions: String
 }
@@ -22,7 +31,11 @@ nonisolated enum BinGuide {
         category: "organic",
         bin: "Green / Brown Bin (Organic)",
         color: Color(red: 34 / 255, green: 197 / 255, blue: 94 / 255),
-        idleColor: Color(red: 107 / 255, green: 143 / 255, blue: 94 / 255),
+        barGradient: BinBarGradient(
+            bottom: Color(red: 53 / 255, green: 202 / 255, blue: 90 / 255),
+            top: Color(red: 31 / 255, green: 122 / 255, blue: 54 / 255),
+            idleAlpha: 0.18
+        ),
         symbolName: "leaf.fill",
         instructions: "Food scraps, peels, plant matter. Keep free of plastic film and packaging."
     )
@@ -34,7 +47,11 @@ nonisolated enum BinGuide {
         category: "residual",
         bin: "Black / Grey Bin (Residual)",
         color: Color(red: 39 / 255, green: 39 / 255, blue: 42 / 255),
-        idleColor: Color(red: 82 / 255, green: 82 / 255, blue: 91 / 255),
+        barGradient: BinBarGradient(
+            bottom: Color(red: 51 / 255, green: 51 / 255, blue: 51 / 255),
+            top: .black,
+            idleAlpha: 0.24
+        ),
         symbolName: "trash.fill",
         instructions: "Soft plastic film, dirty packaging, tissues, mixed or contaminated items."
     )
@@ -46,7 +63,12 @@ nonisolated enum BinGuide {
         category: "recyclable",
         bin: "Blue / Yellow Bin (Recyclable)",
         color: Color(red: 234 / 255, green: 179 / 255, blue: 8 / 255),
-        idleColor: Color(red: 196 / 255, green: 164 / 255, blue: 106 / 255),
+        // The design only draws this bin selected, so its idle alpha follows Organic's.
+        barGradient: BinBarGradient(
+            bottom: Color(red: 255 / 255, green: 204 / 255, blue: 0 / 255),
+            top: Color(red: 204 / 255, green: 163 / 255, blue: 0 / 255),
+            idleAlpha: 0.18
+        ),
         symbolName: "arrow.3.trianglepath",
         instructions: "Clean rigid plastic, metal cans, glass, clean paper/cardboard. Empty and dry."
     )
@@ -58,7 +80,11 @@ nonisolated enum BinGuide {
         category: "unrecognized",
         bin: "General Bin",
         color: Color(red: 113 / 255, green: 113 / 255, blue: 122 / 255),
-        idleColor: Color(red: 113 / 255, green: 113 / 255, blue: 122 / 255),
+        barGradient: BinBarGradient(
+            bottom: Color(red: 113 / 255, green: 113 / 255, blue: 122 / 255),
+            top: Color(red: 68 / 255, green: 68 / 255, blue: 73 / 255),
+            idleAlpha: 0.18
+        ),
         symbolName: "questionmark.circle.fill",
         instructions: "No specific disposal guidance for this class."
     )

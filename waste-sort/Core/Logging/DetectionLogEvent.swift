@@ -41,6 +41,9 @@ struct DetectionLogEvent: Codable, Equatable, Sendable {
     static let eventTypeZoneDeposit = "zone_deposit"
     static let eventTypeClassSwitch = "class_switch"
     static let eventTypeCoastStart = "coast_start"
+    /// Per-frame track snapshot, only when verbose detection logging is enabled —
+    /// the replay fixture format for `Core/Evaluation` bake-offs.
+    static let eventTypeFrame = "frame"
 
     static let csvHeader = [
         "timestamp", "sessionId", "sessionStartedAt", "trackId",

@@ -33,6 +33,8 @@ enum WasteSortConfig {
     static let defaultRecheckCooldown = 2.0
     /// Multiplier on the re-check confidence when injected as belief evidence.
     static let defaultRecheckWeight = 1.5
+    /// Per-frame track events for offline decision-pipeline replays. Heavy; off by default.
+    static let defaultVerboseDetectionLogging = false
     static let defaultEmaAlpha = 0.4
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8
@@ -69,6 +71,7 @@ struct RuntimeSettings: Equatable {
     var barcodeAssistEnabled: Bool
     var appearanceAssistEnabled: Bool
     var recheckAssistEnabled: Bool
+    var verboseDetectionLogging: Bool
     var confirmHits: Int
     var maxMisses: Int
     var trackerIou: Double
@@ -229,6 +232,11 @@ final class AppSettings: ObservableObject {
     @Published var recheckAssistEnabled: Bool {
         didSet { persist(recheckAssistEnabled, key: Keys.recheckAssistEnabled) }
     }
+    /// Emits one CSV event per tracked item per frame so sessions can be replayed
+    /// through the offline decision bake-off (`Core/Evaluation`).
+    @Published var verboseDetectionLogging: Bool {
+        didSet { persist(verboseDetectionLogging, key: Keys.verboseDetectionLogging) }
+    }
     /// Gates the first-launch onboarding flow. Intentionally left out of `resetToDefaults()`
     /// so restoring tuning values does not relaunch the tutorial — Settings offers a
     /// dedicated "Show onboarding again" action instead.
@@ -258,6 +266,7 @@ final class AppSettings: ObservableObject {
             barcodeAssistEnabled: barcodeAssistEnabled,
             appearanceAssistEnabled: appearanceAssistEnabled,
             recheckAssistEnabled: recheckAssistEnabled,
+            verboseDetectionLogging: verboseDetectionLogging,
             confirmHits: confirmHits,
             maxMisses: maxMisses,
             trackerIou: trackerIou,
@@ -322,6 +331,7 @@ final class AppSettings: ObservableObject {
         static let barcodeAssistEnabled = "settings.barcodeAssistEnabled"
         static let appearanceAssistEnabled = "settings.appearanceAssistEnabled"
         static let recheckAssistEnabled = "settings.recheckAssistEnabled"
+        static let verboseDetectionLogging = "settings.verboseDetectionLogging"
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
     }
 
@@ -420,6 +430,11 @@ final class AppSettings: ObservableObject {
             Keys.recheckAssistEnabled,
             WasteSortConfig.defaultRecheckAssistEnabled
         )
+        verboseDetectionLogging = Self.loadBool(
+            defaults,
+            Keys.verboseDetectionLogging,
+            WasteSortConfig.defaultVerboseDetectionLogging
+        )
         hasCompletedOnboarding = Self.loadBool(
             defaults,
             Keys.hasCompletedOnboarding,
@@ -459,6 +474,7 @@ final class AppSettings: ObservableObject {
         barcodeAssistEnabled = WasteSortConfig.defaultBarcodeAssistEnabled
         appearanceAssistEnabled = WasteSortConfig.defaultAppearanceAssistEnabled
         recheckAssistEnabled = WasteSortConfig.defaultRecheckAssistEnabled
+        verboseDetectionLogging = WasteSortConfig.defaultVerboseDetectionLogging
         resetCaptureToDefaults()
     }
 

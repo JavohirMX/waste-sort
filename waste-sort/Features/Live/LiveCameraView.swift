@@ -68,7 +68,8 @@ struct LiveCameraView: View {
                     : []
                 let highlightBottom = CTALayout.barBottom(
                     from: cameraSegmentFrames,
-                    fallback: Theme.categoryBarTopGap + Theme.barHeight - geoOrigin.y
+                    fallback: Theme.categoryBarTopGap
+                        + Theme.barHeight(scale: CGFloat(settings.hudTextScale)) - geoOrigin.y
                 )
                 ZStack {
                     // Rotate/mirror only the camera pixels; boxes stay upright and are remapped below.

@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import UIKit
 
 /// Persisted display overrides for the three ML bins (label, icon, colour, order).
 nonisolated struct BinCustomization: Codable, Equatable, Sendable, Identifiable {
@@ -66,17 +67,39 @@ enum BinColorToken: String, CaseIterable, Identifiable {
         }
     }
 
-    var idleColor: Color {
+    /// The top bar's gradient. Green, black, and yellow are the three accents the design
+    /// actually draws, so they carry its stops verbatim; the other ten have none, and take
+    /// the 0.60 top stop the design uses for its colourful bins.
+    var barGradient: BinBarGradient {
         switch self {
-        case .yellow: Color(red: 196 / 255, green: 164 / 255, blue: 106 / 255)
-        case .green: Color(red: 107 / 255, green: 143 / 255, blue: 94 / 255)
-        case .black: Color(red: 82 / 255, green: 82 / 255, blue: 91 / 255)
-        default: color.opacity(0.55)
+        case .green: BinGuide.organic.barGradient
+        case .black: BinGuide.residual.barGradient
+        case .yellow: BinGuide.cleanInorganic.barGradient
+        default: BinBarGradient(bottom: color, top: color.dimmedBrightness(0.60), idleAlpha: 0.18)
         }
     }
 
     static func from(_ raw: String) -> BinColorToken {
         BinColorToken(rawValue: raw) ?? .green
+    }
+}
+
+private extension Color {
+    /// Same hue and saturation, less brightness - the design's top gradient stop is a
+    /// fraction of its bottom one.
+    func dimmedBrightness(_ factor: CGFloat) -> Color {
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard UIColor(self).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        else { return self }
+        return Color(
+            hue: Double(hue),
+            saturation: Double(saturation),
+            brightness: Double(brightness * factor),
+            opacity: Double(alpha)
+        )
     }
 }
 
@@ -146,7 +169,7 @@ final class BinStyleStore: ObservableObject {
             category: info.category,
             bin: info.bin,
             color: token.color,
-            idleColor: token.idleColor,
+            barGradient: token.barGradient,
             symbolName: customization.symbolName,
             instructions: info.instructions
         )

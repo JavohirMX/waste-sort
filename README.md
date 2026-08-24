@@ -72,6 +72,14 @@ Each frame goes through Core ML, then a tracker that holds an ID across frames (
 
 Unrecognized classes are ignored in the live bar. Unsure items (dashed box, question-mark badge) are pointed at the residual bin everywhere advice is given, and the CSV marks them via `beliefUncertain` / `beliefMargin` / `modelTopClassKey` columns so accuracy work can measure where the engine overruled the model.
 
+### Deciding between decision pipelines (the bake-off)
+
+`Core/Evaluation` is a deterministic referee for exactly this question. Sighting streams (frames of `{class, confidence}` per object) replay through any `BinDecisionStrategy` — the repo ships two: `LegacyConfidenceStrategy`, a verbatim port of main's window-vote/lifetime-sum math, and `BeliefDecisionStrategy`, the production engine. Timestamps come from fixtures, tie-breaks are fixed, and reruns are byte-identical (`BinDecisionBakeOffTests` proves it).
+
+The gate that decides: **confidently-wrong verdict count** — answers that were wrong while claiming certainty. Raw argmax accuracy can be won by alphabetical luck; the bundled fixtures deliberately include one flap where legacy's tie-break coin lands on truth, plus one recency-trap where legacy genuinely beats belief, so the comparison documents tradeoffs rather than cheerleading. Current result on the bundled mix: belief produces 1 confident-wrong verdict vs main's 3.
+
+To settle it with real data instead of synthetic scenarios: enable **Verbose detection logging** in Settings before recording — every tracked item then emits a per-frame `frame` row to the session CSV. Convert those rows into `DecisionScenario` fixtures (ground-truth labels come from reviewing the recorded clip), re-run the evaluator, and let the same gate decide.
+
 ### Roadmap: material taxonomy (v4 model)
 
 The current three classes are the kiosk's bins, not what objects *are*. The next training round should relabel the dataset into a material taxonomy — plastic, paper, glass, metal, organic, textile, e-waste, B3/hazardous — with a fixed mapping table from materials to the three physical streams. That buys: better headroom than any post-processing (the model learns materials, the mapping layer owns regulation), B3 awareness that Pergub 47/2019 Pasal 6 requires but no current class expresses (batteries and electronics currently land in residual), and a clean path to new bins without re-architecting this pipeline — the belief engine is already generic over class keys.

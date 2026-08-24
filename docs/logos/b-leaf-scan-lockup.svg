@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 640" width="1800" height="640">
+
+<g transform="translate(72 72) scale(0.3867)">
+  <defs>
+    <linearGradient id="b-leaf" x1="100%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#149A45"/>
+      <stop offset="100%" stop-color="#3ED46E"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#F6F7F2"/>
+
+  <!-- scan sweep line (behind leaf) -->
+  <rect x="277" y="490" width="470" height="44" rx="22" fill="#22C55E" opacity="0.95"/>
+
+  <!-- viewfinder brackets: TR, BR, BL -->
+  <g fill="none" stroke="#1C2A33" stroke-width="62" stroke-linecap="round">
+    <path d="M 618 236 H 744 Q 788 236 788 280 V 406"/>
+    <path d="M 788 618 V 744 Q 788 788 744 788 H 618"/>
+    <path d="M 406 788 H 280 Q 236 788 236 744 V 618"/>
+  </g>
+
+  <!-- leaf as the hero, tip pointing to the open corner -->
+  <g>
+    <path d="M 624 624 Q 385 639 372 372 Q 667 357 624 624 Z" fill="url(#b-leaf)"/>
+    <path d="M 600 600 L 400 400" stroke="#0E7A36" stroke-width="16" stroke-linecap="round" opacity="0.85"/>
+    <path d="M 641 641 L 665 665" stroke="#149A45" stroke-width="26" stroke-linecap="round"/>
+  </g>
+</g>
+<text x="600" y="372" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+      font-size="216" font-weight="650" letter-spacing="-5" fill="#1C2A33">sortla</text>
+<text x="608" y="468" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+      font-size="42" font-weight="520" letter-spacing="13" fill="#5C6B77">SEE IT. BIN IT.</text>
+</svg>
