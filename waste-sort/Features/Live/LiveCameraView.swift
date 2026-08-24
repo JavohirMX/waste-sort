@@ -174,7 +174,11 @@ struct LiveCameraView: View {
                     CategoryBar(
                         bins: binStyle.orderedBins,
                         counts: counts,
-                        ctaStyle: settings.ctaStyle
+                        ctaStyle: settings.ctaStyle,
+                        onTripleTap: {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            showSettings = true
+                        }
                     )
                         .frame(maxWidth: .infinity)
                         .padding(.top, Theme.categoryBarTopGap)
@@ -299,14 +303,7 @@ struct LiveCameraView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Waste stats")
-        .accessibilityHint("Opens stats. Long press opens developer settings.")
-        .accessibilityAction(named: "Open developer settings") {
-            showSettings = true
-        }
-        .onLongPressGesture {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            showSettings = true
-        }
+        .accessibilityHint("Opens stats.")
     }
 }
 
