@@ -65,6 +65,10 @@ enum WasteSortConfig {
     static let defaultVoiceGuidanceEnabled = false
     static let defaultBarcodeAssistEnabled = true
     static let defaultHasCompletedOnboarding = false
+    static let defaultFoundationConfirmation = false
+    static let defaultFoundationVerdictLog = false
+    static let defaultShowLastDepositOnLive = false
+    static let defaultThrowFeedbackSounds = true
 }
 
 /// Snapshot of tunable inference and tracking values, passed into Live camera updates.
@@ -254,6 +258,22 @@ final class AppSettings: ObservableObject {
     @Published var hasCompletedOnboarding: Bool {
         didSet { persist(hasCompletedOnboarding, key: Keys.hasCompletedOnboarding) }
     }
+    /// Ask the on-device Foundation model to confirm each item's category and lock it in.
+    @Published var foundationConfirmationEnabled: Bool {
+        didSet { persist(foundationConfirmationEnabled, key: Keys.foundationConfirmation) }
+    }
+    /// Show the model's raw answers on Live, including the ones that were not acted on.
+    @Published var foundationVerdictLogEnabled: Bool {
+        didSet { persist(foundationVerdictLogEnabled, key: Keys.foundationVerdictLog) }
+    }
+    /// Developer HUD: last-deposit chip on Live. Off by default — history lives in Stats.
+    @Published var showLastDepositOnLive: Bool {
+        didSet { persist(showLastDepositOnLive, key: Keys.showLastDepositOnLive) }
+    }
+    /// Play the correct / incorrect clip when a throw is scored. Visual feedback always plays.
+    @Published var throwFeedbackSoundsEnabled: Bool {
+        didSet { persist(throwFeedbackSoundsEnabled, key: Keys.throwFeedbackSounds) }
+    }
 
     var selectedModel: WasteSortModel {
         WasteSortModel.from(resourceName: selectedModelName)
@@ -346,6 +366,10 @@ final class AppSettings: ObservableObject {
         static let recheckAssistEnabled = "settings.recheckAssistEnabled"
         static let verboseDetectionLogging = "settings.verboseDetectionLogging"
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
+        static let foundationConfirmation = "settings.foundationConfirmation"
+        static let foundationVerdictLog = "settings.foundationVerdictLog"
+        static let showLastDepositOnLive = "settings.showLastDepositOnLive"
+        static let throwFeedbackSounds = "settings.throwFeedbackSounds"
     }
 
     /// Internal rather than private so tests can inject their own defaults suite,
@@ -362,11 +386,7 @@ final class AppSettings: ObservableObject {
         ) ?? WasteSortConfig.defaultDecisionPipeline
         trackerIou = Self.loadDouble(defaults, Keys.trackerIou, WasteSortConfig.defaultTrackerIou)
         crossClassIou = Self.loadDouble(defaults, Keys.crossClassIou, WasteSortConfig.defaultCrossClassIou)
-        beliefThreshold = Self.loadDouble(
-            defaults,
-            Keys.beliefThreshold,
-            WasteSortConfig.defaultBeliefThreshold
-        )
+        beliefThreshold = Self.loadDouble(defaults, Keys.beliefThreshold, WasteSortConfig.defaultBeliefThreshold)
         beliefMargin = Self.loadDouble(defaults, Keys.beliefMargin, WasteSortConfig.defaultBeliefMargin)
         emaAlpha = Self.loadDouble(defaults, Keys.emaAlpha, WasteSortConfig.defaultEmaAlpha)
         boxInflate = Self.loadDouble(defaults, Keys.boxInflate, WasteSortConfig.defaultBoxInflate)
@@ -426,35 +446,35 @@ final class AppSettings: ObservableObject {
         )
         showFPS = Self.loadBool(defaults, Keys.showFPS, WasteSortConfig.defaultShowFPS)
         useMockStats = Self.loadBool(defaults, Keys.useMockStats, WasteSortConfig.defaultUseMockStats)
-        voiceGuidanceEnabled = Self.loadBool(
-            defaults,
-            Keys.voiceGuidanceEnabled,
-            WasteSortConfig.defaultVoiceGuidanceEnabled
-        )
-        barcodeAssistEnabled = Self.loadBool(
-            defaults,
-            Keys.barcodeAssistEnabled,
-            WasteSortConfig.defaultBarcodeAssistEnabled
-        )
-        appearanceAssistEnabled = Self.loadBool(
-            defaults,
-            Keys.appearanceAssistEnabled,
-            WasteSortConfig.defaultAppearanceAssistEnabled
-        )
-        recheckAssistEnabled = Self.loadBool(
-            defaults,
-            Keys.recheckAssistEnabled,
-            WasteSortConfig.defaultRecheckAssistEnabled
-        )
-        verboseDetectionLogging = Self.loadBool(
-            defaults,
-            Keys.verboseDetectionLogging,
-            WasteSortConfig.defaultVerboseDetectionLogging
-        )
+        voiceGuidanceEnabled = Self.loadBool(defaults, Keys.voiceGuidanceEnabled, WasteSortConfig.defaultVoiceGuidanceEnabled)
+        barcodeAssistEnabled = Self.loadBool(defaults, Keys.barcodeAssistEnabled, WasteSortConfig.defaultBarcodeAssistEnabled)
+        appearanceAssistEnabled = Self.loadBool(defaults, Keys.appearanceAssistEnabled, WasteSortConfig.defaultAppearanceAssistEnabled)
+        recheckAssistEnabled = Self.loadBool(defaults, Keys.recheckAssistEnabled, WasteSortConfig.defaultRecheckAssistEnabled)
+        verboseDetectionLogging = Self.loadBool(defaults, Keys.verboseDetectionLogging, WasteSortConfig.defaultVerboseDetectionLogging)
         hasCompletedOnboarding = Self.loadBool(
             defaults,
             Keys.hasCompletedOnboarding,
             WasteSortConfig.defaultHasCompletedOnboarding
+        )
+        foundationConfirmationEnabled = Self.loadBool(
+            defaults,
+            Keys.foundationConfirmation,
+            WasteSortConfig.defaultFoundationConfirmation
+        )
+        foundationVerdictLogEnabled = Self.loadBool(
+            defaults,
+            Keys.foundationVerdictLog,
+            WasteSortConfig.defaultFoundationVerdictLog
+        )
+        showLastDepositOnLive = Self.loadBool(
+            defaults,
+            Keys.showLastDepositOnLive,
+            WasteSortConfig.defaultShowLastDepositOnLive
+        )
+        throwFeedbackSoundsEnabled = Self.loadBool(
+            defaults,
+            Keys.throwFeedbackSounds,
+            WasteSortConfig.defaultThrowFeedbackSounds
         )
     }
 
@@ -492,6 +512,10 @@ final class AppSettings: ObservableObject {
         appearanceAssistEnabled = WasteSortConfig.defaultAppearanceAssistEnabled
         recheckAssistEnabled = WasteSortConfig.defaultRecheckAssistEnabled
         verboseDetectionLogging = WasteSortConfig.defaultVerboseDetectionLogging
+        foundationConfirmationEnabled = WasteSortConfig.defaultFoundationConfirmation
+        foundationVerdictLogEnabled = WasteSortConfig.defaultFoundationVerdictLog
+        showLastDepositOnLive = WasteSortConfig.defaultShowLastDepositOnLive
+        throwFeedbackSoundsEnabled = WasteSortConfig.defaultThrowFeedbackSounds
         resetCaptureToDefaults()
     }
 

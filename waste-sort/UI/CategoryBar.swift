@@ -13,20 +13,35 @@ struct CategoryBar: View {
     var bins: [BinInfo] = BinGuide.all
     let counts: [String: Int]
     var ctaStyle: CTAStyle = .off
+    /// When set, only the destination segment overlays correct / "Not here!" feedback.
+    var throwFeedback: ThrowFeedback?
+    /// Increments on each scored throw so a repeat miss can replay the shake.
+    var throwFeedbackToken: UInt64 = 0
+    var onTripleTap: (() -> Void)? = nil
     @Environment(\.hudTextScale) private var hudTextScale
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Array(bins.enumerated()), id: \.element.id) { index, bin in
                 let detected = CategoryPresence.isDetected(binID: bin.id, counts: counts)
+                let segmentFeedback = throwFeedback?.targetBinID == bin.id ? throwFeedback : nil
                 CategorySegment(
                     bin: bin,
                     isDetected: detected,
-                    isPulsing: ctaStyle == .pulseLabel && detected,
+                    isPulsing: ctaStyle == .pulseLabel && detected && segmentFeedback == nil,
                     cornerIndex: index,
                     cornerCount: bins.count,
-                    scale: hudTextScale
+                    textScale: hudTextScale,
+                    throwFeedback: segmentFeedback,
+                    throwFeedbackToken: throwFeedbackToken
                 )
+                .overlay(alignment: .trailing) {
+                    if index < bins.count - 1 {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.18))
+                            .frame(width: 1)
+                    }
+                }
                 .background {
                     GeometryReader { geo in
                         Color.clear.preference(
@@ -35,34 +50,41 @@ struct CategoryBar: View {
                         )
                     }
                 }
+                .onTapGesture(count: 3) {
+                    onTripleTap?()
+                }
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: (Theme.barTrayHeight - Theme.barGlassInset * 2) * hudTextScale)
-        // The rim is what makes the tray read as glass: the segments are translucent, so
-        // without an inset there is nothing left of the material to see.
-        .padding(Theme.barGlassInset * hudTextScale)
+        .frame(height: Theme.barHeight)
         .background {
-            RoundedRectangle(
-                cornerRadius: Theme.barCornerRadius * hudTextScale,
-                style: .continuous
-            )
-            .fill(Color.black.opacity(0.10))
+            Color.clear
+                .glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: Theme.barCornerRadius, style: .continuous)
+                )
         }
-        .glassEffect(
-            .regular,
-            in: RoundedRectangle(
-                cornerRadius: Theme.barCornerRadius * hudTextScale,
-                style: .continuous
-            )
-        )
-        .padding(Theme.barPageInset * hudTextScale)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityActions {
+            if onTripleTap != nil {
+                Button("Open developer settings") {
+                    onTripleTap?()
+                }
+            }
+        }
     }
 
     private var accessibilityLabel: String {
         bins.map { bin in
+            if let throwFeedback, throwFeedback.targetBinID == bin.id {
+                switch throwFeedback {
+                case .correct:
+                    return "\(bin.displayName) correct"
+                case .incorrect:
+                    return "\(bin.displayName) not here"
+                }
+            }
             let state = CategoryPresence.isDetected(binID: bin.id, counts: counts) ? "detected" : "not detected"
             return "\(bin.displayName) \(state)"
         }
@@ -76,44 +98,45 @@ private struct CategorySegment: View {
     let isPulsing: Bool
     let cornerIndex: Int
     let cornerCount: Int
-    var scale: CGFloat = 1
+    var textScale: CGFloat = 1
+    var throwFeedback: ThrowFeedback?
+    var throwFeedbackToken: UInt64 = 0
 
     var body: some View {
-        HStack(spacing: Theme.barIconGap * scale) {
+        HStack(spacing: 8 * textScale) {
             Image(systemName: bin.symbolName)
-                .font(BrandFont.body(Theme.barFontSize * scale, weight: .bold))
+                .font(.system(size: 16 * textScale, weight: .semibold))
             Text(bin.displayName)
-                .font(BrandFont.body(Theme.barFontSize * scale, weight: .bold))
-                .tracking(Theme.barTracking * scale)
+                .font(.system(size: 14 * textScale, weight: .semibold))
+                .tracking(0.6)
                 .lineLimit(1)
         }
-        .foregroundStyle(.white)
-        .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
-        .padding(.horizontal, Theme.barSegmentHPadding * scale)
-        .padding(.vertical, Theme.barSegmentVPadding * scale)
+        .foregroundStyle(.white.opacity(isDetected ? 1.0 : 0.72))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(fill)
+        .background((isDetected ? bin.color : bin.idleColor).opacity(
+            isDetected ? Theme.segmentDetectedOpacity : Theme.segmentIdleOpacity
+        ))
+        .overlay {
+            if let throwFeedback {
+                ThrowFeedbackSegmentOverlay(
+                    feedback: throwFeedback,
+                    replayID: throwFeedbackToken
+                )
+                    .transition(
+                        .move(edge: throwFeedback.insertionEdge).combined(with: .opacity)
+                    )
+            }
+        }
         .clipShape(segmentShape)
         .compositingGroup()
         .modifier(CTAPulseModifier(isActive: isPulsing))
-        .zIndex(isPulsing ? 1 : 0)
+        .zIndex(isPulsing || throwFeedback != nil ? 1 : 0)
         .animation(.easeInOut(duration: Theme.animationDuration), value: isDetected)
-    }
-
-    /// The bin's drawn gradient, brightest along the bottom edge. Only the alpha changes
-    /// with detection, so an idle segment stays a wash the glass shows through.
-    private var fill: LinearGradient {
-        let gradient = bin.barGradient
-        let alpha = isDetected ? Theme.segmentDetectedOpacity : gradient.idleAlpha
-        return LinearGradient(
-            colors: [gradient.top.opacity(alpha), gradient.bottom.opacity(alpha)],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        .animation(.easeOut(duration: Theme.animationDuration), value: throwFeedback)
     }
 
     private var segmentShape: UnevenRoundedRectangle {
-        let radius = Theme.barSegmentRadius * scale
+        let radius = Theme.barCornerRadius
         return UnevenRoundedRectangle(
             topLeadingRadius: cornerIndex == 0 ? radius : 0,
             bottomLeadingRadius: cornerIndex == 0 ? radius : 0,
@@ -141,11 +164,32 @@ private struct CTAPulseModifier: ViewModifier {
     }
 }
 
-#Preview {
+#Preview("Presence") {
     ZStack {
-        LinearGradient(colors: [.teal, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing)
+        Color.gray
         CategoryBar(counts: ["residual": 2, "clean_inorganic": 1], ctaStyle: .pulseLabel)
             .padding()
     }
-    .ignoresSafeArea()
+}
+
+#Preview("Correct organic") {
+    ZStack {
+        Color.gray
+        CategoryBar(
+            counts: ["organic": 1],
+            throwFeedback: .correct(binID: BinGuide.organic.id)
+        )
+        .padding()
+    }
+}
+
+#Preview("Incorrect organic") {
+    ZStack {
+        Color.gray
+        CategoryBar(
+            counts: ["organic": 1],
+            throwFeedback: .incorrect(binID: BinGuide.organic.id)
+        )
+        .padding()
+    }
 }

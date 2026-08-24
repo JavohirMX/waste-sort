@@ -30,9 +30,9 @@ struct CleanableHintChip: View {
     private var splitToken: some View {
         let side = 26.0 * scale
         return ZStack {
-            Circle().fill(BinPalette.residual)
+            Circle().fill(BinGuide.residual.color)
             Circle()
-                .fill(BinPalette.inorganic)
+                .fill(BinGuide.cleanInorganic.color)
                 .clipShape(LowerRightTriangle())
 
             Image(systemName: "trash.fill")
@@ -42,7 +42,7 @@ struct CleanableHintChip: View {
 
             Image(systemName: "arrow.3.trianglepath")
                 .font(.system(size: 8 * scale, weight: .bold))
-                .foregroundStyle(BinPalette.residual)
+                .foregroundStyle(BinGuide.residual.color)
                 .offset(x: side * 0.19, y: side * 0.19)
         }
         .frame(width: side, height: side)

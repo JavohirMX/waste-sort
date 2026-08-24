@@ -12,12 +12,14 @@ struct LiveYOLOCamera: UIViewRepresentable {
     var zones: [DropZone]
     var dwellFrames: Int
     var reacquireGrace: Double
+    var throwFeedbackGrace: Double
     var aprilTagEnabled: Bool
     var aprilTagBindings: [UUID: [Int]]
     var aprilTagStaleTimeout: Double
     var aprilTagRangeProfile: AprilTagRangeProfile
+    var foundationConfirmationEnabled: Bool
     var onBarcodeHint: ((ScannedBarcode?) -> Void)?
-    var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
+    var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -28,10 +30,12 @@ struct LiveYOLOCamera: UIViewRepresentable {
             zones: zones,
             dwellFrames: dwellFrames,
             reacquireGrace: reacquireGrace,
+            throwFeedbackGrace: throwFeedbackGrace,
             aprilTagEnabled: aprilTagEnabled,
             aprilTagBindings: aprilTagBindings,
             aprilTagStaleTimeout: aprilTagStaleTimeout,
             aprilTagRangeProfile: aprilTagRangeProfile,
+            foundationConfirmationEnabled: foundationConfirmationEnabled,
             onDetection: onDetection
         )
     }
@@ -48,6 +52,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
             zones: zones,
             dwellFrames: dwellFrames,
             reacquireGrace: reacquireGrace,
+            throwFeedbackGrace: throwFeedbackGrace,
             aprilTagEnabled: aprilTagEnabled,
             aprilTagBindings: aprilTagBindings,
             aprilTagStaleTimeout: aprilTagStaleTimeout
@@ -68,6 +73,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
 
     func updateUIView(_ uiView: YOLOView, context: Context) {
         context.coordinator.onDetection = onDetection
+        context.coordinator.setConfirmationEnabled(foundationConfirmationEnabled)
         context.coordinator.onBarcodeHint = onBarcodeHint
         context.coordinator.yoloView = uiView
         context.coordinator.replaceInputs(
@@ -75,6 +81,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
             zones: zones,
             dwellFrames: dwellFrames,
             reacquireGrace: reacquireGrace,
+            throwFeedbackGrace: throwFeedbackGrace,
             aprilTagEnabled: aprilTagEnabled,
             aprilTagBindings: aprilTagBindings,
             aprilTagStaleTimeout: aprilTagStaleTimeout
@@ -144,10 +151,14 @@ struct LiveYOLOCamera: UIViewRepresentable {
     }
 
     final class Coordinator {
-        var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
+        var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
         var onBarcodeHint: ((ScannedBarcode?) -> Void)?
         /// Throttled Vision pass; runs beside the AprilTag luma tap.
         let barcodeScanner = BarcodeFrameScanner()
+        /// On-device Foundation category confirmation; inert unless enabled and supported.
+        let confirmation = CategoryConfirmationCoordinator(service: FoundationCategoryConfirmer())
+        /// Resolved once: the answer involves a `dlsym` sweep and a system model query.
+        private lazy var isConfirmationSupported = FoundationCategoryAvailability.current.isReady
         var preferredCameraID: String
         var selectedModelName: String
         let recording: RecordingController
@@ -212,11 +223,13 @@ struct LiveYOLOCamera: UIViewRepresentable {
             zones: [DropZone],
             dwellFrames: Int,
             reacquireGrace: Double,
+            throwFeedbackGrace: Double,
             aprilTagEnabled: Bool,
             aprilTagBindings: [UUID: [Int]],
             aprilTagStaleTimeout: Double,
             aprilTagRangeProfile: AprilTagRangeProfile,
-            onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame) -> Void)?
+            foundationConfirmationEnabled: Bool,
+            onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
         ) {
             self.preferredCameraID = preferredCameraID
             self.selectedModelName = selectedModelName
@@ -227,6 +240,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
                 zones: zones,
                 dwellFrames: dwellFrames,
                 reacquireGrace: reacquireGrace,
+            throwFeedbackGrace: throwFeedbackGrace,
                 aprilTagEnabled: aprilTagEnabled,
                 aprilTagBindings: aprilTagBindings,
                 aprilTagStaleTimeout: aprilTagStaleTimeout
@@ -234,6 +248,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
             self.aprilTagRangeProfile = aprilTagRangeProfile
             self.onDetection = onDetection
             self.onBarcodeHint = nil
+            setConfirmationEnabled(foundationConfirmationEnabled)
             barcodeScanner.onBarcode = { [weak self] barcode in
                 guard let self else { return }
                 DispatchQueue.main.async {
@@ -249,6 +264,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
             zones: [DropZone],
             dwellFrames: Int,
             reacquireGrace: Double,
+            throwFeedbackGrace: Double,
             aprilTagEnabled: Bool,
             aprilTagBindings: [UUID: [Int]],
             aprilTagStaleTimeout: Double
@@ -258,6 +274,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
                 zones: zones,
                 dwellFrames: dwellFrames,
                 reacquireGrace: reacquireGrace,
+            throwFeedbackGrace: throwFeedbackGrace,
                 aprilTagEnabled: aprilTagEnabled,
                 aprilTagBindings: aprilTagBindings,
                 aprilTagStaleTimeout: aprilTagStaleTimeout
@@ -267,17 +284,30 @@ struct LiveYOLOCamera: UIViewRepresentable {
             inputsLock.unlock()
         }
 
+        /// The layer only runs when the operator asked for it *and* the device can actually
+        /// serve it. Turning it off drops every locked verdict, so the next frame is back to
+        /// the detector's own labels with nothing stale hanging around.
+        func setConfirmationEnabled(_ enabled: Bool) {
+            let wanted = enabled && isConfirmationSupported
+            guard confirmation.isEnabled != wanted else { return }
+            confirmation.isEnabled = wanted
+            if !wanted {
+                confirmation.reset()
+            }
+        }
+
         func handle(_ result: YOLOResult) {
             inputsLock.lock()
             let inputs = _inputs
             let shouldCapture = switch phaseMirror.current {
             case .starting, .recording, .stopping: true
-            // Appearance priors and the zoom re-check both need frames while idle;
-            // without them the kiosk's main mode would run blind to those signals.
-            // Both assists feed beliefs, so they are inert under the legacy pipeline.
+            // Appearance priors, the zoom re-check, and Foundation confirmation all need
+            // frames while idle; without them the kiosk's main mode runs blind to those
+            // signals. The first two feed beliefs, so they are inert under legacy.
             case .idle:
-                inputs.settings.decisionPipeline == .belief
-                    && (inputs.settings.appearanceAssistEnabled || inputs.settings.recheckAssistEnabled)
+                confirmation.isEnabled
+                    || (inputs.settings.decisionPipeline == .belief
+                        && (inputs.settings.appearanceAssistEnabled || inputs.settings.recheckAssistEnabled))
             case .saving: false
             }
             var captureToggle: Bool?
@@ -325,7 +355,12 @@ struct LiveYOLOCamera: UIViewRepresentable {
                     appearancePrior: priorsByKey[box.index]
                 )
             }
-            let tracked = tracker.update(raw)
+            // Everything downstream — boxes, the category bar, the CTA, deposits, the log —
+            // reads the confirmed labels, because a verdict nobody acts on is decoration.
+            let (tracked, confirmationFrame, verdictRecords) = confirmation.update(
+                tracks: tracker.update(raw),
+                frameImage: { result.originalImage.flatMap(UprightFrameImage.cgImage(from:)) }
+            )
             if inputs.settings.recheckAssistEnabled, inputs.settings.decisionPipeline == .belief,
                let image = result.originalImage {
                 requestRechecks(
@@ -337,6 +372,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
             let currentZones = inputs.zones
             depositDetector.requiredDwellFrames = inputs.dwellFrames
             depositDetector.reacquireGrace = inputs.reacquireGrace
+            depositDetector.throwFeedbackGrace = inputs.throwFeedbackGrace
             var tagFrame = inputs.aprilTagEnabled
                 ? aprilTagBinDetector.update(
                     zones: currentZones,
@@ -363,7 +399,14 @@ struct LiveYOLOCamera: UIViewRepresentable {
             // Zone results ride the existing main-thread hop so the @Published history
             // append never happens off-main.
             DispatchQueue.main.async {
-                self.onDetection?(result, tracked, zoneFrame, tagFrame)
+                self.onDetection?(
+                    result,
+                    tracked,
+                    zoneFrame,
+                    tagFrame,
+                    confirmationFrame,
+                    verdictRecords
+                )
             }
         }
 
@@ -644,6 +687,7 @@ private struct PipelineInputs {
     var zones: [DropZone]
     var dwellFrames: Int
     var reacquireGrace: Double
+    var throwFeedbackGrace: Double
     var aprilTagEnabled: Bool
     var aprilTagBindings: [UUID: [Int]]
     var aprilTagStaleTimeout: Double

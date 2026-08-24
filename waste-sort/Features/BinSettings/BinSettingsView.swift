@@ -245,7 +245,7 @@ private struct BinArrangementCard: View {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [bin.barGradient.top.opacity(0.80), bin.barGradient.bottom.opacity(0.80)],
+                        colors: [bin.color.opacity(0.80), bin.idleColor.opacity(0.80)],
                         startPoint: .top,
                         endPoint: .bottom
                     )

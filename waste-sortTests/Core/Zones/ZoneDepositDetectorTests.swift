@@ -45,7 +45,8 @@ struct ZoneDepositDetectorTests {
         at point: CGPoint,
         misses: Int = 0,
         rawClassKey: String = "",
-        rawConf: Float = 0
+        rawConf: Float = 0,
+        confirmedBinID: String? = nil
     ) -> TrackedDetection {
         TrackedDetection(
             id: id,
@@ -55,7 +56,8 @@ struct ZoneDepositDetectorTests {
             displayXywhn: CGRect(x: point.x - 0.05, y: point.y - 0.05, width: 0.1, height: 0.1),
             misses: misses,
             rawClassKey: rawClassKey,
-            rawConf: rawConf
+            rawConf: rawConf,
+            confirmedBinID: confirmedBinID
         )
     }
 
@@ -66,7 +68,8 @@ struct ZoneDepositDetectorTests {
         centerY: CGFloat = 0.5,
         misses: Int = 0,
         rawClassKey: String = "",
-        rawConf: Float = 0
+        rawConf: Float = 0,
+        confirmedBinID: String? = nil
     ) -> TrackedDetection {
         track(
             id: id,
@@ -74,7 +77,8 @@ struct ZoneDepositDetectorTests {
             at: CGPoint(x: centerX, y: centerY),
             misses: misses,
             rawClassKey: rawClassKey,
-            rawConf: rawConf
+            rawConf: rawConf,
+            confirmedBinID: confirmedBinID
         )
     }
 
@@ -90,11 +94,13 @@ struct ZoneDepositDetectorTests {
             zones: [DropZone],
             dwell: Int = 3,
             grace: CFAbsoluteTime = 1.4,
+            throwFeedbackGrace: CFAbsoluteTime = 0.4,
             binState: BinOpenStateProviding? = nil
         ) {
             self.zones = zones
             detector.requiredDwellFrames = dwell
             detector.reacquireGrace = grace
+            detector.throwFeedbackGrace = throwFeedbackGrace
             if let binState {
                 detector.binOpenState = binState
             }
@@ -135,11 +141,19 @@ struct ZoneDepositDetectorTests {
     }
 
     private func clock(
+        zones: [DropZone]? = nil,
         dwell: Int = 3,
         grace: CFAbsoluteTime = 1.4,
+        throwFeedbackGrace: CFAbsoluteTime = 0.4,
         binState: BinOpenStateProviding? = nil
     ) -> Clock {
-        Clock(zones: zones, dwell: dwell, grace: grace, binState: binState)
+        Clock(
+            zones: zones ?? self.zones,
+            dwell: dwell,
+            grace: grace,
+            throwFeedbackGrace: throwFeedbackGrace,
+            binState: binState
+        )
     }
 
     private func mouthClock(
@@ -398,6 +412,101 @@ struct ZoneDepositDetectorTests {
         #expect(c.waitOutGrace().count == 2)
     }
 
+    // MARK: - Model confirmation
+
+    /// The tally sums confidence over every frame, so by the time the model answers the
+    /// detector's guess has banked far more weight than a confirmation could ever outvote.
+    /// A confirmation has to replace the tally, not join it — otherwise the lock shows on
+    /// the box and the log still records the guess.
+    @Test("a confirmed category beats a long run of detector frames")
+    func confirmationOverridesTheTally() {
+        let c = clock()
+        // Fifteen frames of the detector insisting on organic before the model answers.
+        c.tick([track(classKey: "organic", centerX: 0.5)], times: 15)
+        c.tick([track(classKey: "organic", centerX: 0.2)], times: 4)
+        c.tick(
+            [track(
+                classKey: BinGuide.cleanInorganic.id,
+                centerX: 0.2,
+                confirmedBinID: BinGuide.cleanInorganic.id
+            )],
+            times: 2
+        )
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.classKey == BinGuide.cleanInorganic.id)
+        // Into the organic zone, so a recyclable item is the wrong bin.
+        #expect(deposits.first?.isCorrect == false)
+    }
+
+    @Test("without a confirmation the tally still decides")
+    func tallyStillDecidesWhenUnconfirmed() {
+        let c = clock()
+        c.tick([track(classKey: "organic", centerX: 0.5)], times: 15)
+        c.tick([track(classKey: "organic", centerX: 0.2)], times: 4)
+        c.tick([track(classKey: "residual", centerX: 0.2)], times: 2)
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.classKey == "organic")
+    }
+
+    @Test("dirty recyclable is correct in residual")
+    func dirtyRecyclableIntoResidualIsCorrect() {
+        let c = clock()
+        c.tick([track(classKey: "organic", centerX: 0.5)], times: 3)
+        c.tick(
+            [track(
+                classKey: BinGuide.dirtyRecyclable.id,
+                centerX: 0.8,
+                confirmedBinID: BinGuide.dirtyRecyclable.id
+            )],
+            times: 4
+        )
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.classKey == BinGuide.dirtyRecyclable.id)
+        #expect(deposits.first?.isCorrect == true)
+    }
+
+    @Test("dirty recyclable is correct in recyclable")
+    func dirtyRecyclableIntoRecyclableIsCorrect() {
+        let recyclableZone = DropZone(
+            name: "Recyclable bin",
+            binID: BinGuide.cleanInorganic.id,
+            corners: DropZone.rect(CGRect(x: 0.6, y: 0.0, width: 0.4, height: 1.0))
+        )
+        let c = clock(zones: [organicZone, recyclableZone])
+        c.tick([track(classKey: "organic", centerX: 0.5)], times: 3)
+        c.tick(
+            [track(
+                classKey: BinGuide.dirtyRecyclable.id,
+                centerX: 0.8,
+                confirmedBinID: BinGuide.dirtyRecyclable.id
+            )],
+            times: 4
+        )
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.isCorrect == true)
+    }
+
+    @Test("dirty recyclable is wrong in organic")
+    func dirtyRecyclableIntoOrganicIsWrong() {
+        let c = clock()
+        c.tick([track(classKey: "organic", centerX: 0.5)], times: 3)
+        c.tick(
+            [track(
+                classKey: BinGuide.dirtyRecyclable.id,
+                centerX: 0.2,
+                confirmedBinID: BinGuide.dirtyRecyclable.id
+            )],
+            times: 4
+        )
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.isCorrect == false)
+    }
+
     // MARK: - Bin contents
 
     @Test("an item that only ever appeared inside an open bin is never counted")
@@ -597,5 +706,156 @@ struct ZoneDepositDetectorTests {
         c.tick([track(centerX: 0.2)], times: 3)
         let settling = c.tick([])
         #expect(settling.settlingZoneIDs.isEmpty)
+    }
+
+    // MARK: - Throw feedback cues
+
+    @Test("a vanished item cues after throwFeedbackGrace, and deposits only after reacquireGrace")
+    func throwCueThenDeposit() {
+        print("TESTVER-WIDENED")
+        let c = clock(throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        c.tick([track(centerX: 0.2)], times: 3)
+        #expect(c.tick([]).throwFeedbackCues.isEmpty)
+
+        var cues: [ThrowFeedbackCue] = []
+        var deposits: [ZoneDeposit] = []
+        for _ in 0..<15 {
+            let frame = c.tick([])
+            cues.append(contentsOf: frame.throwFeedbackCues)
+            deposits.append(contentsOf: frame.deposits)
+        }
+        #expect(cues.count == 1)
+        #expect(cues[0].isCorrect)
+        #expect(cues[0].zoneBinID == BinGuide.organic.id)
+        #expect(cues[0].persistWhilePresent == false)
+        #expect(deposits.isEmpty)
+
+        let confirmed = c.waitOutGrace()
+        #expect(confirmed.count == 1)
+        #expect(confirmed[0].id == cues[0].objectID)
+    }
+
+    @Test("a cue is cancelled when the item comes back before it settles")
+    func throwCueCancelledOnReappear() {
+        let c = clock(throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        c.tick([track(centerX: 0.2)], times: 3)
+        c.tick([])
+        var cue: ThrowFeedbackCue?
+        var depositsWhileGone: [ZoneDeposit] = []
+        for _ in 0..<13 {
+            let frame = c.tick([])
+            if let next = frame.throwFeedbackCues.first { cue = next }
+            depositsWhileGone.append(contentsOf: frame.deposits)
+        }
+        // The preview must fire inside the grace window, and a preview is not a score.
+        #expect(cue != nil)
+        #expect(depositsWhileGone.isEmpty)
+
+        let back = c.tick([track(id: 2, centerX: 0.2)])
+        #expect(back.cancelledThrowFeedbackIDs.contains(cue!.objectID))
+    }
+
+    @Test("an organic item held in the residual zone cues incorrect and cancels on leave")
+    func inZoneIncorrectThenLeave() {
+        let c = clock(throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        #expect(c.tick([track(centerX: 0.8)]).throwFeedbackCues.isEmpty)
+
+        var cues: [ThrowFeedbackCue] = []
+        for _ in 0..<15 {
+            cues.append(contentsOf: c.tick([track(centerX: 0.8)]).throwFeedbackCues)
+        }
+        #expect(cues.count == 1)
+        #expect(cues[0].isCorrect == false)
+        #expect(cues[0].zoneBinID == BinGuide.residual.id)
+        #expect(cues[0].persistWhilePresent)
+
+        #expect(c.tick([track(centerX: 0.5)]).cancelledThrowFeedbackIDs.isEmpty)
+
+        var cancelled = Set<UUID>()
+        for _ in 0..<15 {
+            cancelled.formUnion(c.tick([track(centerX: 0.5)]).cancelledThrowFeedbackIDs)
+        }
+        #expect(cancelled.contains(cues[0].objectID))
+    }
+
+    @Test("an organic item in the organic zone does not cue")
+    func correctZoneDoesNotCueWhileVisible() {
+        let c = clock(throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        var cues: [ThrowFeedbackCue] = []
+        for _ in 0..<15 {
+            cues.append(contentsOf: c.tick([track(centerX: 0.2)]).throwFeedbackCues)
+        }
+        #expect(cues.isEmpty)
+    }
+
+    @Test("in-zone incorrect then a throw into that bin does not cue twice")
+    func inZoneIncorrectThenThrowDoesNotDoubleCue() {
+        let c = clock(throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        var cues: [ThrowFeedbackCue] = []
+        c.tick([track(centerX: 0.8)])
+        for _ in 0..<15 {
+            cues.append(contentsOf: c.tick([track(centerX: 0.8)]).throwFeedbackCues)
+        }
+        #expect(cues.count == 1)
+
+        var extra: [ThrowFeedbackCue] = []
+        for _ in 0..<15 {
+            extra.append(contentsOf: c.tick([]).throwFeedbackCues)
+        }
+        #expect(extra.isEmpty)
+
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits[0].id == cues[0].objectID)
+        #expect(deposits[0].isCorrect == false)
+    }
+
+    @Test("a short blink in the same wrong zone does not cancel or re-cue")
+    func inZoneIncorrectSurvivesBlink() {
+        let c = clock(throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        var cue: ThrowFeedbackCue?
+        c.tick([track(centerX: 0.8)])
+        for _ in 0..<15 {
+            if let next = c.tick([track(centerX: 0.8)]).throwFeedbackCues.first { cue = next }
+        }
+        #expect(cue != nil)
+
+        var cancelled = Set<UUID>()
+        var extra: [ThrowFeedbackCue] = []
+        for _ in 0..<2 {
+            let gone = c.tick([])
+            cancelled.formUnion(gone.cancelledThrowFeedbackIDs)
+            extra.append(contentsOf: gone.throwFeedbackCues)
+        }
+        let back = c.tick([track(id: 2, centerX: 0.8)])
+        cancelled.formUnion(back.cancelledThrowFeedbackIDs)
+        extra.append(contentsOf: back.throwFeedbackCues)
+
+        #expect(cancelled.isEmpty)
+        #expect(extra.isEmpty)
+    }
+
+    @Test("when feedback grace is at least reacquire, only one cue fires with the deposit")
+    func matchingGracesDoNotDoubleCue() {
+        let c = clock(grace: 0.4, throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        c.tick([track(centerX: 0.2)], times: 3)
+        c.tick([])
+
+        var cues: [ThrowFeedbackCue] = []
+        var deposits: [ZoneDeposit] = []
+        for _ in 0..<20 {
+            let frame = c.tick([])
+            cues.append(contentsOf: frame.throwFeedbackCues)
+            deposits.append(contentsOf: frame.deposits)
+        }
+        #expect(cues.count == 1)
+        #expect(deposits.count == 1)
     }
 }

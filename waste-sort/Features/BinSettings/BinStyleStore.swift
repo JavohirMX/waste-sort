@@ -53,8 +53,8 @@ enum BinColorToken: String, CaseIterable, Identifiable {
         switch self {
         case .red: .red
         case .orange: .orange
-        case .yellow: BinPalette.inorganic
-        case .green: BinPalette.organic
+        case .yellow: Color(red: 234 / 255, green: 179 / 255, blue: 8 / 255)
+        case .green: Color(red: 34 / 255, green: 197 / 255, blue: 94 / 255)
         case .mint: .mint
         case .teal: .teal
         case .cyan: .cyan
@@ -63,19 +63,18 @@ enum BinColorToken: String, CaseIterable, Identifiable {
         case .purple: .purple
         case .pink: .pink
         case .brown: .brown
-        case .black: BinPalette.residual
+        case .black: Color(red: 39 / 255, green: 39 / 255, blue: 42 / 255)
         }
     }
 
-    /// The top bar's gradient. Green, black, and yellow are the three accents the design
-    /// actually draws, so they carry its stops verbatim; the other ten have none, and take
-    /// the 0.60 top stop the design uses for its colourful bins.
-    var barGradient: BinBarGradient {
+    /// The bar's resting fill. The three design accents take their calibrated idle
+    /// tones; the other ten dim the chosen color.
+    var idleColor: Color {
         switch self {
-        case .green: BinGuide.organic.barGradient
-        case .black: BinGuide.residual.barGradient
-        case .yellow: BinGuide.cleanInorganic.barGradient
-        default: BinBarGradient(bottom: color, top: color.dimmedBrightness(0.60), idleAlpha: 0.18)
+        case .green: BinGuide.organic.idleColor
+        case .black: BinGuide.residual.idleColor
+        case .yellow: BinGuide.cleanInorganic.idleColor
+        default: color.opacity(0.45)
         }
     }
 
@@ -169,7 +168,7 @@ final class BinStyleStore: ObservableObject {
             category: info.category,
             bin: info.bin,
             color: token.color,
-            barGradient: token.barGradient,
+            idleColor: token.idleColor,
             symbolName: customization.symbolName,
             instructions: info.instructions
         )

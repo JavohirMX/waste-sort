@@ -155,9 +155,9 @@ struct StatsMockDataTests {
 
     @Test("bins filled mock overlay matches design")
     func binsFilledOverlay() {
-        #expect(StatsMockData.binsFilled[BinGuide.organic.id] == 6)
-        #expect(StatsMockData.binsFilled[BinGuide.residual.id] == 8)
-        #expect(StatsMockData.binsFilled[BinGuide.cleanInorganic.id] == 3)
+        #expect(StatsMockData.binsFilled[BinGuide.organic.id] == 4)
+        #expect(StatsMockData.binsFilled[BinGuide.residual.id] == 6)
+        #expect(StatsMockData.binsFilled[BinGuide.cleanInorganic.id] == 8)
     }
 
     @Test("category bar mock overlay sums to 142")

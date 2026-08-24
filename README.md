@@ -36,7 +36,7 @@ Inference runs entirely on device. Nothing is uploaded.
 - **Barcode assist** — throttled Vision pass surfaces product barcodes with offline disposal hints
 - **Tunable** — swap bundled Core ML weights, confidence, overlap, and live tracking without rebuilding
 
-Open Settings by **long-pressing the FPS badge**.
+Open Settings by **triple-tapping any top category** (Organic, Residual, or Recyclable) on the live HUD.
 
 ## How it works
 
@@ -66,9 +66,10 @@ Each frame goes through Core ML, then a tracker that holds an ID across frames (
 
 | Class | Bin | Put here | Keep out |
 | --- | --- | --- | --- |
-| `organic` | Green / brown | Food scraps, peels, plant matter | Plastic film and packaging |
-| `residual` | Black / grey | Soft film, dirty packaging, tissues, mixed or contaminated items | Clean rigid recyclables |
-| `clean_inorganic` | Blue / yellow | Clean rigid plastic, metal cans, glass, clean paper/cardboard | Soft film and dirty recyclables |
+| `organic` | Green / brown | Food scraps, peels, garden/plant matter | Packaging |
+| `residual` | Black / grey | Tissues, diapers, styrofoam, sachets, mixed or unrecognizable | Recyclable material |
+| `clean_inorganic` | Blue / yellow | Empty dry plastic (including clean bags), metal, glass, clean paper/cardboard, sticky notes | Items that may still be dirty |
+| `dirty_recyclable` | Overlay only | Recyclable type that may have leftover food/drink — even at ~40–50% certainty. Rinse then recyclable, or residual as-is | Non-recyclable types |
 
 Unrecognized classes are ignored in the live bar. Unsure items (dashed box, question-mark badge) are pointed at the residual bin everywhere advice is given, and the CSV marks them via `beliefUncertain` / `beliefMargin` / `modelTopClassKey` columns so accuracy work can measure where the engine overruled the model.
 
@@ -112,7 +113,7 @@ File Sharing is on. Recorded overlay clips and CSV logs show up in the Files app
 
 **Live.** Point the camera at waste. The top bar lights the bins currently in frame. Boxes follow items after they are confirmed across a couple of frames; if the model briefly loses an item, the box freezes in place instead of sliding. The bin label stays with the item until a new class leads by confidence for a short time (default 0.4s).
 
-**Settings.** Long-press the FPS badge.
+**Settings.** Triple-tap any top category (Organic, Residual, or Recyclable) on the live HUD.
 
 - **Model** — bundled weights (`best` v3.1, `bestv3.2`–`bestv3.5`); changing it reloads Live and Photo
 - **Camera** — Auto (prefer USB) or a specific device; rotation and mirror apply to preview and to recordings started after the change. Software brightness, contrast, and saturation preprocess the image the model sees. Hardware exposure, focus, and white balance can be locked (USB cameras may ignore those).

@@ -9,6 +9,7 @@ struct LiveCameraView: View {
     @EnvironmentObject private var recording: RecordingController
     @EnvironmentObject private var zoneStore: ZoneStore
     @EnvironmentObject private var history: ZoneEventHistoryStore
+    @EnvironmentObject private var verdictLog: FoundationVerdictLog
     @EnvironmentObject private var aprilTagStore: AprilTagBindingStore
     @EnvironmentObject private var binStyle: BinStyleStore
     @State private var counts: [String: Int] = [:]
@@ -27,19 +28,22 @@ struct LiveCameraView: View {
     @State private var occupiedZoneIDs: Set<UUID> = []
     @State private var armedZoneIDs: Set<UUID> = []
     @State private var settlingZoneIDs: Set<UUID> = []
+    @State private var confirmationFrame = ConfirmationFrame()
+    @State private var freshDepositID: UUID?
+    @State private var freshVerdictID: UUID?
+    @State private var showVerdicts = false
+    @State private var showHistory = false
     @State private var segmentFrames: [String: CGRect] = [:]
     @State private var detectedTagFailure: String?
     @State private var barcodeHint: ScannedBarcode?
     @State private var barcodeClearTask: Task<Void, Never>?
+    @State private var throwFeedbackGate = ThrowFeedbackGate()
+    @State private var previewedFeedbackIDs: Set<UUID> = []
 
     /// Non-nil while the AprilTag detector failed to initialize - lid gating is inert.
     private var tagFailureReason: String? {
         guard aprilTagStore.isEnabled else { return nil }
         return detectedTagFailure
-    }
-
-    private var hudTextScale: CGFloat {
-        CGFloat(settings.hudTextScale)
     }
 
     /// The design surfaces the cleanable hint only while something is bound for residual
@@ -78,8 +82,7 @@ struct LiveCameraView: View {
                     : []
                 let highlightBottom = CTALayout.barBottom(
                     from: cameraSegmentFrames,
-                    fallback: Theme.categoryBarTopGap
-                        + Theme.barHeight(scale: CGFloat(settings.hudTextScale)) - geoOrigin.y
+                    fallback: Theme.categoryBarTopGap + Theme.barHeight - geoOrigin.y
                 )
                 ZStack {
                     // Rotate/mirror only the camera pixels; boxes stay upright and are remapped below.
@@ -91,10 +94,12 @@ struct LiveCameraView: View {
                         zones: zoneStore.zones,
                         dwellFrames: zoneStore.dwellFrames,
                         reacquireGrace: zoneStore.reacquireGrace,
+                        throwFeedbackGrace: zoneStore.throwFeedbackGrace,
                         aprilTagEnabled: aprilTagStore.isEnabled,
                         aprilTagBindings: aprilTagStore.bindings,
                         aprilTagStaleTimeout: aprilTagStore.staleTimeout,
                         aprilTagRangeProfile: aprilTagStore.rangeProfile,
+                        foundationConfirmationEnabled: settings.foundationConfirmationEnabled,
                         onBarcodeHint: { barcode in
                             barcodeClearTask?.cancel()
                             barcodeHint = barcode
@@ -105,12 +110,19 @@ struct LiveCameraView: View {
                                 barcodeHint = nil
                             }
                         }
-                    ) { result, tracked, zoneFrame, tagFrame in
+                    ) { result, tracked, zoneFrame, tagFrame, confirmed, verdicts in
                         if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                             fps = measured
                         }
                         imageSize = result.orig_shape
                         tracks = tracked
+                        if confirmationFrame != confirmed {
+                            confirmationFrame = confirmed
+                        }
+                        if !verdicts.isEmpty {
+                            verdictLog.append(verdicts)
+                            flashVerdict()
+                        }
                         detectedTags = tagFrame.detectedTags
                         tagStatuses = tagFrame.statuses
                         tagStats = tagFrame.detectorStats
@@ -124,6 +136,12 @@ struct LiveCameraView: View {
                         if settlingZoneIDs != zoneFrame.settlingZoneIDs {
                             settlingZoneIDs = zoneFrame.settlingZoneIDs
                         }
+                        if !zoneFrame.cancelledThrowFeedbackIDs.isEmpty {
+                            cancelThrowFeedback(ids: zoneFrame.cancelledThrowFeedbackIDs)
+                        }
+                        for cue in zoneFrame.throwFeedbackCues {
+                            presentThrowFeedback(cue)
+                        }
                         if !zoneFrame.deposits.isEmpty {
                             history.append(zoneFrame.deposits)
                             flash(zoneFrame.deposits)
@@ -131,10 +149,14 @@ struct LiveCameraView: View {
 
                         var nextCounts: [String: Int] = [:]
                         for track in tracked where !track.isCoasting {
-                            // Unsure items light up the fallback bin so the bar stays honest.
-                            let binID = track.advisedBinID
-                            guard binID != BinGuide.unknown.id else { continue }
-                            nextCounts[binID, default: 0] += 1
+                            // Unsure items light up the fallback bin so the bar stays honest;
+                            // dirty recyclable lights residual and recyclable together.
+                            let binIDs = track.beliefUncertain
+                                ? [BinGuide.fallbackBinID]
+                                : BinGuide.barBinIDs(for: track.classKey)
+                            for binID in binIDs where binID != BinGuide.unknown.id {
+                                nextCounts[binID, default: 0] += 1
+                            }
                         }
                         if nextCounts != counts {
                             counts = nextCounts
@@ -190,7 +212,8 @@ struct LiveCameraView: View {
                         useAspectFill: true,
                         rotation: settings.liveRotation,
                         mirror: settings.liveMirror,
-                        style: settings.boxOverlayStyle
+                        style: settings.boxOverlayStyle,
+                        confirmation: confirmationFrame
                     )
                     .allowsHitTesting(false)
 
@@ -208,23 +231,29 @@ struct LiveCameraView: View {
                     CategoryBar(
                         bins: binStyle.orderedBins,
                         counts: counts,
-                        ctaStyle: settings.ctaStyle
+                        ctaStyle: settings.ctaStyle,
+                        throwFeedback: throwFeedbackGate.feedback,
+                        throwFeedbackToken: throwFeedbackGate.token,
+                        onTripleTap: {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            showSettings = true
+                        }
                     )
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, Theme.categoryBarTopGap)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, Theme.categoryBarTopGap)
 
-                    if let tagFailure = tagFailureReason {
-                        TagFailureBanner(reason: tagFailure)
-                            .padding(.horizontal, Theme.hudInset)
-                            .padding(.top, 6)
-                    }
+                if let tagFailure = tagFailureReason {
+                    TagFailureBanner(reason: tagFailure)
+                        .padding(.horizontal, Theme.hudInset)
+                        .padding(.top, 6)
+                }
 
-                    if let barcode = barcodeHint {
-                        BarcodeHintChip(barcode: barcode)
-                            .padding(.horizontal, Theme.hudInset)
-                            .padding(.top, 6)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
+                if let barcode = barcodeHint {
+                    BarcodeHintChip(barcode: barcode)
+                        .padding(.horizontal, Theme.hudInset)
+                        .padding(.top, 6)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
                 }
 
                 Spacer(minLength: 0)
@@ -244,50 +273,73 @@ struct LiveCameraView: View {
                     .padding(.horizontal, Theme.hudInset)
                     .padding(.bottom, Theme.hudInset)
                 } else {
-                    VStack(spacing: 10) {
-                        if showsCleanableHint {
-                            CleanableHintChip()
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.leading, 20)
-                                .transition(.opacity.combined(with: .move(edge: .bottom)))
-                        }
-
-                        ZStack(alignment: .bottom) {
-                            Text(Theme.liveSortingHint)
-                                .font(BrandFont.body(Theme.disclaimerFontSize * hudTextScale, weight: .regular))
-                                .foregroundStyle(Color.white.opacity(0.80))
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: .infinity)
-                                .padding(.bottom, 20 * hudTextScale)
-
-                            HStack(alignment: .bottom) {
-                                if settings.showFPS {
-                                    Text("\(fps) FPS")
-                                        .font(.system(.caption, design: .default).monospacedDigit())
-                                        .foregroundStyle(.white.opacity(0.9))
-                                        .accessibilityLabel("\(fps) frames per second")
-                                }
-                                Spacer(minLength: 0)
-                                statsGlassButton
-                            }
-                            .padding(.horizontal, 20 * hudTextScale)
-                            .padding(.bottom, 20 * hudTextScale)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: Theme.disclaimerHeight * hudTextScale, alignment: .bottom)
-                        .background {
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .clear, location: 0.0),
-                                    .init(color: Color.black.opacity(0.31), location: 1.0)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .ignoresSafeArea(edges: .bottom)
-                        }
+                    if showsCleanableHint {
+                        CleanableHintChip()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.leading, Theme.hudInset)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
-                    .animation(.easeInOut(duration: Theme.animationDuration), value: showsCleanableHint)
+                    HStack(alignment: .bottom) {
+                        HStack(alignment: .bottom, spacing: 8) {
+                            if settings.showFPS {
+                                Text("\(fps) FPS")
+                                    .font(.system(.caption, design: .default).monospacedDigit())
+                                    .foregroundStyle(.white.opacity(0.7))
+                                    .accessibilityLabel("\(fps) frames per second")
+                            }
+                            if settings.showLastDepositOnLive, let last = history.events.first {
+                                LastDepositChip(
+                                    record: last,
+                                    isFresh: freshDepositID == last.id,
+                                    onTap: { showHistory = true }
+                                )
+                                .transition(.move(edge: .leading).combined(with: .opacity))
+                                .id(last.id)
+                            }
+                            if tracks.contains(where: {
+                                !$0.isCoasting && BinGuide.isDirtyRecyclable($0.classKey)
+                            }) {
+                                DirtyRecyclableSuggestionChip()
+                                    .transition(.move(edge: .leading).combined(with: .opacity))
+                            }
+                            if settings.foundationConfirmationEnabled,
+                               settings.foundationVerdictLogEnabled,
+                               let verdict = verdictLog.records.first
+                            {
+                                LastVerdictChip(
+                                    record: verdict,
+                                    isFresh: freshVerdictID == verdict.id,
+                                    onTap: { showVerdicts = true }
+                                )
+                                .transition(.move(edge: .leading).combined(with: .opacity))
+                                .id(verdict.id)
+                            }
+                        }
+                        .padding(.leading, Theme.hudInset)
+                        Spacer(minLength: 0)
+                        statsGlassButton
+                    }
+                    .animation(
+                        .spring(response: 0.35, dampingFraction: 0.7),
+                        value: tracks.contains(where: { $0.beliefUncertain })
+                    )
+                    .animation(
+                        .spring(response: 0.35, dampingFraction: 0.7),
+                        value: history.events.first?.id
+                    )
+                    .animation(
+                        .spring(response: 0.35, dampingFraction: 0.7),
+                        value: tracks.contains(where: {
+                            !$0.isCoasting && BinGuide.isDirtyRecyclable($0.classKey)
+                        })
+                    )
+                    .animation(
+                        .spring(response: 0.35, dampingFraction: 0.7),
+                        value: verdictLog.records.first?.id
+                    )
+                    .animation(.easeOut(duration: Theme.animationDuration), value: freshDepositID)
+                    .animation(.easeOut(duration: Theme.animationDuration), value: freshVerdictID)
+                    .padding(.bottom, Theme.hudInset)
                 }
             }
         }
@@ -301,6 +353,16 @@ struct LiveCameraView: View {
         .onPreferenceChange(CategorySegmentFramesKey.self) { segmentFrames = $0 }
         .onChange(of: zoneStore.isEditingZones) { _, editing in
             selectedZoneID = editing ? zoneStore.zones.first?.id : nil
+        }
+        .sheet(isPresented: $showHistory) {
+            HistoryView()
+                .environmentObject(history)
+                .environmentObject(zoneStore)
+                .environmentObject(binStyle)
+        }
+        .sheet(isPresented: $showVerdicts) {
+            VerdictHistoryView()
+                .environmentObject(verdictLog)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -336,19 +398,105 @@ struct LiveCameraView: View {
         zoneStore.update(zone)
     }
 
+    /// Same beat as a deposit landing, minus the haptic — the model answers often enough
+    /// that buzzing every time would be noise.
+    private func flashVerdict() {
+        let latest = verdictLog.records.first?.id
+        withAnimation(.easeOut(duration: Theme.animationDuration)) {
+            freshVerdictID = latest
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(900))
+            withAnimation(.easeOut(duration: Theme.animationDuration)) {
+                if freshVerdictID == latest { freshVerdictID = nil }
+            }
+        }
+    }
+
     /// Flashes the receiving zone outline on a confirmed deposit.
     private func flash(_ deposits: [ZoneDeposit]) {
         let zoneIDs = Set(deposits.map(\.zoneID))
+        let latest = history.events.first?.id
         withAnimation(.easeOut(duration: Theme.animationDuration)) {
             flashedZoneIDs.formUnion(zoneIDs)
+            freshDepositID = latest
         }
         announceAndVibrate(deposits)
+        if let deposit = deposits.last {
+            if previewedFeedbackIDs.contains(deposit.id) {
+                releasePersistedFeedback(for: deposit)
+            } else {
+                presentThrowFeedback(
+                    ThrowFeedbackCue(
+                        objectID: deposit.id,
+                        zoneBinID: deposit.zoneBinID,
+                        isCorrect: deposit.isCorrect,
+                        persistWhilePresent: false
+                    )
+                )
+            }
+            previewedFeedbackIDs.remove(deposit.id)
+        }
         flashTask?.cancel()
         flashTask = Task {
             try? await Task.sleep(for: .milliseconds(900))
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: Theme.animationDuration)) {
                 flashedZoneIDs.subtract(zoneIDs)
+                if freshDepositID == latest { freshDepositID = nil }
+            }
+        }
+    }
+
+    /// Overlays the destination segment; a newer throw cancels the dismiss.
+    private func presentThrowFeedback(_ cue: ThrowFeedbackCue) {
+        let feedback = ThrowFeedback.from(cue)
+        if throwFeedbackGate.objectID == cue.objectID, throwFeedbackGate.feedback == feedback {
+            return
+        }
+        var gate = throwFeedbackGate
+        let token = gate.present(
+            feedback,
+            objectID: cue.objectID,
+            persistWhilePresent: cue.persistWhilePresent
+        )
+        withAnimation(.easeOut(duration: Theme.animationDuration)) {
+            throwFeedbackGate = gate
+        }
+        previewedFeedbackIDs.insert(cue.objectID)
+        if settings.throwFeedbackSoundsEnabled {
+            ThrowFeedbackPlayer.shared.play(correct: cue.isCorrect)
+        }
+        if !cue.persistWhilePresent {
+            scheduleThrowFeedbackDismiss(token: token)
+        }
+    }
+
+    private func cancelThrowFeedback(ids: Set<UUID>) {
+        previewedFeedbackIDs.subtract(ids)
+        guard let current = throwFeedbackGate.objectID, ids.contains(current) else { return }
+        withAnimation(.easeOut(duration: Theme.animationDuration)) {
+            throwFeedbackGate.dismiss(objectID: current)
+        }
+    }
+
+    /// After a real deposit, an in-zone banner that was holding starts its 1.8s fade.
+    private func releasePersistedFeedback(for deposit: ZoneDeposit) {
+        guard throwFeedbackGate.objectID == deposit.id, throwFeedbackGate.persistWhilePresent else {
+            return
+        }
+        let token = throwFeedbackGate.token
+        var gate = throwFeedbackGate
+        gate.markEphemeral()
+        throwFeedbackGate = gate
+        scheduleThrowFeedbackDismiss(token: token)
+    }
+
+    private func scheduleThrowFeedbackDismiss(token: UInt64) {
+        Task {
+            try? await Task.sleep(for: .seconds(Theme.throwFeedbackDuration))
+            withAnimation(.easeOut(duration: Theme.animationDuration)) {
+                throwFeedbackGate.dismissIfCurrent(token: token)
             }
         }
     }
@@ -442,3 +590,4 @@ private final class FrameRateMonitor {
         return rounded
     }
 }
+
