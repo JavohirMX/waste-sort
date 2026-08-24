@@ -387,6 +387,9 @@ struct LiveCameraView: View {
     /// Overlays the destination segment; a newer throw cancels the dismiss.
     private func presentThrowFeedback(_ cue: ThrowFeedbackCue) {
         let feedback = ThrowFeedback.from(cue)
+        if throwFeedbackGate.objectID == cue.objectID, throwFeedbackGate.feedback == feedback {
+            return
+        }
         var gate = throwFeedbackGate
         let token = gate.present(
             feedback,

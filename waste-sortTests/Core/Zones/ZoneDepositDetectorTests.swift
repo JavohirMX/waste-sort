@@ -709,8 +709,13 @@ struct ZoneDepositDetectorTests {
         #expect(cues[0].zoneBinID == BinGuide.residual.id)
         #expect(cues[0].persistWhilePresent)
 
-        let left = c.tick([track(centerX: 0.5)])
-        #expect(left.cancelledThrowFeedbackIDs.contains(cues[0].objectID))
+        #expect(c.tick([track(centerX: 0.5)]).cancelledThrowFeedbackIDs.isEmpty)
+
+        var cancelled = Set<UUID>()
+        for _ in 0..<12 {
+            cancelled.formUnion(c.tick([track(centerX: 0.5)]).cancelledThrowFeedbackIDs)
+        }
+        #expect(cancelled.contains(cues[0].objectID))
     }
 
     @Test("an organic item in the organic zone does not cue")
@@ -745,6 +750,32 @@ struct ZoneDepositDetectorTests {
         #expect(deposits.count == 1)
         #expect(deposits[0].id == cues[0].objectID)
         #expect(deposits[0].isCorrect == false)
+    }
+
+    @Test("a short blink in the same wrong zone does not cancel or re-cue")
+    func inZoneIncorrectSurvivesBlink() {
+        let c = clock(throwFeedbackGrace: 0.4)
+        c.tick([track(centerX: 0.5)])
+        var cue: ThrowFeedbackCue?
+        c.tick([track(centerX: 0.8)])
+        for _ in 0..<12 {
+            if let next = c.tick([track(centerX: 0.8)]).throwFeedbackCues.first { cue = next }
+        }
+        #expect(cue != nil)
+
+        var cancelled = Set<UUID>()
+        var extra: [ThrowFeedbackCue] = []
+        for _ in 0..<2 {
+            let gone = c.tick([])
+            cancelled.formUnion(gone.cancelledThrowFeedbackIDs)
+            extra.append(contentsOf: gone.throwFeedbackCues)
+        }
+        let back = c.tick([track(id: 2, centerX: 0.8)])
+        cancelled.formUnion(back.cancelledThrowFeedbackIDs)
+        extra.append(contentsOf: back.throwFeedbackCues)
+
+        #expect(cancelled.isEmpty)
+        #expect(extra.isEmpty)
     }
 
     @Test("when feedback grace is at least reacquire, only one cue fires with the deposit")
