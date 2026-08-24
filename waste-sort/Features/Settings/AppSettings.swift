@@ -38,6 +38,7 @@ enum WasteSortConfig {
     static let defaultFoundationConfirmation = false
     static let defaultFoundationVerdictLog = false
     static let defaultShowLastDepositOnLive = false
+    static let defaultThrowFeedbackSounds = true
 }
 
 /// Snapshot of tunable inference and tracking values, passed into Live camera updates.
@@ -201,6 +202,10 @@ final class AppSettings: ObservableObject {
     @Published var showLastDepositOnLive: Bool {
         didSet { persist(showLastDepositOnLive, key: Keys.showLastDepositOnLive) }
     }
+    /// Play the correct / incorrect clip when a throw is scored. Visual feedback always plays.
+    @Published var throwFeedbackSoundsEnabled: Bool {
+        didSet { persist(throwFeedbackSoundsEnabled, key: Keys.throwFeedbackSounds) }
+    }
 
     var selectedModel: WasteSortModel {
         WasteSortModel.from(resourceName: selectedModelName)
@@ -283,6 +288,7 @@ final class AppSettings: ObservableObject {
         static let foundationConfirmation = "settings.foundationConfirmation"
         static let foundationVerdictLog = "settings.foundationVerdictLog"
         static let showLastDepositOnLive = "settings.showLastDepositOnLive"
+        static let throwFeedbackSounds = "settings.throwFeedbackSounds"
     }
 
     /// Internal rather than private so tests can inject their own defaults suite,
@@ -379,6 +385,11 @@ final class AppSettings: ObservableObject {
             Keys.showLastDepositOnLive,
             WasteSortConfig.defaultShowLastDepositOnLive
         )
+        throwFeedbackSoundsEnabled = Self.loadBool(
+            defaults,
+            Keys.throwFeedbackSounds,
+            WasteSortConfig.defaultThrowFeedbackSounds
+        )
     }
 
     func resetToDefaults() {
@@ -411,6 +422,7 @@ final class AppSettings: ObservableObject {
         foundationConfirmationEnabled = WasteSortConfig.defaultFoundationConfirmation
         foundationVerdictLogEnabled = WasteSortConfig.defaultFoundationVerdictLog
         showLastDepositOnLive = WasteSortConfig.defaultShowLastDepositOnLive
+        throwFeedbackSoundsEnabled = WasteSortConfig.defaultThrowFeedbackSounds
         resetCaptureToDefaults()
     }
 

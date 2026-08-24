@@ -235,6 +235,18 @@ struct SettingsView: View {
                 step: 0.1
             )
 
+            SettingsSliderRow(
+                title: "Throw feedback delay",
+                help: "How soon the category bar and sound react after a throw, and after an item is held in the wrong zone. History still waits for the reacquire window.",
+                valueText: String(format: "%.1fs", zoneStore.throwFeedbackGrace),
+                value: Binding(
+                    get: { zoneStore.throwFeedbackGrace },
+                    set: { zoneStore.throwFeedbackGrace = $0 }
+                ),
+                range: ZoneConfig.throwFeedbackGraceRange,
+                step: 0.1
+            )
+
             Button("Edit zones on camera") {
                 zoneStore.isEditingZones = true
                 dismiss()
@@ -405,6 +417,7 @@ struct SettingsView: View {
             )
             Toggle("Show FPS", isOn: $settings.showFPS)
             Toggle("Show last deposit on Live", isOn: $settings.showLastDepositOnLive)
+            Toggle("Throw feedback sounds", isOn: $settings.throwFeedbackSoundsEnabled)
         } header: {
             Text("Live overlay")
                 .foregroundStyle(BinGuide.organic.color)
@@ -413,7 +426,8 @@ struct SettingsView: View {
                 "Shown on the live camera when waste is detected. Choose one visual guide at a time. "
                     + "Box badges can show an icon, category name, and confidence percent; placement moves the badge around each box. "
                     + "Show FPS draws a plain FPS label on the live camera, bottom left. "
-                    + "The last-deposit chip is a developer overlay; tap it for this session's deposits. History also lives in Stats."
+                    + "The last-deposit chip is a developer overlay; tap it for this session's deposits. History also lives in Stats. "
+                    + "Throw feedback sounds play on a scored throw even if the silent switch is on."
             )
         }
     }

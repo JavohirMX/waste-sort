@@ -37,6 +37,15 @@ nonisolated struct ZoneDeposit: Identifiable, Equatable, Sendable {
     }
 }
 
+/// Early HUD cue: a throw preview or an item held in the wrong zone. Not a scored deposit.
+nonisolated struct ThrowFeedbackCue: Equatable, Sendable {
+    let objectID: UUID
+    let zoneBinID: String
+    let isCorrect: Bool
+    /// In-zone incorrect stays up until cancel; throw previews use the 1.8s auto-dismiss.
+    let persistWhilePresent: Bool
+}
+
 /// What one frame of zone evaluation produced.
 nonisolated struct ZoneFrameResult: Equatable, Sendable {
     /// Items confirmed released this frame. Confirmation lags the disappearance by the
@@ -50,6 +59,10 @@ nonisolated struct ZoneFrameResult: Equatable, Sendable {
     /// Zones holding an object that has vanished and is inside its reacquisition window —
     /// about to be counted unless the model finds it again.
     var settlingZoneIDs: Set<UUID> = []
+    /// First-time throw / wrong-zone feedback this frame.
+    var throwFeedbackCues: [ThrowFeedbackCue] = []
+    /// Objects whose preview should come down (left the wrong zone, or came back).
+    var cancelledThrowFeedbackIDs: Set<UUID> = []
 }
 
 /// Decides when an item counts as thrown away.
@@ -85,6 +98,13 @@ nonisolated final class ZoneDepositDetector {
     /// How long a vanished object is given to come back before it is judged. Also the delay
     /// between a real throw and it appearing in the log.
     var reacquireGrace: CFAbsoluteTime = 1.4
+    /// How long after a vanish (or a hold in the wrong zone) before the HUD reacts.
+    /// Scoring still waits for `reacquireGrace`.
+    var throwFeedbackGrace: CFAbsoluteTime = 0.4
+
+    private var effectiveThrowFeedbackGrace: CFAbsoluteTime {
+        min(throwFeedbackGrace, reacquireGrace)
+    }
     /// How far a reappearing box may sit from where the object was lost, in normalized
     /// image widths, at the instant it vanishes.
     var reacquireRadius: CGFloat = 0.10
@@ -152,6 +172,17 @@ nonisolated final class ZoneDepositDetector {
         var zoneName = ""
         var zoneBinID = ""
         var dwell = 0
+        /// When the object entered its current zone. Nil when it is outside every zone.
+        var zoneEnteredAt: CFAbsoluteTime?
+        /// A vanish-preview cue has already been sent for this disappearance.
+        var didEmitThrowFeedback = false
+        /// An in-zone "Not here!" cue is currently live.
+        var didEmitInZoneIncorrect = false
+        /// The wrong bin the in-zone cue was for — used to ignore short blinks and edge jitter.
+        var lastWrongZoneBinID: String?
+        /// When the object first left `lastWrongZoneBinID`. Nil while it is still there
+        /// (including a vanish whose pending target is that same bin).
+        var leftWrongZoneAt: CFAbsoluteTime?
         /// Frames the model actually saw this object, across every id it wore.
         var detectedFrames = 0
         var last: Sighting
@@ -233,6 +264,8 @@ nonisolated final class ZoneDepositDetector {
 
         var seenThisFrame = Set<ObjectIdentifier>()
         var occupied = Set<UUID>()
+        var throwFeedbackCues: [ThrowFeedbackCue] = []
+        var cancelledThrowFeedbackIDs = Set<UUID>()
 
         // Coasting boxes are dropped outright. The tracker keeps emitting a frozen box for
         // `maxMisses` frames after the model stops finding something. When association
@@ -273,11 +306,17 @@ nonisolated final class ZoneDepositDetector {
             )
             seenThisFrame.insert(ObjectIdentifier(object))
             let isFirstSighting = object.detectedFrames == 0
+            let wasMissing = object.missingSince != nil
             // Back on camera: whatever it was about to be judged as no longer applies.
             object.missingSince = nil
             object.pendingTarget = nil
             object.sawBinOpen = false
             object.note(sighting, at: timestamp, smoothing: velocitySmoothing)
+
+            if wasMissing, object.didEmitThrowFeedback {
+                cancelledThrowFeedbackIDs.insert(object.id)
+                object.didEmitThrowFeedback = false
+            }
 
             guard let zone = zones.first(where: { $0.contains(sighting.center) }) else {
                 // Outside every zone: this is what earns the right to be counted later.
@@ -285,6 +324,10 @@ nonisolated final class ZoneDepositDetector {
                 object.zoneID = nil
                 object.dwell = 0
                 object.lastInZone = nil
+                noteWrongZoneOccupancy(object, currentBinID: nil, at: timestamp)
+                if let id = expireInZoneIncorrectIfNeeded(object, at: timestamp) {
+                    cancelledThrowFeedbackIDs.insert(id)
+                }
                 continue
             }
 
@@ -303,10 +346,21 @@ nonisolated final class ZoneDepositDetector {
                 object.zoneName = zone.name
                 object.zoneBinID = zone.binID
                 object.dwell = 0
+                object.zoneEnteredAt = timestamp
+            } else if object.zoneEnteredAt == nil {
+                object.zoneEnteredAt = timestamp
             }
             // Every frame that reaches here is one the model actually saw, so dwell only
             // ever counts real evidence.
             object.dwell += 1
+
+            noteWrongZoneOccupancy(object, currentBinID: zone.binID, at: timestamp)
+            if let id = expireInZoneIncorrectIfNeeded(object, at: timestamp) {
+                cancelledThrowFeedbackIDs.insert(id)
+            }
+            if let cue = inZoneIncorrectCue(for: object, at: timestamp) {
+                throwFeedbackCues.append(cue)
+            }
         }
 
         // Anything not seen this frame starts, or continues, its reacquisition window.
@@ -322,6 +376,13 @@ nonisolated final class ZoneDepositDetector {
             // signals coincide on one exact frame would drop real deposits.
             if let target = object.pendingTarget, binOpenState.isOpen(binID: target.binID) {
                 object.sawBinOpen = true
+            }
+            noteWrongZoneOccupancy(object, currentBinID: object.pendingTarget?.binID, at: timestamp)
+            if let id = expireInZoneIncorrectIfNeeded(object, at: timestamp) {
+                cancelledThrowFeedbackIDs.insert(id)
+            }
+            if let cue = throwPreviewCue(for: object, at: timestamp) {
+                throwFeedbackCues.append(cue)
             }
         }
 
@@ -358,8 +419,79 @@ nonisolated final class ZoneDepositDetector {
             deposits: deposits.sorted { $0.trackID < $1.trackID },
             occupiedZoneIDs: occupied,
             armedZoneIDs: armedZoneIDs,
-            settlingZoneIDs: settlingZoneIDs
+            settlingZoneIDs: settlingZoneIDs,
+            throwFeedbackCues: throwFeedbackCues,
+            cancelledThrowFeedbackIDs: cancelledThrowFeedbackIDs
         )
+    }
+
+    private func throwPreviewCue(for object: TrackedObject, at timestamp: CFAbsoluteTime) -> ThrowFeedbackCue? {
+        guard !object.didEmitThrowFeedback,
+              let missingSince = object.missingSince,
+              let target = object.pendingTarget,
+              timestamp - missingSince >= effectiveThrowFeedbackGrace
+        else { return nil }
+        // Already holding "Not here!" on this bin — do not fire a second cue.
+        if object.didEmitInZoneIncorrect, object.lastWrongZoneBinID == target.binID {
+            return nil
+        }
+        object.didEmitThrowFeedback = true
+        let isCorrect = BinGuide.info(for: object.verdictClass.key).id == target.binID
+        return ThrowFeedbackCue(
+            objectID: object.id,
+            zoneBinID: target.binID,
+            isCorrect: isCorrect,
+            persistWhilePresent: false
+        )
+    }
+
+    private func inZoneIncorrectCue(for object: TrackedObject, at timestamp: CFAbsoluteTime) -> ThrowFeedbackCue? {
+        guard object.arrivedFromOutside,
+              !object.didEmitInZoneIncorrect,
+              object.missingSince == nil,
+              !object.zoneBinID.isEmpty,
+              let entered = object.zoneEnteredAt,
+              timestamp - entered >= throwFeedbackGrace
+        else { return nil }
+        let category = BinGuide.info(for: object.verdictClass.key).id
+        guard category != BinGuide.unknown.id, category != object.zoneBinID else { return nil }
+        object.didEmitInZoneIncorrect = true
+        object.lastWrongZoneBinID = object.zoneBinID
+        object.leftWrongZoneAt = nil
+        return ThrowFeedbackCue(
+            objectID: object.id,
+            zoneBinID: object.zoneBinID,
+            isCorrect: false,
+            persistWhilePresent: true
+        )
+    }
+
+    /// Treat a vanish into the same wrong bin as still "there" so a blink does not cancel.
+    private func noteWrongZoneOccupancy(
+        _ object: TrackedObject,
+        currentBinID: String?,
+        at timestamp: CFAbsoluteTime
+    ) {
+        guard object.didEmitInZoneIncorrect, let last = object.lastWrongZoneBinID else { return }
+        if currentBinID == last {
+            object.leftWrongZoneAt = nil
+        } else if object.leftWrongZoneAt == nil {
+            object.leftWrongZoneAt = timestamp
+        }
+    }
+
+    private func expireInZoneIncorrectIfNeeded(
+        _ object: TrackedObject,
+        at timestamp: CFAbsoluteTime
+    ) -> UUID? {
+        guard object.didEmitInZoneIncorrect,
+              let left = object.leftWrongZoneAt,
+              timestamp - left >= throwFeedbackGrace
+        else { return nil }
+        object.didEmitInZoneIncorrect = false
+        object.lastWrongZoneBinID = nil
+        object.leftWrongZoneAt = nil
+        return object.id
     }
 
     /// Resolves a live track to the object it belongs to, stitching across a dropout when

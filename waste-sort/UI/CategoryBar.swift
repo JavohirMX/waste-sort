@@ -13,6 +13,10 @@ struct CategoryBar: View {
     var bins: [BinInfo] = BinGuide.all
     let counts: [String: Int]
     var ctaStyle: CTAStyle = .off
+    /// When set, only the destination segment overlays correct / "Not here!" feedback.
+    var throwFeedback: ThrowFeedback?
+    /// Increments on each scored throw so a repeat miss can replay the shake.
+    var throwFeedbackToken: UInt64 = 0
     var onTripleTap: (() -> Void)? = nil
     @Environment(\.hudTextScale) private var hudTextScale
 
@@ -20,13 +24,16 @@ struct CategoryBar: View {
         HStack(spacing: 0) {
             ForEach(Array(bins.enumerated()), id: \.element.id) { index, bin in
                 let detected = CategoryPresence.isDetected(binID: bin.id, counts: counts)
+                let segmentFeedback = throwFeedback?.targetBinID == bin.id ? throwFeedback : nil
                 CategorySegment(
                     bin: bin,
                     isDetected: detected,
-                    isPulsing: ctaStyle == .pulseLabel && detected,
+                    isPulsing: ctaStyle == .pulseLabel && detected && segmentFeedback == nil,
                     cornerIndex: index,
                     cornerCount: bins.count,
-                    textScale: hudTextScale
+                    textScale: hudTextScale,
+                    throwFeedback: segmentFeedback,
+                    throwFeedbackToken: throwFeedbackToken
                 )
                 .overlay(alignment: .trailing) {
                     if index < bins.count - 1 {
@@ -70,6 +77,14 @@ struct CategoryBar: View {
 
     private var accessibilityLabel: String {
         bins.map { bin in
+            if let throwFeedback, throwFeedback.targetBinID == bin.id {
+                switch throwFeedback {
+                case .correct:
+                    return "\(bin.displayName) correct"
+                case .incorrect:
+                    return "\(bin.displayName) not here"
+                }
+            }
             let state = CategoryPresence.isDetected(binID: bin.id, counts: counts) ? "detected" : "not detected"
             return "\(bin.displayName) \(state)"
         }
@@ -84,6 +99,8 @@ private struct CategorySegment: View {
     let cornerIndex: Int
     let cornerCount: Int
     var textScale: CGFloat = 1
+    var throwFeedback: ThrowFeedback?
+    var throwFeedbackToken: UInt64 = 0
 
     var body: some View {
         HStack(spacing: 8 * textScale) {
@@ -99,11 +116,23 @@ private struct CategorySegment: View {
         .background((isDetected ? bin.color : bin.idleColor).opacity(
             isDetected ? Theme.segmentDetectedOpacity : Theme.segmentIdleOpacity
         ))
+        .overlay {
+            if let throwFeedback {
+                ThrowFeedbackSegmentOverlay(
+                    feedback: throwFeedback,
+                    replayID: throwFeedbackToken
+                )
+                    .transition(
+                        .move(edge: throwFeedback.insertionEdge).combined(with: .opacity)
+                    )
+            }
+        }
         .clipShape(segmentShape)
         .compositingGroup()
         .modifier(CTAPulseModifier(isActive: isPulsing))
-        .zIndex(isPulsing ? 1 : 0)
+        .zIndex(isPulsing || throwFeedback != nil ? 1 : 0)
         .animation(.easeInOut(duration: Theme.animationDuration), value: isDetected)
+        .animation(.easeOut(duration: Theme.animationDuration), value: throwFeedback)
     }
 
     private var segmentShape: UnevenRoundedRectangle {
@@ -135,10 +164,32 @@ private struct CTAPulseModifier: ViewModifier {
     }
 }
 
-#Preview {
+#Preview("Presence") {
     ZStack {
         Color.gray
         CategoryBar(counts: ["residual": 2, "clean_inorganic": 1], ctaStyle: .pulseLabel)
             .padding()
+    }
+}
+
+#Preview("Correct organic") {
+    ZStack {
+        Color.gray
+        CategoryBar(
+            counts: ["organic": 1],
+            throwFeedback: .correct(binID: BinGuide.organic.id)
+        )
+        .padding()
+    }
+}
+
+#Preview("Incorrect organic") {
+    ZStack {
+        Color.gray
+        CategoryBar(
+            counts: ["organic": 1],
+            throwFeedback: .incorrect(binID: BinGuide.organic.id)
+        )
+        .padding()
     }
 }
