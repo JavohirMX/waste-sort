@@ -59,6 +59,9 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
     /// Below this the model was hedging, and a hedge is not worth locking in. The reading is
     /// still recorded, so the debug log shows the near misses rather than swallowing them.
     var minimumConfidence = 0.5
+    /// Dirty recyclable is allowed to lock on a moderate dirt guess — about 40–50% sure
+    /// is enough, so this bar sits below the others.
+    var minimumDirtyRecyclableConfidence = 0.4
     /// How long a request may be outstanding before the slot is taken back. A model that
     /// wedges would otherwise stall the whole layer silently and for good.
     var requestTimeout: CFAbsoluteTime = 20
@@ -502,6 +505,7 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
         if inFlight?.trackID == trackID { inFlight = nil }
 
         let accepted = accept(reading)
+        let threshold = reading.flatMap { $0.binID.map(minimumConfidence(for:)) } ?? minimumConfidence
         pendingRecords.append(
             record(
                 trackID: trackID,
@@ -510,7 +514,8 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
                 accepted: accepted,
                 failure: failure,
                 latency: max(0, now - startedAt),
-                thumbnail: thumbnail
+                thumbnail: thumbnail,
+                confidenceThreshold: threshold
             )
         )
 
@@ -527,13 +532,20 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
     private func accept(_ reading: CategoryReading?) -> ConfirmedCategory? {
         guard let reading,
               let binID = reading.binID,
-              reading.confidence >= minimumConfidence
+              reading.confidence >= minimumConfidence(for: binID)
         else { return nil }
         return ConfirmedCategory(
             binID: binID,
             confidence: reading.confidence,
             label: reading.label
         )
+    }
+
+    private func minimumConfidence(for binID: String) -> Double {
+        if binID == BinGuide.dirtyRecyclable.id {
+            return minimumDirtyRecyclableConfidence
+        }
+        return minimumConfidence
     }
 
     private func record(
@@ -543,7 +555,8 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
         accepted: ConfirmedCategory?,
         failure: String?,
         latency: TimeInterval,
-        thumbnail: CGImage?
+        thumbnail: CGImage?,
+        confidenceThreshold: Double
     ) -> FoundationVerdictRecord {
         let outcome: FoundationVerdictRecord.Outcome
         if let accepted {
@@ -554,7 +567,7 @@ nonisolated final class CategoryConfirmationCoordinator: @unchecked Sendable {
             outcome = .declined(reason: "model answered unclear")
         } else if let reading {
             outcome = .declined(
-                reason: String(format: "below %.2f confidence", minimumConfidence)
+                reason: String(format: "below %.2f confidence", confidenceThreshold)
             )
         } else {
             outcome = .failed("no answer")

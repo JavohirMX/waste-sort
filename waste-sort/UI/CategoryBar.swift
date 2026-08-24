@@ -17,6 +17,7 @@ struct CategoryBar: View {
     var throwFeedback: ThrowFeedback?
     /// Increments on each scored throw so a repeat miss can replay the shake.
     var throwFeedbackToken: UInt64 = 0
+    var onTripleTap: (() -> Void)? = nil
     @Environment(\.hudTextScale) private var hudTextScale
 
     var body: some View {
@@ -49,6 +50,9 @@ struct CategoryBar: View {
                         )
                     }
                 }
+                .onTapGesture(count: 3) {
+                    onTripleTap?()
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -62,6 +66,13 @@ struct CategoryBar: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityActions {
+            if onTripleTap != nil {
+                Button("Open developer settings") {
+                    onTripleTap?()
+                }
+            }
+        }
     }
 
     private var accessibilityLabel: String {

@@ -326,8 +326,12 @@ struct DetectionBoxOverlay: View {
             ForEach(tracks) { track in
                 let rect = mappedRect(for: track)
                 if rect.width > 1, rect.height > 1 {
+                    let info = BinGuide.info(for: track.classKey)
+                    let isDirty = info.id == BinGuide.dirtyRecyclable.id
                     DetectionBoxView(
-                        bin: binStyle.resolved(BinGuide.info(for: track.classKey)),
+                        bin: binStyle.resolved(isDirty ? BinGuide.residual : info),
+                        recyclableBin: binStyle.resolved(BinGuide.cleanInorganic),
+                        isDirtyRecyclable: isDirty,
                         rect: rect,
                         confidence: track.conf,
                         style: style,
@@ -354,6 +358,8 @@ struct DetectionBoxOverlay: View {
 
 struct DetectionBoxView: View {
     let bin: BinInfo
+    var recyclableBin: BinInfo = BinGuide.cleanInorganic
+    var isDirtyRecyclable: Bool = false
     let rect: CGRect
     var confidence: Float = 0
     var style: BoxOverlayStyle = .default
@@ -390,38 +396,95 @@ struct DetectionBoxView: View {
     }
 
     private var box: some View {
-        RoundedRectangle(cornerRadius: Theme.boxCornerRadius, style: .continuous)
-            .fill(bin.color.opacity(fillOpacity))
-            .overlay {
+        ZStack {
+            if isDirtyRecyclable {
+                dirtySplitHalf(color: bin.color, residual: true)
+                dirtySplitHalf(color: recyclableBin.color, residual: false)
+            } else {
                 RoundedRectangle(cornerRadius: Theme.boxCornerRadius, style: .continuous)
-                    .strokeBorder(bin.color, style: strokeStyle)
+                    .fill(bin.color.opacity(fillOpacity))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: Theme.boxCornerRadius, style: .continuous)
+                            .strokeBorder(bin.color, style: strokeStyle)
+                    }
+                    .overlay {
+                        // A second, inset line. Confirmed is the only state that draws it, so the
+                        // difference from an ordinary box is one of kind rather than of weight —
+                        // a heavier single border reads as "confirmed" long before it is.
+                        if confirmation == .confirmed {
+                            RoundedRectangle(
+                                cornerRadius: Theme.boxCornerRadius - Theme.confirmedInnerInset,
+                                style: .continuous
+                            )
+                            .strokeBorder(bin.color.opacity(0.85), lineWidth: Theme.boxStrokeWidth * 0.6)
+                            .padding(Theme.confirmedInnerInset)
+                        }
+                    }
             }
+            confirmFlash
+        }
+        .frame(width: rect.width, height: rect.height)
+        .animation(.easeOut(duration: Theme.animationDuration), value: confirmation)
+    }
+
+    /// Residual top-left, recyclable bottom-right — the same diagonal as the suggestion chip.
+    private func dirtySplitHalf(color: Color, residual: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.boxCornerRadius, style: .continuous)
+        return shape
+            .fill(color.opacity(fillOpacity))
             .overlay {
-                // A second, inset line. Confirmed is the only state that draws it, so the
-                // difference from an ordinary box is one of kind rather than of weight —
-                // a heavier single border reads as "confirmed" long before it is.
-                if confirmation == .confirmed {
-                    RoundedRectangle(cornerRadius: Theme.boxCornerRadius - Theme.confirmedInnerInset, style: .continuous)
-                        .strokeBorder(bin.color.opacity(0.85), lineWidth: Theme.boxStrokeWidth * 0.6)
-                        .padding(Theme.confirmedInnerInset)
-                }
+                shape.strokeBorder(color, lineWidth: Theme.confirmedStrokeWidth)
             }
-            .overlay {
-                // The flare rides outside the box so it reads as the answer arriving rather
-                // than as the box itself changing size.
-                RoundedRectangle(cornerRadius: Theme.boxCornerRadius + Theme.confirmFlashSpread, style: .continuous)
-                    .stroke(bin.color, lineWidth: Theme.confirmedStrokeWidth)
-                    .blur(radius: Theme.confirmFlashSpread * 0.6)
-                    .padding(-Theme.confirmFlashSpread)
-                    .opacity(flash)
-                    .allowsHitTesting(false)
+            .mask {
+                LinearGradient(
+                    stops: residual
+                        ? [
+                            .init(color: .white, location: 0),
+                            .init(color: .white, location: 0.5),
+                            .init(color: .clear, location: 0.5),
+                        ]
+                        : [
+                            .init(color: .clear, location: 0.5),
+                            .init(color: .white, location: 0.5),
+                            .init(color: .white, location: 1),
+                        ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
             }
-            .frame(width: rect.width, height: rect.height)
-            .animation(.easeOut(duration: Theme.animationDuration), value: confirmation)
+    }
+
+    /// The flare rides outside the box so it reads as the answer arriving rather
+    /// than as the box itself changing size.
+    @ViewBuilder
+    private var confirmFlash: some View {
+        let shape = RoundedRectangle(
+            cornerRadius: Theme.boxCornerRadius + Theme.confirmFlashSpread,
+            style: .continuous
+        )
+        Group {
+            if isDirtyRecyclable {
+                shape.stroke(
+                    LinearGradient(
+                        colors: [bin.color, recyclableBin.color],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: Theme.confirmedStrokeWidth
+                )
+            } else {
+                shape.stroke(bin.color, lineWidth: Theme.confirmedStrokeWidth)
+            }
+        }
+        .blur(radius: Theme.confirmFlashSpread * 0.6)
+        .padding(-Theme.confirmFlashSpread)
+        .opacity(flash)
+        .allowsHitTesting(false)
     }
 
     private var fillOpacity: Double {
         if isCoasting { return Theme.boxFillOpacity * 0.5 }
+        if isDirtyRecyclable { return Theme.dirtyRecyclableFillOpacity }
         switch confirmation {
         case .confirmed:
             return Theme.confirmedFillOpacity
@@ -459,7 +522,9 @@ struct DetectionBoxView: View {
 
     @ViewBuilder
     private var categoryBadge: some View {
-        if style.isIconOnly {
+        if isDirtyRecyclable {
+            dirtyRecyclableBadge
+        } else if style.isIconOnly {
             ZStack {
                 Circle()
                     .fill(bin.color)
@@ -493,4 +558,83 @@ struct DetectionBoxView: View {
             .background(bin.color, in: Capsule())
         }
     }
+
+    @ViewBuilder
+    private var dirtyRecyclableBadge: some View {
+        if style.isIconOnly {
+            ZStack(alignment: .center) {
+                Circle()
+                    .fill(bin.color)
+                    .frame(width: badgeSize, height: badgeSize)
+                    .overlay {
+                        Image(systemName: BinGuide.residual.symbolName)
+                            .font(.system(size: iconOnlyFontSize, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .offset(x: -badgeSize * 0.22, y: 0)
+                Circle()
+                    .fill(recyclableBin.color)
+                    .frame(width: badgeSize * 1.12, height: badgeSize * 1.12)
+                    .overlay {
+                        Image(systemName: BinGuide.cleanInorganic.symbolName)
+                            .font(.system(size: iconOnlyFontSize, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .offset(x: badgeSize * 0.28, y: 0)
+                    .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+            }
+            .frame(width: badgeSize * 1.6, height: badgeSize * 1.12)
+        } else {
+            HStack(spacing: 0) {
+                HStack(spacing: 4 * scale) {
+                    if style.showIcon {
+                        Image(systemName: BinGuide.residual.symbolName)
+                            .font(.system(size: capsuleFontSize, weight: .bold))
+                    }
+                    if style.showCategory {
+                        Text(BinGuide.residual.displayName)
+                            .font(.system(size: capsuleFontSize, weight: .bold))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                    if style.showConfidence {
+                        Text(percentText)
+                            .font(.system(size: capsuleFontSize, weight: .bold).monospacedDigit())
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 7 * scale)
+                .padding(.vertical, 4 * scale)
+                .background(bin.color, in: Capsule())
+
+                Circle()
+                    .fill(recyclableBin.color)
+                    .frame(width: badgeSize * 1.05, height: badgeSize * 1.05)
+                    .overlay {
+                        Image(systemName: BinGuide.cleanInorganic.symbolName)
+                            .font(.system(size: iconOnlyFontSize, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .offset(x: -6 * scale)
+                    .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+            }
+        }
+    }
+}
+
+#Preview("Dirty recyclable box") {
+    ZStack {
+        Color.black
+        DetectionBoxView(
+            bin: BinGuide.residual,
+            recyclableBin: BinGuide.cleanInorganic,
+            isDirtyRecyclable: true,
+            rect: CGRect(x: 80, y: 160, width: 180, height: 240),
+            confidence: 0.72,
+            confirmation: .confirmed
+        )
+    }
+    .ignoresSafeArea()
 }

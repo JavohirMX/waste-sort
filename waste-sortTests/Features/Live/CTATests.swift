@@ -12,7 +12,7 @@ struct CTACueMapperTests {
             track(id: 2, classKey: "mystery", width: 0.3, height: 0.3),
         ]
         let cues = map(tracks)
-        #expect(cues.map(\.id) == [1])
+        #expect(cues.map(\.trackID) == [1])
         #expect(cues.first?.binID == "organic")
     }
 
@@ -29,7 +29,7 @@ struct CTACueMapperTests {
             ),
         ]
         let cues = map(tracks)
-        #expect(cues.map(\.id) == [1])
+        #expect(cues.map(\.trackID) == [1])
     }
 
     @Test func oneCuePerTrack() {
@@ -39,7 +39,7 @@ struct CTACueMapperTests {
             track(id: 3, classKey: "residual", x: 0.7, y: 0.3, width: 0.2, height: 0.25),
         ]
         let cues = map(tracks)
-        #expect(cues.map(\.id) == [1, 2, 3])
+        #expect(cues.map(\.trackID) == [1, 2, 3])
         #expect(cues.map(\.binID) == ["organic", "organic", "residual"])
     }
 
@@ -56,6 +56,15 @@ struct CTACueMapperTests {
     @Test func mapsCleanInorganicToBinID() {
         let cues = map([track(id: 4, classKey: "inorganic", width: 0.25, height: 0.25)])
         #expect(cues.first?.binID == "clean_inorganic")
+    }
+
+    @Test func dirtyRecyclableLightsResidualAndRecyclable() {
+        let cues = map([
+            track(id: 7, classKey: BinGuide.dirtyRecyclable.id, width: 0.3, height: 0.3),
+        ])
+        #expect(Set(cues.map(\.binID)) == [BinGuide.residual.id, BinGuide.cleanInorganic.id])
+        #expect(Set(cues.map(\.trackID)) == [7])
+        #expect(CTACueMapper.activeBinIDs(from: cues) == [BinGuide.residual.id, BinGuide.cleanInorganic.id])
     }
 
     @Test func mappedRectsAreLargeEnoughToDraw() {

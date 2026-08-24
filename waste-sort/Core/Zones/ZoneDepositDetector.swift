@@ -31,7 +31,10 @@ nonisolated struct ZoneDeposit: Identifiable, Equatable, Sendable {
     let binWasOpen: Bool
 
     /// True when the detected category matches the bin the item went into.
-    var isCorrect: Bool { BinGuide.info(for: classKey).id == zoneBinID }
+    /// Dirty recyclable is correct in residual or recyclable.
+    var isCorrect: Bool {
+        BinGuide.isAcceptedDeposit(classKey: classKey, zoneBinID: zoneBinID)
+    }
 }
 
 /// Early HUD cue: a throw preview or an item held in the wrong zone. Not a scored deposit.

@@ -39,6 +39,11 @@ struct CategoryConfirmationCoordinatorTests {
         label: "tin can",
         confidence: 0.8
     )
+    private static let dirtyRecyclable = CategoryReading(
+        binID: BinGuide.dirtyRecyclable.id,
+        label: "food tin",
+        confidence: 0.85
+    )
     /// The model looked and would not name a bin.
     private static let unclear = CategoryReading(binID: nil, label: "blurred", confidence: 0.9)
     /// The model named a bin but hedged its way below the bar.
@@ -367,6 +372,49 @@ struct CategoryConfirmationCoordinatorTests {
         let locked = h.tick([track(classKey: "organic")]).tracks.first
         #expect(locked?.rawClassKey == "organic")
         #expect(locked?.observedClassKey == "organic")
+    }
+
+    @Test("a dirty-recyclable lock keeps the detector's label")
+    func dirtyRecyclableLockKeepsDetectorLabel() async {
+        let h = Harness(answers: [Self.dirtyRecyclable])
+        h.tick([track(classKey: "residual")], times: 2)
+        await h.settle()
+
+        let locked = h.tick([track(classKey: "residual")]).tracks.first
+        #expect(locked?.classKey == BinGuide.dirtyRecyclable.id)
+        #expect(locked?.confirmedBinID == BinGuide.dirtyRecyclable.id)
+        #expect(locked?.vote.classKey == BinGuide.dirtyRecyclable.id)
+        #expect(locked?.rawClassKey == "residual")
+    }
+
+    @Test("a moderate dirty-recyclable guess still locks")
+    func dirtyRecyclableLocksAtFortyPercent() async {
+        let maybeDirty = CategoryReading(
+            binID: BinGuide.dirtyRecyclable.id,
+            label: "food tin",
+            confidence: 0.4
+        )
+        let h = Harness(answers: [maybeDirty])
+        h.tick([track(classKey: "residual")], times: 2)
+        await h.settle()
+
+        let locked = h.tick([track(classKey: "residual")]).tracks.first
+        #expect(locked?.classKey == BinGuide.dirtyRecyclable.id)
+        #expect(locked?.confirmedBinID == BinGuide.dirtyRecyclable.id)
+    }
+
+    @Test("a dirty-recyclable guess below forty percent is declined")
+    func dirtyRecyclableBelowFortyPercentIsDeclined() async {
+        let tooUnsure = CategoryReading(
+            binID: BinGuide.dirtyRecyclable.id,
+            label: "food tin",
+            confidence: 0.39
+        )
+        let h = Harness(answers: [tooUnsure])
+        h.tick([track()], times: 2)
+        await h.settle()
+        h.tick([track()])
+        #expect(h.collectedRecords.first?.outcome == .declined(reason: "below 0.40 confidence"))
     }
 
     @Test("a confirmed item is never asked about twice")

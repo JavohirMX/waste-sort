@@ -3,13 +3,16 @@ import Foundation
 
 /// One live detection mapped into view space for CTA overlays.
 struct CTACue: Equatable, Identifiable {
-    let id: Int
+    let trackID: Int
     let binID: String
     let displayRect: CGRect
+
+    var id: String { "\(trackID)-\(binID)" }
 }
 
 enum CTACueMapper {
     /// Maps confirmed tracks to CTA cues, skipping unknown classes and tiny boxes.
+    /// Dirty recyclable emits one cue per physical bin it lights (residual and recyclable).
     static func cues(
         from tracks: [TrackedDetection],
         imageSize: CGSize,
@@ -18,10 +21,10 @@ enum CTACueMapper {
         mirror: Bool,
         useAspectFill: Bool = true
     ) -> [CTACue] {
-        tracks.compactMap { track in
-            guard !track.isCoasting else { return nil }
-            let bin = BinGuide.info(for: track.classKey)
-            guard bin.id != BinGuide.unknown.id else { return nil }
+        tracks.flatMap { track -> [CTACue] in
+            guard !track.isCoasting else { return [] }
+            let binIDs = BinGuide.barBinIDs(for: track.classKey)
+            guard !binIDs.isEmpty else { return [] }
             let rect = DetectionGeometry.mapDisplayRect(
                 normalized: track.displayXywhn,
                 imageSize: imageSize,
@@ -30,8 +33,8 @@ enum CTACueMapper {
                 mirror: mirror,
                 useAspectFill: useAspectFill
             )
-            guard rect.width > 1, rect.height > 1 else { return nil }
-            return CTACue(id: track.id, binID: bin.id, displayRect: rect)
+            guard rect.width > 1, rect.height > 1 else { return [] }
+            return binIDs.map { CTACue(trackID: track.id, binID: $0, displayRect: rect) }
         }
     }
 

@@ -141,13 +141,14 @@ struct ZoneDepositDetectorTests {
     }
 
     private func clock(
+        zones: [DropZone]? = nil,
         dwell: Int = 3,
         grace: CFAbsoluteTime = 1.4,
         throwFeedbackGrace: CFAbsoluteTime = 0.4,
         binState: BinOpenStateProviding? = nil
     ) -> Clock {
         Clock(
-            zones: zones,
+            zones: zones ?? self.zones,
             dwell: dwell,
             grace: grace,
             throwFeedbackGrace: throwFeedbackGrace,
@@ -447,6 +448,63 @@ struct ZoneDepositDetectorTests {
         let deposits = c.waitOutGrace()
         #expect(deposits.count == 1)
         #expect(deposits.first?.classKey == "organic")
+    }
+
+    @Test("dirty recyclable is correct in residual")
+    func dirtyRecyclableIntoResidualIsCorrect() {
+        let c = clock()
+        c.tick([track(classKey: "organic", centerX: 0.5)], times: 3)
+        c.tick(
+            [track(
+                classKey: BinGuide.dirtyRecyclable.id,
+                centerX: 0.8,
+                confirmedBinID: BinGuide.dirtyRecyclable.id
+            )],
+            times: 4
+        )
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.classKey == BinGuide.dirtyRecyclable.id)
+        #expect(deposits.first?.isCorrect == true)
+    }
+
+    @Test("dirty recyclable is correct in recyclable")
+    func dirtyRecyclableIntoRecyclableIsCorrect() {
+        let recyclableZone = DropZone(
+            name: "Recyclable bin",
+            binID: BinGuide.cleanInorganic.id,
+            corners: DropZone.rect(CGRect(x: 0.6, y: 0.0, width: 0.4, height: 1.0))
+        )
+        let c = clock(zones: [organicZone, recyclableZone])
+        c.tick([track(classKey: "organic", centerX: 0.5)], times: 3)
+        c.tick(
+            [track(
+                classKey: BinGuide.dirtyRecyclable.id,
+                centerX: 0.8,
+                confirmedBinID: BinGuide.dirtyRecyclable.id
+            )],
+            times: 4
+        )
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.isCorrect == true)
+    }
+
+    @Test("dirty recyclable is wrong in organic")
+    func dirtyRecyclableIntoOrganicIsWrong() {
+        let c = clock()
+        c.tick([track(classKey: "organic", centerX: 0.5)], times: 3)
+        c.tick(
+            [track(
+                classKey: BinGuide.dirtyRecyclable.id,
+                centerX: 0.2,
+                confirmedBinID: BinGuide.dirtyRecyclable.id
+            )],
+            times: 4
+        )
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.isCorrect == false)
     }
 
     // MARK: - Bin contents
