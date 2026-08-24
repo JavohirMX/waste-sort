@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct BinSettingsView: View {
     @EnvironmentObject private var binStyle: BinStyleStore
@@ -9,9 +10,6 @@ struct BinSettingsView: View {
 
     @State private var draft: BinCustomization?
     @State private var draggingID: String?
-    /// Visual offset of the lifted card, and the correction applied each time it changes slot.
-    @State private var dragTranslation: CGFloat = 0
-    @State private var dragRebase: CGFloat = 0
 
     private var isWide: Bool { horizontalSizeClass == .regular }
 
@@ -133,90 +131,53 @@ struct BinSettingsView: View {
         let bins = binStyle.orderedBins
         let spacing: CGFloat = isWide ? 22 : 14
 
-        return GeometryReader { geo in
-            let count = max(bins.count, 1)
-            let cardWidth = (geo.size.width - spacing * CGFloat(count - 1)) / CGFloat(count)
-            let step = cardWidth + spacing
-
-            HStack(spacing: spacing) {
-                ForEach(bins) { bin in
-                    let lifted = draggingID == bin.id
-                    BinArrangementCard(bin: bin, isWide: isWide) {
-                        draft = binStyle.customization(for: bin.id)
-                    }
-                    .frame(width: cardWidth)
-                    .scaleEffect(lifted ? 1.06 : 1)
-                    .shadow(color: .black.opacity(lifted ? 0.25 : 0), radius: 20, y: 12)
-                    .offset(x: lifted ? dragTranslation : 0)
-                    .zIndex(lifted ? 1 : 0)
-                    .popover(item: popoverBinding(for: bin.id)) { presented in
-                        BinDetailsEditor(
-                            draft: Binding(
-                                get: { draft ?? presented },
-                                set: { draft = $0 }
-                            ),
-                            onCancel: discardDraft,
-                            onSave: saveDraft
-                        )
-                        .presentationCompactAdaptation(.popover)
-                        .presentationBackground(.ultraThinMaterial)
-                        .presentationCornerRadius(20)
-                    }
-                    .onTapGesture {
-                        draft = binStyle.customization(for: bin.id)
-                    }
-                    .gesture(reorderGesture(for: bin.id, step: step))
+        return HStack(spacing: spacing) {
+            ForEach(bins) { bin in
+                BinArrangementCard(bin: bin, isWide: isWide) {
+                    draft = binStyle.customization(for: bin.id)
                 }
+                .opacity(draggingID == bin.id ? 0.55 : 1)
+                .popover(item: popoverBinding(for: bin.id)) { presented in
+                    BinDetailsEditor(
+                        draft: Binding(
+                            get: { draft ?? presented },
+                            set: { draft = $0 }
+                        ),
+                        onCancel: discardDraft,
+                        onSave: saveDraft
+                    )
+                    .presentationCompactAdaptation(.popover)
+                    .presentationBackground(.ultraThinMaterial)
+                    .presentationCornerRadius(20)
+                }
+                .onTapGesture {
+                    draft = binStyle.customization(for: bin.id)
+                }
+                .onDrag {
+                    draggingID = bin.id
+                    return NSItemProvider(object: bin.id as NSString)
+                }
+                .onDrop(
+                    of: [UTType.text],
+                    delegate: BinReorderDropDelegate(
+                        targetID: bin.id,
+                        draggingID: $draggingID,
+                        orderedIDs: binStyle.orderedBins.map(\.id),
+                        onMove: applyReorder
+                    )
+                )
             }
-            .frame(height: geo.size.height)
         }
     }
 
-    /// Home-screen style rearranging: the lifted card tracks the finger while the others
-    /// spring into the gap behind it, and the order commits as each slot is crossed rather
-    /// than once on drop.
-    private func reorderGesture(for binID: String, step: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 10)
-            .onChanged { value in
-                if draggingID == nil {
-                    dragRebase = 0
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                        draggingID = binID
-                    }
-                    HapticsService.shared.fire(.lightTap)
-                }
-                guard draggingID == binID else { return }
-                dragTranslation = value.translation.width + dragRebase
-                relocate(binID, step: step)
-            }
-            .onEnded { _ in
-                guard draggingID == binID else { return }
-                withAnimation(.spring(response: 0.34, dampingFraction: 0.75)) {
-                    dragTranslation = 0
-                    dragRebase = 0
-                    draggingID = nil
-                }
-            }
-    }
-
-    /// Swaps as soon as the card passes into a neighbouring slot, then rebases the visual
-    /// offset by the distance it just jumped so it stays put under the finger.
-    private func relocate(_ binID: String, step: CGFloat) {
-        guard step > 0 else { return }
+    private func applyReorder(from sourceID: String, to targetID: String) {
         var ids = binStyle.orderedBins.map(\.id)
-        guard let current = ids.firstIndex(of: binID) else { return }
-        let target = min(max(current + Int((dragTranslation / step).rounded()), 0), ids.count - 1)
-        guard target != current else { return }
-
-        ids.move(
-            fromOffsets: IndexSet(integer: current),
-            toOffset: target > current ? target + 1 : target
-        )
-        let jump = CGFloat(target - current) * step
-        dragRebase -= jump
-        dragTranslation -= jump
-
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
+        guard let from = ids.firstIndex(of: sourceID),
+              let to = ids.firstIndex(of: targetID),
+              from != to
+        else { return }
+        ids.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        withAnimation(.easeInOut(duration: 0.2)) {
             binStyle.reorder(
                 orderedBinIDs: ids,
                 zoneStore: zoneStore,
@@ -224,7 +185,6 @@ struct BinSettingsView: View {
                 mirror: settings.liveMirror
             )
         }
-        HapticsService.shared.fire(.lightTap)
     }
 
     /// One popover per card, so the panel anchors to the bin it edits the way the design
@@ -447,6 +407,27 @@ private struct BinDetailsEditor: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .background(Color(white: 0.93), in: Capsule())
+    }
+}
+
+private struct BinReorderDropDelegate: DropDelegate {
+    let targetID: String
+    @Binding var draggingID: String?
+    let orderedIDs: [String]
+    let onMove: (String, String) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingID, draggingID != targetID else { return }
+        onMove(draggingID, targetID)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingID = nil
+        return true
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
     }
 }
 
