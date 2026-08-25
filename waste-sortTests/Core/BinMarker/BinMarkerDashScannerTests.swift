@@ -28,7 +28,7 @@ private func canvasWithRow(
 
 @Suite("Bin marker dash rows")
 struct BinMarkerDashScannerTests {
-    @Test("A printed row is found and counted", arguments: [5, 8, 12, 14])
+    @Test("A printed row is found and counted", arguments: [6, 8, 12, 14])
     func rowIsCounted(dashes: Int) throws {
         let scanner = BinMarkerDashScanner()
         let found = try #require(scanner.scan(canvasWithRow(dashes: dashes, dash: 6, thickness: 20)).first)
@@ -40,11 +40,25 @@ struct BinMarkerDashScannerTests {
     /// Eight runs is where the site's own frames stop producing false rows — 39 at five, 7 at
     /// six, 3 at seven, none at eight — and a clean row of N dashes reads as 2N−1 runs, so the
     /// floor lands on five dashes. To trigger sooner, print them smaller, not fewer.
-    @Test("Four dashes is below the floor and five is above it")
-    func fiveDashesIsTheFloor() {
-        let scanner = BinMarkerDashScanner()
-        #expect(scanner.scan(canvasWithRow(dashes: 4, dash: 6, thickness: 20)).isEmpty)
-        #expect(scanner.scan(canvasWithRow(dashes: 5, dash: 6, thickness: 20)).count == 1)
+    @Test("The floor is where the profile puts it", arguments: BinMarkerDashProfile.allCases)
+    func profileSetsTheFloor(profile: BinMarkerDashProfile) {
+        var config = BinMarkerDashConfig.standard
+        config.profile = profile
+        let scanner = BinMarkerDashScanner(config: config)
+        let needed = profile.dashesNeeded
+        #expect(scanner.scan(canvasWithRow(dashes: needed - 1, dash: 6, thickness: 20)).isEmpty)
+        #expect(scanner.scan(canvasWithRow(dashes: needed, dash: 6, thickness: 20)).count == 1)
+    }
+
+    /// Each step down in printed height is paid for with one more dash, so the two always
+    /// move together — which is why they are one setting rather than two knobs.
+    @Test("A thinner profile costs a dash and a finer row stride")
+    func thinnerCostsADash() {
+        #expect(BinMarkerDashProfile.tall.dashesNeeded == 5)
+        #expect(BinMarkerDashProfile.thin.dashesNeeded == 6)
+        #expect(BinMarkerDashProfile.hairline.dashesNeeded == 7)
+        #expect(BinMarkerDashProfile.tall.rowStride > BinMarkerDashProfile.thin.rowStride)
+        #expect(BinMarkerDashProfile.thin.rowStride > BinMarkerDashProfile.hairline.rowStride)
     }
 
     /// Nothing here divides one width by another, which is why dashes survive at a size the
@@ -61,9 +75,12 @@ struct BinMarkerDashScannerTests {
     func verticalRow() {
         var canvas = BinMarkerCanvas(width: 200, height: 400, background: 150, includeChroma: false)
         let dash = 6
-        canvas.fill(x: 60 - 3, y: 40 - dash, width: 16, height: 12 * dash * 2, gray: 240)
+        // Wide on purpose. Columns are scanned at a coarse stride because a flat row gets
+        // nothing from them, so a row mounted the other way round has to be broad enough for
+        // several columns to cross — the asymmetry is the price of a thin flat row.
+        canvas.fill(x: 47, y: 40 - dash, width: 46, height: 12 * dash * 2, gray: 240)
         for index in 0..<12 {
-            canvas.fill(x: 60, y: 40 + index * dash * 2, width: 10, height: dash, gray: 25)
+            canvas.fill(x: 50, y: 40 + index * dash * 2, width: 40, height: dash, gray: 25)
         }
         let found = BinMarkerDashScanner().scan(canvas.image)
         #expect(found.count == 1)
@@ -74,16 +91,16 @@ struct BinMarkerDashScannerTests {
     /// longer one still answers.
     @Test("An arm across the middle leaves a readable row")
     func occludedMiddle() {
-        var canvas = BinMarkerCanvas(width: 520, height: 160, background: 150, includeChroma: false)
+        var canvas = BinMarkerCanvas(width: 700, height: 160, background: 150, includeChroma: false)
         let dash = 6
-        canvas.fill(x: 40 - dash, y: 57, width: 14 * dash * 2 + dash, height: 16, gray: 240)
-        for index in 0..<14 {
+        canvas.fill(x: 40 - dash, y: 57, width: 20 * dash * 2 + dash, height: 16, gray: 240)
+        for index in 0..<20 {
             canvas.fill(x: 40 + index * dash * 2, y: 60, width: dash, height: 10, gray: 25)
         }
         // A dark sleeve over the middle third.
         canvas.fill(x: 40 + 5 * dash * 2, y: 0, width: dash * 2 * 4, height: 160, gray: 40)
         let found = BinMarkerDashScanner().scan(canvas.image)
-        #expect(found.contains { $0.dashes >= 5 })
+        #expect(found.contains { $0.dashes >= 6 })
     }
 
     @Test("A blank scene finds nothing")
@@ -107,11 +124,17 @@ struct BinMarkerDashScannerTests {
         #expect(BinMarkerDashScanner().scan(canvas.image).isEmpty)
     }
 
-    @Test("A row too thin for three scan lines is discarded")
-    func tooThin() {
-        let scanner = BinMarkerDashScanner()
-        #expect(scanner.scan(canvasWithRow(dashes: 10, dash: 6, thickness: 6)).isEmpty)
-        #expect(scanner.scan(canvasWithRow(dashes: 10, dash: 6, thickness: 16)).count == 1)
+    /// Three scan lines have to cross the row, so its floor in samples is three times the
+    /// profile's row stride — which is the whole reason the profile exists.
+    @Test("The height floor follows the profile", arguments: BinMarkerDashProfile.allCases)
+    func heightFloorFollowsProfile(profile: BinMarkerDashProfile) {
+        var config = BinMarkerDashConfig.standard
+        config.profile = profile
+        let scanner = BinMarkerDashScanner(config: config)
+        let floor = profile.rowStride * 3
+        let dashes = profile.dashesNeeded + 4
+        #expect(scanner.scan(canvasWithRow(dashes: dashes, dash: 6, thickness: floor - profile.rowStride)).isEmpty)
+        #expect(scanner.scan(canvasWithRow(dashes: dashes, dash: 6, thickness: floor + 2)).count == 1)
     }
 }
 
@@ -165,7 +188,7 @@ struct BinMarkerDashStateTests {
     func dashCountDrivesConfidence() {
         let detector = BinMarkerStateDetector()
         let list = zones(2)
-        detector.ingest(rows: [row(at: list[0].centroid, dashes: 4)], timestamp: 100)
+        detector.ingest(rows: [row(at: list[0].centroid, dashes: 6)], timestamp: 100)
         let sparse = detector.update(zones: list, style: .dashes, timestamp: 100)
         detector.ingest(rows: [row(at: list[0].centroid, dashes: 14)], timestamp: 101)
         let full = detector.update(zones: list, style: .dashes, timestamp: 101)

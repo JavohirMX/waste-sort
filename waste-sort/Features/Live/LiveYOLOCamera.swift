@@ -619,7 +619,10 @@ struct LiveYOLOCamera: UIViewRepresentable {
                     // sensor delivered it — before `FrameColorAdjuster` rewrites it below.
                     var config = BinMarkerConfig.standard
                     config.style = inputs.openness.markerStyle
-                    self.markerPipeline.apply(config: config, inks: inputs.openness.markerInks)
+                    var dashConfig = BinMarkerDashConfig.standard
+                    dashConfig.profile = inputs.openness.markerDashProfile
+                    self.markerPipeline.apply(config: config, dashConfig: dashConfig,
+                                              inks: inputs.openness.markerInks)
                     self.markerPipeline.submit(pixelBuffer)
                 } else if inputs.aprilTagEnabled {
                     self.aprilTagPipeline.submit(pixelBuffer)
@@ -742,7 +745,8 @@ private struct PipelineInputs {
 /// initialisers every time.
 struct BinOpennessInputs: Equatable, Sendable {
     var source: BinOpennessSource = .aprilTag
-    var markerStyle: BinMarkerStyle = .color
+    var markerStyle: BinMarkerStyle = .dashes
+    var markerDashProfile: BinMarkerDashProfile = .thin
     var markerBindings: [UUID: Int] = [:]
     var markerStaleTimeout: Double = BinMarkerStateConfig.standard.staleTimeout
     /// Palette with any on-site calibration already folded in.

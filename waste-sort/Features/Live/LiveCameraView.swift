@@ -104,6 +104,7 @@ struct LiveCameraView: View {
                         openness: BinOpennessInputs(
                             source: markerStore.source,
                             markerStyle: markerStore.style,
+                            markerDashProfile: markerStore.dashProfile,
                             markerBindings: markerStore.bindings,
                             markerStaleTimeout: markerStore.staleTimeout,
                             markerInks: markerStore.inks,

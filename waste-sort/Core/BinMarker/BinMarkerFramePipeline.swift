@@ -56,8 +56,9 @@ nonisolated final class BinMarkerFramePipeline: @unchecked Sendable {
     }
 
     /// - Parameter inks: the palette to match against, with any on-site calibration folded in.
-    func apply(config: BinMarkerConfig, inks: [BinMarkerInk]) {
+    func apply(config: BinMarkerConfig, dashConfig: BinMarkerDashConfig, inks: [BinMarkerInk]) {
         scanner.config = config
+        dashScanner.config = dashConfig
         // The dash style reads no colour, so it takes the luma plane whole rather than meeting
         // chroma at half size. That is where its range comes from.
         sampler.lumaOnly = config.style.usesDashRows

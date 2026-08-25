@@ -190,8 +190,8 @@
   v(1mm, weak: true)
   text(size: 9pt, fill: luma(90))[
     #count dashes, #calc.round(span / 1mm) mm long, #calc.round((height + 6mm) / 1mm) mm tall.
-    Reads once five dashes are clear of the counter edge — about
-    #calc.round((5 * dash * 2 - dash) / 1mm) mm of travel. Print at 100%, matte stock.
+    Reads once six dashes are clear of the counter edge on the default #emph[Thin] setting —
+    about #calc.round((6 * dash * 2 - dash) / 1mm) mm of travel. Print at 100%, matte stock.
   ]
   v(5mm)
   for index in range(3) {
@@ -218,30 +218,39 @@
     ),
     (
       "Mount along the rim, inside",
-      [Where a shut drawer hides the row under the counter. Visible means open. Mount it level:
-        the scan walks rows and columns, so a row lying flat or standing upright is found and
-        one at an angle is not.],
+      [Where a shut drawer hides the row under the counter. Visible means open. Mount it
+        #emph[flat and level]. A row standing on end is still found, but columns are scanned
+        far more coarsely than rows — that asymmetry is what buys the thin flat row — so an
+        upright row has to be several times broader.],
     ),
     (
-      "Five dashes is the threshold",
+      "Height is a setting, and it costs dashes",
+      [Settings → Marker Strips → Row height. #emph[Tall] wants about 15 mm of printed height
+        and opens on 5 dashes; #emph[Thin] about 7.5 mm and 6 dashes; #emph[Hairline] about
+        3.8 mm and 7. Each step down scans more lines, which gives the room more chances to
+        produce something row-shaped, and a longer printed row is what pays that back. All
+        three were measured clean on the site's own frames.],
+    ),
+    (
+      "The threshold is dashes, not blur",
       [A drawer reveals the row a dash at a time as it slides out from under the edge. Five
         dashes clear of it is what makes the bin read open — a legible rule rather than a
-        threshold on a blur. To trigger sooner, print the dashes *smaller*, not fewer: five at
-        a 4 mm pitch clear the edge in half the travel that five at 8 mm need. Fewer than five
-        is not a setting — below that the room itself starts producing rows.],
+        threshold on a blur. To trigger sooner, print the dashes *smaller*, not fewer: six at
+        a 4 mm pitch clear the edge in half the travel that six at 8 mm need. Fewer is not a
+        setting — below the profile's count the room itself starts producing rows.],
     ),
     (
       "Which size to print",
       [Start large and work down. The debug overlay reports the dash count, the pitch in
         samples, and how many scan lines crossed the row. Dashes hold up down to two samples
         of pitch, and this style reads the full luma frame rather than the half-size chroma
-        grid the colour styles need — which is worth exactly double the distance. The row must
-        be at least twelve samples tall, about 1.5 cm at this site.],
+        grid the colour styles need — which is worth exactly double the distance. Height is
+        set by the profile above.],
     ),
     (
       "An arm across it costs nothing",
       [Repetition is the design. Covering the middle of the row leaves two shorter rows, and
-        the longer one still answers.],
+        the longer one still answers — so print more dashes than the threshold needs.],
     ),
   )
   for (title, body) in notes {

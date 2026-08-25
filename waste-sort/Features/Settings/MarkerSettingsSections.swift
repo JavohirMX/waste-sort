@@ -62,6 +62,19 @@ struct MarkerSettingsSections: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            if markerStore.style == .dashes {
+                Picker("Row height", selection: $markerStore.dashProfile) {
+                    ForEach(BinMarkerDashProfile.allCases) { profile in
+                        Text(profile.displayName).tag(profile)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(markerStore.dashProfile.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Toggle("Show debug overlay", isOn: $markerStore.showDebugOverlay)
 
             Picker("Capture resolution", selection: $aprilTagStore.rangeProfile) {

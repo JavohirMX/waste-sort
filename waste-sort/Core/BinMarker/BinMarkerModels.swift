@@ -168,6 +168,72 @@ nonisolated struct BinMarkerDetection: Equatable, Sendable {
     var isDegraded: Bool { patternID == nil }
 }
 
+/// How short the printed row is allowed to be, and what that costs.
+///
+/// These are one setting rather than two knobs because the two only move together. A finer row
+/// stride is what lets the sticker be thinner — three scan lines must cross it, so its height
+/// is the stride times three — but finer also means more scan lines, and more scan lines means
+/// more chances for the room to produce a stretch that looks like a row. The way to pay that
+/// back is a longer printed row, so each step down in height costs one more dash.
+///
+/// Measured on fifteen frames of the site with nothing installed, at 8 px per cm:
+///
+///     height    stride  dashes  travel at a 4 mm pitch   cost   false rows
+///     15.0 mm        4       5                   36 mm   16 ms           0
+///      7.5 mm        2       6                   44 mm   20 ms           0
+///      3.8 mm        1       7                   52 mm   37 ms           0
+///
+/// Every row of that table is clean; the trade is height against how far the drawer must be
+/// pulled and how much of the frame budget the pass takes.
+nonisolated enum BinMarkerDashProfile: String, Codable, CaseIterable, Identifiable, Sendable {
+    case tall
+    case thin
+    case hairline
+
+    var id: String { rawValue }
+
+    var rowStride: Int {
+        switch self {
+        case .tall: return 4
+        case .thin: return 2
+        case .hairline: return 1
+        }
+    }
+
+    /// Raised in step with the stride, because the extra scan lines have to be paid for.
+    var minRuns: Int {
+        switch self {
+        case .tall: return 8
+        case .thin: return 10
+        case .hairline: return 12
+        }
+    }
+
+    /// Printed dashes that must clear the counter edge. A clean row of N dashes reads as
+    /// 2N−1 runs, so this is `ceil((minRuns + 1) / 2)`.
+    var dashesNeeded: Int { (minRuns + 2) / 2 }
+
+    var displayName: String {
+        switch self {
+        case .tall: return "Tall"
+        case .thin: return "Thin"
+        case .hairline: return "Hairline"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .tall:
+            return "About 15 mm of printed height, 5 dashes to open, lightest on frame rate."
+        case .thin:
+            return "About 7.5 mm, 6 dashes to open. Half the sticker for a quarter more time."
+        case .hairline:
+            return "About 3.8 mm, 7 dashes to open. The thinnest measured clean, and the "
+                + "heaviest — 37 ms a pass, which shares a device with the model."
+        }
+    }
+}
+
 /// Knobs for the dash-row scanner.
 ///
 /// Every threshold here was set against fifteen frames of the real site rather than against a
@@ -191,7 +257,7 @@ nonisolated struct BinMarkerDashConfig: Equatable, Sendable {
     /// trigger sooner, print the dashes smaller rather than lowering this: five dashes at a
     /// 4 mm pitch clear the edge in half the travel that five at 8 mm need, and full-resolution
     /// sampling is what makes 4 mm readable.
-    var minRuns: Int = 8
+    var minRuns: Int = BinMarkerDashProfile.thin.minRuns
 
     /// Widest run over narrowest, across a stretch. Nothing compares one run to another to
     /// extract a value — they only have to agree, which is what makes the row unmistakable
@@ -211,15 +277,28 @@ nonisolated struct BinMarkerDashConfig: Equatable, Sendable {
     /// between a dash and the paper otherwise fences every dash off from its neighbours.
     var minRunSamples: Int = 2
 
-    /// Four, because this style reads the luma plane at full resolution rather than the
-    /// half-size chroma grid the colour style needs — and at four it scans the same number of
-    /// lines it would at two on the half grid, for the same printed height in millimetres.
+    /// How short the sticker may be printed, and what it costs. Sets `rowStride` and
+    /// `minRuns` together, because those two only ever move together.
+    var profile: BinMarkerDashProfile = .thin {
+        didSet {
+            rowStride = profile.rowStride
+            minRuns = profile.minRuns
+        }
+    }
+
+    /// Every Nth row, and separately every Nth column — because the two passes are not doing
+    /// the same job and should not pay the same price.
     ///
-    /// Measured across the site's frames: full resolution at stride four costs 16.6 ms against
-    /// 8.9 for the half grid at stride two, produces no false rows, and reads a row that the
-    /// half grid cannot see at all. Full resolution at stride *two* is not better — 32.3 ms
-    /// and six false rows, because twice the scan lines is also twice the chances.
-    var scanStride: Int = 4
+    /// A row of dashes lying flat is read *along* by the horizontal pass, so the number of
+    /// horizontal scan lines that cross it is its printed height divided by `rowStride`: that
+    /// one number sets how thin the sticker may be. The vertical pass crosses such a row on
+    /// its short side and gets a single run out of it — no alternation, nothing to read. It
+    /// earns its place only by catching a row mounted the other way round, which is worth
+    /// keeping and not worth paying much for.
+    ///
+    /// So rows are scanned finely and columns coarsely.
+    var rowStride: Int = BinMarkerDashProfile.thin.rowStride
+    var columnStride: Int = 8
     var minLines: Int = 3
     /// Local light-to-dark spread a scan line needs before its samples mean anything.
     var minContrast: Int = 40

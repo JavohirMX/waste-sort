@@ -34,6 +34,10 @@ final class BinMarkerStore: ObservableObject {
     @Published var style: BinMarkerStyle {
         didSet { defaults.set(style.rawValue, forKey: Keys.style) }
     }
+    /// How short the printed dash row may be, and what that costs in dashes and time.
+    @Published var dashProfile: BinMarkerDashProfile {
+        didSet { defaults.set(dashProfile.rawValue, forKey: Keys.dashProfile) }
+    }
     @Published var staleTimeout: Double {
         didSet { defaults.set(staleTimeout, forKey: Keys.staleTimeout) }
     }
@@ -60,6 +64,7 @@ final class BinMarkerStore: ObservableObject {
     private enum Keys {
         static let source = "binMarker.source"
         static let style = "binMarker.style"
+        static let dashProfile = "binMarker.dashProfile"
         static let staleTimeout = "binMarker.staleTimeout"
         static let debug = "binMarker.debug"
         static let bindings = "binMarker.bindings"
@@ -75,6 +80,8 @@ final class BinMarkerStore: ObservableObject {
         self.staleTimeout = defaults.object(forKey: Keys.staleTimeout) != nil
             ? defaults.double(forKey: Keys.staleTimeout)
             : BinMarkerStateConfig.standard.staleTimeout
+        self.dashProfile = defaults.string(forKey: Keys.dashProfile)
+            .flatMap(BinMarkerDashProfile.init(rawValue:)) ?? .thin
         self.showDebugOverlay = defaults.bool(forKey: Keys.debug)
 
         if let data = defaults.data(forKey: Keys.bindings),
@@ -143,6 +150,12 @@ final class BinMarkerStore: ObservableObject {
     var detectionConfig: BinMarkerConfig {
         var config = BinMarkerConfig.standard
         config.style = style
+        return config
+    }
+
+    var dashConfig: BinMarkerDashConfig {
+        var config = BinMarkerDashConfig.standard
+        config.profile = dashProfile
         return config
     }
 

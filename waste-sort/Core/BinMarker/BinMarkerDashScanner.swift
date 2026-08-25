@@ -63,13 +63,14 @@ nonisolated final class BinMarkerDashScanner {
         }
 
         segments.removeAll(keepingCapacity: true)
-        let stride = max(1, config.scanStride)
-        for y in Swift.stride(from: 0, to: image.height, by: stride) {
+        let rowStride = max(1, config.rowStride)
+        let columnStride = max(1, config.columnStride)
+        for y in Swift.stride(from: 0, to: image.height, by: rowStride) {
             stats.linesScanned += 1
             collect(image: image, lineStart: y * image.width, step: 1, count: image.width,
                     line: y, orientation: .horizontal, stats: &stats)
         }
-        for x in Swift.stride(from: 0, to: image.width, by: stride) {
+        for x in Swift.stride(from: 0, to: image.width, by: columnStride) {
             stats.linesScanned += 1
             collect(image: image, lineStart: x, step: image.width, count: image.height,
                     line: x, orientation: .vertical, stats: &stats)
@@ -213,7 +214,7 @@ nonisolated final class BinMarkerDashScanner {
     private func group(width: Int, height: Int, timestamp: CFAbsoluteTime) -> [BinMarkerDashRow] {
         guard width > 0, height > 0 else { return [] }
         var rows: [BinMarkerDashRow] = []
-        let lineSpan = max(1, config.scanStride) * 2
+        let lineSpan = max(config.rowStride, config.columnStride) * 2
 
         for orientation in [BinMarkerOrientation.horizontal, .vertical] {
             var open: [Cluster] = []
