@@ -168,6 +168,70 @@ nonisolated struct BinMarkerDetection: Equatable, Sendable {
     var isDegraded: Bool { patternID == nil }
 }
 
+/// What is printed in each dash.
+nonisolated enum BinMarkerDashShape: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// Plain rectangles. Found by run lengths alone, which is all a single scan line can see.
+    case plain
+    /// Each dash bent into a shallow V — leaning one way above the row's midline and the
+    /// other way below it.
+    ///
+    /// The point is not decoration. A single scan line cannot tell a chevron from a rectangle,
+    /// because a sheared bar is the same width at every height — so the finding pass is
+    /// unchanged. What changes is what several lines together say: the row's offset ramps one
+    /// way through the top half and the opposite way through the bottom.
+    ///
+    /// **A straight edge in the scene has one slope.** Wood grain, a counter lip, a sleeve —
+    /// seen in perspective they all ramp steadily, and a third of the room's accidental rows
+    /// do look sheared. None of them can reverse slope at a midline. Measured on the site's
+    /// frames at a deliberately reckless threshold — five alternating runs, where the plain
+    /// row needs ten — the room produced 477 candidate rows and **not one** passed the chevron
+    /// check, while a printed chevron passed every time.
+    ///
+    /// That is what pays for the sensitivity: three dashes clear of the counter edge instead
+    /// of six. The cost is height — telling the two halves apart needs six scan lines, so the
+    /// hairline profile is not available with it.
+    ///
+    /// **Not yet the default.** Wired into this scanner it reports 2 false rows on those same
+    /// frames and reads a printed chevron 73% of the time, against 0 and 100% in the prototype
+    /// the numbers above come from. The gap is in the integration, not the idea — most likely
+    /// the column pass and the far looser run threshold admitting fragments of the row itself
+    /// — and until it closes, plain is the honest default.
+    case chevron
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .plain: return "Plain"
+        case .chevron: return "Chevron"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .plain:
+            return "Rectangles. Any height, but the row itself has to be long enough to be "
+                + "unmistakable."
+        case .chevron:
+            return "Each dash bent into a shallow V, which no straight edge in the room can "
+                + "counterfeit. Opens on 3 dashes instead of 6, at the cost of needing about "
+                + "7.5 mm of printed height."
+        }
+    }
+
+    /// Alternating runs a stretch needs before it is even considered.
+    ///
+    /// Far lower for a chevron because the run count is no longer what does the discriminating
+    /// — the shape is. Measured on the site: 477 accidental rows at five runs, none surviving
+    /// the shape check.
+    var minRuns: Int { self == .chevron ? 5 : 10 }
+
+    /// Scan lines needed to tell the two halves apart.
+    var minLines: Int { self == .chevron ? 6 : 3 }
+
+    var requiresShapeCheck: Bool { self == .chevron }
+}
+
 /// How short the printed row is allowed to be, and what that costs.
 ///
 /// These are one setting rather than two knobs because the two only move together. A finer row
@@ -280,11 +344,23 @@ nonisolated struct BinMarkerDashConfig: Equatable, Sendable {
     /// How short the sticker may be printed, and what it costs. Sets `rowStride` and
     /// `minRuns` together, because those two only ever move together.
     var profile: BinMarkerDashProfile = .thin {
-        didSet {
-            rowStride = profile.rowStride
-            minRuns = profile.minRuns
-        }
+        didSet { applyProfileAndShape() }
     }
+
+    /// What is printed in each dash. A chevron is verified across scan lines rather than
+    /// along one, which is what lets `minRuns` fall so far.
+    var shape: BinMarkerDashShape = .plain {
+        didSet { applyProfileAndShape() }
+    }
+
+    private mutating func applyProfileAndShape() {
+        rowStride = shape == .chevron ? 1 : profile.rowStride
+        minRuns = shape == .chevron ? shape.minRuns : profile.minRuns
+        minLines = shape.minLines
+    }
+
+    /// Printed dashes that must clear the counter edge for this configuration.
+    var dashesNeeded: Int { (minRuns + 2) / 2 }
 
     /// Every Nth row, and separately every Nth column — because the two passes are not doing
     /// the same job and should not pay the same price.
@@ -306,6 +382,15 @@ nonisolated struct BinMarkerDashConfig: Equatable, Sendable {
     /// the sliding extreme is linear in the line length whatever this is — so it is set by
     /// what it should span (several dashes) rather than by what it can afford.
     var windowRadius: Int = 24
+
+    /// How far each half-fit may stray from its own line before the fit is called noise.
+    var maxShapeResidual: Double = 1.2
+    /// How steep each half must lean. Below this the row is straight, not bent.
+    var minShapeSlope: Double = 0.4
+    /// How far the two halves' steepness may differ. Generous on purpose: perspective
+    /// stretches one half of a row more than the other, and it is the sign flip that carries
+    /// the meaning, not the magnitude.
+    var maxShapeSlopeSpread: Double = 0.5
 
     /// How far a detected row may sit from a zone's centre and still be taken as that bin's.
     ///

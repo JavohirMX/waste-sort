@@ -621,6 +621,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
                     config.style = inputs.openness.markerStyle
                     var dashConfig = BinMarkerDashConfig.standard
                     dashConfig.profile = inputs.openness.markerDashProfile
+                    dashConfig.shape = inputs.openness.markerDashShape
                     self.markerPipeline.apply(config: config, dashConfig: dashConfig,
                                               inks: inputs.openness.markerInks)
                     self.markerPipeline.submit(pixelBuffer)
@@ -747,6 +748,7 @@ struct BinOpennessInputs: Equatable, Sendable {
     var source: BinOpennessSource = .aprilTag
     var markerStyle: BinMarkerStyle = .dashes
     var markerDashProfile: BinMarkerDashProfile = .thin
+    var markerDashShape: BinMarkerDashShape = .plain
     var markerBindings: [UUID: Int] = [:]
     var markerStaleTimeout: Double = BinMarkerStateConfig.standard.staleTimeout
     /// Palette with any on-site calibration already folded in.

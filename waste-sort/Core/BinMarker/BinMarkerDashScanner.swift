@@ -235,6 +235,9 @@ nonisolated final class BinMarkerDashScanner {
 
             for cluster in closed where cluster.segments.count >= config.minLines {
                 guard let first = cluster.segments.first else { continue }
+                guard !config.shape.requiresShapeCheck || isChevron(cluster.segments) else {
+                    continue
+                }
                 let minLine = cluster.segments.map(\.line).min() ?? first.line
                 let across = CGFloat(minLine)...CGFloat(cluster.lastLine + 1)
                 let along = CGFloat(cluster.start)...CGFloat(cluster.end)
@@ -270,6 +273,56 @@ nonisolated final class BinMarkerDashScanner {
             }
         }
         return rows.sorted { $0.bounds.minY < $1.bounds.minY }
+    }
+
+    /// Whether the row bends: offset ramping one way through its top half and the opposite way
+    /// through its bottom.
+    ///
+    /// This is the only place the scanner looks *across* scan lines rather than along one, and
+    /// it is where the marker stops being merely tidy and becomes unforgeable. A straight edge
+    /// in the scene — wood grain, a counter lip, a sleeve — has one slope, and in perspective a
+    /// third of the room's accidental rows do look convincingly sheared. Not one of them can
+    /// reverse that slope at a midline. On the site's frames, 477 candidate rows at a reckless
+    /// five-run threshold, none passing.
+    private func isChevron(_ segments: [Segment]) -> Bool {
+        guard segments.count >= config.shape.minLines else { return false }
+        let sorted = segments.sorted { $0.line < $1.line }
+        let middle = sorted.count / 2
+        let top = fit(sorted[..<middle])
+        let bottom = fit(sorted[middle...])
+        guard top.residual < config.maxShapeResidual,
+              bottom.residual < config.maxShapeResidual,
+              abs(top.slope) >= config.minShapeSlope,
+              abs(bottom.slope) >= config.minShapeSlope,
+              // Equal and opposite. The sign flip is the part a straight line cannot do; the
+              // magnitudes only have to be in the same neighbourhood, because perspective
+              // stretches one half of a row more than the other.
+              top.slope * bottom.slope < 0,
+              abs(abs(top.slope) - abs(bottom.slope)) <= config.maxShapeSlopeSpread
+        else { return false }
+        return true
+    }
+
+    /// Least squares of a segment's start position against its scan line.
+    private func fit(_ segments: ArraySlice<Segment>) -> (slope: Double, residual: Double) {
+        let count = Double(segments.count)
+        guard count >= 2 else { return (0, .greatestFiniteMagnitude) }
+        let xs = segments.map { Double($0.line) }
+        let ys = segments.map { Double($0.start) }
+        let meanX = xs.reduce(0, +) / count
+        let meanY = ys.reduce(0, +) / count
+        var covariance = 0.0
+        var variance = 0.0
+        for (x, y) in zip(xs, ys) {
+            covariance += (x - meanX) * (y - meanY)
+            variance += (x - meanX) * (x - meanX)
+        }
+        let slope = variance > 0 ? covariance / variance : 0
+        let intercept = meanY - slope * meanX
+        let residual = zip(xs, ys)
+            .map { abs($1 - (slope * $0 + intercept)) }
+            .reduce(0, +) / count
+        return (slope, residual)
     }
 
     private struct Cluster {

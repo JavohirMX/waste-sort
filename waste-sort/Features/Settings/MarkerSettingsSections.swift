@@ -63,6 +63,19 @@ struct MarkerSettingsSections: View {
                 .foregroundStyle(.secondary)
 
             if markerStore.style == .dashes {
+                Picker("Dash shape", selection: $markerStore.dashShape) {
+                    ForEach(BinMarkerDashShape.allCases) { shape in
+                        Text(shape.displayName).tag(shape)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(markerStore.dashShape.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if markerStore.style == .dashes, markerStore.dashShape == .plain {
                 Picker("Row height", selection: $markerStore.dashProfile) {
                     ForEach(BinMarkerDashProfile.allCases) { profile in
                         Text(profile.displayName).tag(profile)

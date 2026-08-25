@@ -38,6 +38,11 @@ final class BinMarkerStore: ObservableObject {
     @Published var dashProfile: BinMarkerDashProfile {
         didSet { defaults.set(dashProfile.rawValue, forKey: Keys.dashProfile) }
     }
+    /// What is printed in each dash. A chevron is checked across scan lines, which is what
+    /// lets it open on half as many dashes.
+    @Published var dashShape: BinMarkerDashShape {
+        didSet { defaults.set(dashShape.rawValue, forKey: Keys.dashShape) }
+    }
     @Published var staleTimeout: Double {
         didSet { defaults.set(staleTimeout, forKey: Keys.staleTimeout) }
     }
@@ -65,6 +70,7 @@ final class BinMarkerStore: ObservableObject {
         static let source = "binMarker.source"
         static let style = "binMarker.style"
         static let dashProfile = "binMarker.dashProfile"
+        static let dashShape = "binMarker.dashShape"
         static let staleTimeout = "binMarker.staleTimeout"
         static let debug = "binMarker.debug"
         static let bindings = "binMarker.bindings"
@@ -82,6 +88,13 @@ final class BinMarkerStore: ObservableObject {
             : BinMarkerStateConfig.standard.staleTimeout
         self.dashProfile = defaults.string(forKey: Keys.dashProfile)
             .flatMap(BinMarkerDashProfile.init(rawValue:)) ?? .thin
+        // Plain until the chevron path in the shipped scanner matches what the prototype
+        // measured. The idea is validated — 477 accidental rows, none passing — but the
+        // integration is not: it reports 2 false rows and reads a printed chevron only 73% of
+        // the time, against 0 and 100% in the prototype. Shipping it on by default would be
+        // shipping the worse of the two.
+        self.dashShape = defaults.string(forKey: Keys.dashShape)
+            .flatMap(BinMarkerDashShape.init(rawValue:)) ?? .plain
         self.showDebugOverlay = defaults.bool(forKey: Keys.debug)
 
         if let data = defaults.data(forKey: Keys.bindings),
@@ -156,6 +169,7 @@ final class BinMarkerStore: ObservableObject {
     var dashConfig: BinMarkerDashConfig {
         var config = BinMarkerDashConfig.standard
         config.profile = dashProfile
+        config.shape = dashShape
         return config
     }
 
