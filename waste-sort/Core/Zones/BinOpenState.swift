@@ -16,23 +16,29 @@ nonisolated protocol BinOpenStateProviding {
     func isOpen(binID: String) -> Bool
 }
 
-/// Default when AprilTag is off, and the lid signal for tests that do not care about it:
-/// every bin reads open, which is the behaviour that shipped before the lid existed.
+/// Default when no lid source is installed (tests that do not care about lids):
+/// every bin reads open. Production always installs `FrameBinOpenState`, which
+/// is evidence-based, so this type never ships behavior — it only preserves the
+/// pre-lid semantics where nothing gates the detector.
 nonisolated struct AlwaysOpenBins: BinOpenStateProviding {
     func isOpen(binID: String) -> Bool { true }
 }
 
-/// One-frame snapshot of AprilTag lid state, keyed the way `ZoneDepositDetector` asks:
-/// by `BinGuide` id. Only `.closed` zones count as shut; `.open` and `.unknown` (and an
-/// empty frame when tags are disabled) all read as open.
+/// One-frame snapshot of AprilTag lid state, keyed the way `ZoneDepositDetector`
+/// asks: by `BinGuide` id. Evidence-based and fail-closed: a bin reads open only
+/// when its zone's tag is currently detected with an `.open` lid. `.closed`,
+/// `.unknown`, and an empty frame (AprilTag off, or no tags in view) all read as
+/// **not** open — without lid evidence there are no credited deposits and no
+/// throw feedback, which is what keeps a kiosk pointed at a wall from narrating
+/// wrong-bin throws.
 nonisolated struct FrameBinOpenState: BinOpenStateProviding {
-    let closedBinIDs: Set<String>
+    let openBinIDs: Set<String>
 
     init(tagFrame: AprilTagStatusFrame, zones: [DropZone]) {
-        closedBinIDs = Set(
-            zones.filter { tagFrame.closedZoneIDs.contains($0.id) }.map(\.binID)
+        openBinIDs = Set(
+            zones.filter { tagFrame.openZoneIDs.contains($0.id) }.map(\.binID)
         )
     }
 
-    func isOpen(binID: String) -> Bool { !closedBinIDs.contains(binID) }
+    func isOpen(binID: String) -> Bool { openBinIDs.contains(binID) }
 }

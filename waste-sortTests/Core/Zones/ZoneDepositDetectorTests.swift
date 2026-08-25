@@ -858,4 +858,61 @@ struct ZoneDepositDetectorTests {
         #expect(cues.count == 1)
         #expect(deposits.count == 1)
     }
+
+    // MARK: Fail-closed lid gating for feedback (no tags in view ⇒ silence)
+
+    @Test("a vanish toward a bin nobody saw open produces no cue and no deposit")
+    func throwCueRequiresOpenTarget() {
+        let lids = StubBinState(open: [])
+        let c = clock(throwFeedbackGrace: 0.4, binState: lids)
+        c.tick([track(centerX: 0.5)])
+        c.tick([track(centerX: 0.2)], times: 3)
+
+        var cues: [ThrowFeedbackCue] = []
+        var deposits: [ZoneDeposit] = []
+        for _ in 0..<15 {
+            let frame = c.tick([])
+            cues.append(contentsOf: frame.throwFeedbackCues)
+            deposits.append(contentsOf: frame.deposits)
+        }
+        for _ in 0..<30 {
+            let frame = c.tick([])
+            cues.append(contentsOf: frame.throwFeedbackCues)
+            deposits.append(contentsOf: frame.deposits)
+        }
+        #expect(cues.isEmpty)
+        #expect(deposits.isEmpty)
+
+        // The same vanish with the bin positively open narrates and credits.
+        let openLids = StubBinState(open: [BinGuide.organic.id])
+        let openClock = clock(throwFeedbackGrace: 0.4, binState: openLids)
+        openClock.tick([track(centerX: 0.5)])
+        openClock.tick([track(centerX: 0.2)], times: 3)
+        var openCues: [ThrowFeedbackCue] = []
+        for _ in 0..<15 {
+            openCues.append(contentsOf: openClock.tick([]).throwFeedbackCues)
+        }
+        #expect(openCues.count == 1)
+        #expect(openClock.waitOutGrace().count == 1)
+    }
+
+    @Test("wrong-zone hold stays silent until the hovered bin reads open")
+    func inZoneIncorrectRequiresOpenZone() {
+        let lids = StubBinState(open: [])
+        let c = clock(throwFeedbackGrace: 0.4, binState: lids)
+        c.tick([track(centerX: 0.5)])
+        for _ in 0..<15 {
+            #expect(c.tick([track(centerX: 0.8)]).throwFeedbackCues.isEmpty)
+        }
+
+        // The lid opens while the item is still held in the wrong zone.
+        lids.openBins = [BinGuide.residual.id]
+        var cues: [ThrowFeedbackCue] = []
+        for _ in 0..<15 {
+            cues.append(contentsOf: c.tick([track(centerX: 0.8)]).throwFeedbackCues)
+        }
+        #expect(cues.count == 1)
+        #expect(cues[0].isCorrect == false)
+        #expect(cues[0].zoneBinID == BinGuide.residual.id)
+    }
 }

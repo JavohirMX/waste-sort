@@ -138,8 +138,9 @@ nonisolated final class ZoneDepositDetector {
     /// Ceiling so a long dropout cannot claim a box on the far side of the frame.
     var reacquireMaxRadius: CGFloat = 0.35
 
-    /// Lid signal for the two rules that depend on it. Defaults to `AlwaysOpenBins`.
-    /// The live camera replaces this each frame with `FrameBinOpenState` from AprilTag.
+    /// Lid signal for the rules that depend on it: deposit crediting, the
+    /// born-inside disqualification, and both throw-feedback cues. The live
+    /// camera replaces this each frame with the fail-closed `FrameBinOpenState`.
     var binOpenState: BinOpenStateProviding = AlwaysOpenBins()
 
     /// How far the last motion is projected forward when an object vanishes outside every
@@ -521,11 +522,12 @@ nonisolated final class ZoneDepositDetector {
         at timestamp: CFAbsoluteTime,
         pipeline: DecisionPipeline
     ) -> ThrowFeedbackCue? {
-        let dbgElapsed = timestamp - (object.missingSince ?? 0)
-        print("DBG-ELAPSED \(dbgElapsed) grace=\(effectiveThrowFeedbackGrace) pendingBin=\(object.pendingTarget?.binID ?? "nil")")
         guard !object.didEmitThrowFeedback,
               let missingSince = object.missingSince,
               let target = object.pendingTarget,
+              // No lid evidence, no narration: a vanish toward a bin nobody
+              // saw open is not a throw (fail-closed FrameBinOpenState).
+              binOpenState.isOpen(binID: target.binID),
               timestamp - missingSince >= effectiveThrowFeedbackGrace
         else { return nil }
         // Already holding "Not here!" on this bin — do not fire a second cue.
@@ -552,6 +554,9 @@ nonisolated final class ZoneDepositDetector {
               !object.didEmitInZoneIncorrect,
               object.missingSince == nil,
               !object.zoneBinID.isEmpty,
+              // Hovering a closed (or tag-less) bin is not a wrong-bin hold:
+              // feedback only narrates bins that are actually open.
+              binOpenState.isOpen(binID: object.zoneBinID),
               let entered = object.zoneEnteredAt,
               timestamp - entered >= throwFeedbackGrace
         else { return nil }

@@ -23,6 +23,8 @@ struct SettingsView: View {
     @State private var pccExportURL: URL?
     @State private var pccSuggestions: [SuggestedOverride] = []
     @State private var pccAppliedOverrides: [AppliedBinOverride] = []
+    @State private var pccAnalyzedRecords = 0
+    @State private var pccAnalyzedClasses = 0
 
     var body: some View {
         NavigationStack {
@@ -668,7 +670,7 @@ struct SettingsView: View {
             .onAppear(perform: refreshPCCCorrections)
 
             if pccSuggestions.isEmpty {
-                Text("No routing corrections suggested yet.")
+                Text(pccEmptyStateMessage)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -725,10 +727,27 @@ struct SettingsView: View {
 
     private func refreshPCCCorrections() {
         let interval = DateInterval(start: .distantPast, end: Date())
-        pccSuggestions = PCCPolicyAnalyzer.suggestions(
-            from: PCCRecordStore().records(in: interval)
-        )
+        let records = PCCRecordStore().records(in: interval)
+        pccSuggestions = PCCPolicyAnalyzer.suggestions(from: records)
         pccAppliedOverrides = AppliedBinOverrides.shared.all()
+        pccAnalyzedRecords = records.count { $0.outcome == .answered && !$0.mappingFailed }
+        pccAnalyzedClasses = Set(
+            records
+                .filter { $0.outcome == .answered && !$0.mappingFailed }
+                .map { BinGuide.normalizedKey($0.yoloLabel) }
+        ).count
+    }
+
+    private var pccEmptyStateMessage: String {
+        if pccAnalyzedRecords == 0 {
+            return "No answered judgments recorded yet. The judge only logs items that "
+                + "were guided to residual while unsure — feed it ambiguous packaging "
+                + "and check the status row above."
+        }
+        return "No corrections suggested yet — \(pccAnalyzedRecords) answered judgment"
+            + "\(pccAnalyzedRecords == 1 ? "" : "s") across \(pccAnalyzedClasses) class"
+            + "\(pccAnalyzedClasses == 1 ? "" : "es") analyzed. A suggestion needs at "
+            + "least 12 agreeing judgments that dispute the class's current routing."
     }
 
     private func removePCCCorrections(at offsets: IndexSet) {
