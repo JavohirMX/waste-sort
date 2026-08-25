@@ -255,7 +255,7 @@ struct StatsView: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("\(snapshot.generatedTotal)")
-                    .font(.system(size: isWide ? 51 : 40, weight: .bold, design: .default).monospacedDigit())
+                    .font(.system(size: isWide ? 48 : 40, weight: .bold, design: .default).monospacedDigit())
                     .foregroundStyle(Color(white: 0.12))
                 Text("items")
                     .font(.system(size: isWide ? 20 : 16, weight: .medium, design: .default))
@@ -349,8 +349,8 @@ struct StatsView: View {
             VStack(alignment: .leading, spacing: isWide ? 18 : 12) {
                 Text("Bins filled")
                     .font(.system(size: isWide ? 19 : 17, weight: .semibold, design: .default))
-                    .foregroundStyle(Color(red: 0.0, green: 0.38, blue: 0.85))
-                    .underline()
+                    .foregroundStyle(.gray)
+//                    .underline()
 
                 VStack(spacing: isWide ? 12 : 8) {
                     ForEach(binStyle.orderedBins) { bin in
