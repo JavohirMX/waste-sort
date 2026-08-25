@@ -7,6 +7,7 @@ struct SettingsView: View {
     @EnvironmentObject private var zoneStore: ZoneStore
     @EnvironmentObject private var history: ZoneEventHistoryStore
     @EnvironmentObject private var aprilTagStore: AprilTagBindingStore
+    @EnvironmentObject private var markerStore: BinMarkerStore
     @EnvironmentObject private var binStyle: BinStyleStore
     @Environment(\.dismiss) private var dismiss
     @State private var cameraOptions: [CameraOption] = CameraDeviceCatalog.availableOptions()
@@ -23,7 +24,10 @@ struct SettingsView: View {
                 cameraSection
                 captureSection
                 zonesSection
-                aprilTagSection
+                MarkerSettingsSections()
+                if markerStore.source == .aprilTag {
+                    aprilTagSection
+                }
                 historySection
                 photoSection
                 liveOverlaySection
@@ -686,7 +690,9 @@ private struct SettingsPickerRow: View {
     }
 }
 
-private struct SettingsSliderRow: View {
+/// Shared with `MarkerSettingsSections`, which was split out of this file to keep it from
+/// growing past the length warning.
+struct SettingsSliderRow: View {
     let title: String
     let help: String
     let valueText: String

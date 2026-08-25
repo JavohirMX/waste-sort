@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sortla bin marker strips — black &amp; white</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm; }
+  :root {
+    /* One printed unit. Every bar and gap is a whole number of these.
+       The mono style has no second way to identify a bin, so it needs the bar widths to
+       survive — give it a larger unit than the colour sheet if the bins are far away. */
+    --unit: 15mm;
+    --bar-height: 40mm;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #fff;
+    color: #111;
+    font: 11pt/1.45 -apple-system, "Helvetica Neue", Arial, sans-serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  h1 { font-size: 15pt; margin: 0 0 2mm; }
+  .lede { margin: 0 0 6mm; max-width: 165mm; color: #333; }
+  .lede strong { color: #111; }
+  .marker { margin: 0 0 9mm; }
+  .caption {
+    font-size: 9pt;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #444;
+    margin: 0 0 2mm;
+  }
+  /* The white border is part of the marker: the scanner thresholds each line against its own
+     local light-to-dark spread, and a bar with no white beside it has nothing to be dark
+     against. */
+  .strip {
+    display: flex;
+    align-items: stretch;
+    height: var(--bar-height);
+    padding: var(--unit);
+    border: 0.3mm dashed #bbb;
+    background: #fff;
+    width: max-content;
+  }
+  .bar { height: 100%; background: #000; }
+  .n { width: var(--unit); }
+  .w { width: calc(var(--unit) * 2); }
+  .gap { width: var(--unit); background: #fff; }
+  .bin-line { font-size: 9pt; color: #666; margin: 2mm 0 0; }
+  .bin-line span { display: inline-block; min-width: 60mm; border-bottom: 0.3mm solid #999; }
+  .notes { font-size: 9.5pt; color: #333; border-top: 0.3mm solid #ddd; padding-top: 4mm; }
+  .notes li { margin-bottom: 1.5mm; }
+</style>
+</head>
+<body>
+
+<h1>Bin marker strips — black &amp; white</h1>
+<p class="lede">
+  Print at <strong>100% scale</strong> — no "fit to page", or the bars stop being whole units.
+  Use <strong>matte</strong> stock. Cut on the dashed line; the white border around each strip
+  is part of the marker.
+  In this style the <strong>bar rhythm is the only thing naming a bin</strong>, so a strip too
+  small or too blurred to measure is not a bin read uncertainly — it is a bin lost entirely.
+</p>
+
+<div class="marker">
+  <p class="caption">Marker 1 &middot; one wide bar</p>
+  <div class="strip">
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar w"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar n"></div>
+  </div>
+  <p class="bin-line">Bin: <span></span></p>
+</div>
+
+<div class="marker">
+  <p class="caption">Marker 2 &middot; two wide bars</p>
+  <div class="strip">
+    <div class="bar w"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar w"></div>
+  </div>
+  <p class="bin-line">Bin: <span></span></p>
+</div>
+
+<div class="marker">
+  <p class="caption">Marker 3 &middot; three wide bars</p>
+  <div class="strip">
+    <div class="bar w"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar w"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar w"></div>
+  </div>
+  <p class="bin-line">Bin: <span></span></p>
+</div>
+
+<ul class="notes">
+  <li><strong>Mount inside, where a shut bin hides the strip.</strong> Visible means open, and
+      that is the entire signal.</li>
+  <li><strong>Mount level.</strong> The scanner walks rows and columns, so a strip lying flat or
+      standing upright is found and one at an angle is not.</li>
+  <li>All three rhythms read the same backwards, so it does not matter which end faces the
+      camera. They differ only in how many bars are wide — counting survives distance far
+      better than measuring does.</li>
+  <li>Bind each strip to a bin in Settings &rarr; Marker Strips. There is nothing to calibrate
+      in this style.</li>
+  <li>Watch <em>unit px</em> in the debug overlay while placing them. Below about three, reprint
+      at a larger <code>--unit</code> in this file.</li>
+</ul>
+
+</body>
+</html>

@@ -17,9 +17,10 @@ struct LiveYOLOCamera: UIViewRepresentable {
     var aprilTagBindings: [UUID: [Int]]
     var aprilTagStaleTimeout: Double
     var aprilTagRangeProfile: AprilTagRangeProfile
+    var openness: BinOpennessInputs
     var foundationConfirmationEnabled: Bool
     var onBarcodeHint: ((ScannedBarcode?) -> Void)?
-    var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
+    var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, BinOpennessSnapshot, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -35,6 +36,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagBindings: aprilTagBindings,
             aprilTagStaleTimeout: aprilTagStaleTimeout,
             aprilTagRangeProfile: aprilTagRangeProfile,
+            openness: openness,
             foundationConfirmationEnabled: foundationConfirmationEnabled,
             onDetection: onDetection
         )
@@ -55,7 +57,8 @@ struct LiveYOLOCamera: UIViewRepresentable {
             throwFeedbackGrace: throwFeedbackGrace,
             aprilTagEnabled: aprilTagEnabled,
             aprilTagBindings: aprilTagBindings,
-            aprilTagStaleTimeout: aprilTagStaleTimeout
+            aprilTagStaleTimeout: aprilTagStaleTimeout,
+            openness: openness
         )
         view.showOverlays = false
         hideDeveloperChrome(view)
@@ -84,7 +87,8 @@ struct LiveYOLOCamera: UIViewRepresentable {
             throwFeedbackGrace: throwFeedbackGrace,
             aprilTagEnabled: aprilTagEnabled,
             aprilTagBindings: aprilTagBindings,
-            aprilTagStaleTimeout: aprilTagStaleTimeout
+            aprilTagStaleTimeout: aprilTagStaleTimeout,
+            openness: openness
         )
         Self.applyThresholds(uiView, settings: settings)
         let coordinator = context.coordinator
@@ -151,7 +155,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
     }
 
     final class Coordinator {
-        var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
+        var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, BinOpennessSnapshot, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
         var onBarcodeHint: ((ScannedBarcode?) -> Void)?
         /// Throttled Vision pass; runs beside the AprilTag luma tap.
         let barcodeScanner = BarcodeFrameScanner()
@@ -199,6 +203,10 @@ struct LiveYOLOCamera: UIViewRepresentable {
             detector: AprilTagDetector(familyName: "tag16h5", tuning: AprilTagRangeProfile.far.tuning)
         )
         let aprilTagBinDetector = AprilTagBinStateDetector()
+        /// The other lid signal: printed strips instead of tags. Idle unless
+        /// `BinOpennessInputs.source` selects it, so the two never both gate a frame.
+        let markerPipeline = BinMarkerFramePipeline()
+        let markerBinDetector = BinMarkerStateDetector()
         private var cameraObservers: [NSObjectProtocol] = []
         private var applyWorkItem: DispatchWorkItem?
         private var isReloadingModel = false
@@ -228,8 +236,9 @@ struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagBindings: [UUID: [Int]],
             aprilTagStaleTimeout: Double,
             aprilTagRangeProfile: AprilTagRangeProfile,
+            openness: BinOpennessInputs,
             foundationConfirmationEnabled: Bool,
-            onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
+            onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, BinOpennessSnapshot, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
         ) {
             self.preferredCameraID = preferredCameraID
             self.selectedModelName = selectedModelName
@@ -243,7 +252,8 @@ struct LiveYOLOCamera: UIViewRepresentable {
             throwFeedbackGrace: throwFeedbackGrace,
                 aprilTagEnabled: aprilTagEnabled,
                 aprilTagBindings: aprilTagBindings,
-                aprilTagStaleTimeout: aprilTagStaleTimeout
+                aprilTagStaleTimeout: aprilTagStaleTimeout,
+                openness: openness
             )
             self.aprilTagRangeProfile = aprilTagRangeProfile
             self.onDetection = onDetection
@@ -267,7 +277,8 @@ struct LiveYOLOCamera: UIViewRepresentable {
             throwFeedbackGrace: Double,
             aprilTagEnabled: Bool,
             aprilTagBindings: [UUID: [Int]],
-            aprilTagStaleTimeout: Double
+            aprilTagStaleTimeout: Double,
+            openness: BinOpennessInputs
         ) {
             let snapshot = PipelineInputs(
                 settings: settings,
@@ -277,7 +288,8 @@ struct LiveYOLOCamera: UIViewRepresentable {
             throwFeedbackGrace: throwFeedbackGrace,
                 aprilTagEnabled: aprilTagEnabled,
                 aprilTagBindings: aprilTagBindings,
-                aprilTagStaleTimeout: aprilTagStaleTimeout
+                aprilTagStaleTimeout: aprilTagStaleTimeout,
+                openness: openness
             )
             inputsLock.lock()
             _inputs = snapshot
@@ -373,18 +385,34 @@ struct LiveYOLOCamera: UIViewRepresentable {
             depositDetector.requiredDwellFrames = inputs.dwellFrames
             depositDetector.reacquireGrace = inputs.reacquireGrace
             depositDetector.throwFeedbackGrace = inputs.throwFeedbackGrace
-            var tagFrame = inputs.aprilTagEnabled
+            let usesTags = inputs.aprilTagEnabled && !inputs.openness.usesMarkers
+            var tagFrame = usesTags
                 ? aprilTagBinDetector.update(
                     zones: currentZones,
                     tagBindings: inputs.aprilTagBindings,
                     config: AprilTagConfig(staleTimeout: inputs.aprilTagStaleTimeout)
                 )
                 : AprilTagStatusFrame()
-            if inputs.aprilTagEnabled {
+            if usesTags {
                 tagFrame.detectorStats = aprilTagPipeline.detector.lastFrameStats
                 tagFrame.detectorFailureReason = aprilTagPipeline.detector.configurationFailureReason
             }
-            depositDetector.binOpenState = FrameBinOpenState(tagFrame: tagFrame, zones: currentZones)
+            var markerFrame = BinMarkerStatusFrame()
+            if inputs.openness.usesMarkers {
+                markerFrame = markerBinDetector.update(
+                    zones: currentZones,
+                    bindings: inputs.openness.markerBindings,
+                    style: inputs.openness.markerStyle,
+                    config: BinMarkerStateConfig(staleTimeout: inputs.openness.markerStaleTimeout)
+                )
+                markerFrame.stats = markerPipeline.scanner.lastFrameStats
+            }
+            let openness = BinOpennessSnapshot(
+                source: inputs.openness.source,
+                tag: tagFrame,
+                marker: markerFrame
+            )
+            depositDetector.binOpenState = openness.openState(zones: currentZones)
             let zoneFrame = depositDetector.update(tracks: tracked, zones: currentZones)
             if phaseMirror.current == .recording {
                 let fps = result.fps.flatMap { $0.isFinite ? Int($0.rounded()) : nil } ?? 0
@@ -403,7 +431,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
                     result,
                     tracked,
                     zoneFrame,
-                    tagFrame,
+                    openness,
                     confirmationFrame,
                     verdictRecords
                 )
@@ -583,15 +611,26 @@ struct LiveYOLOCamera: UIViewRepresentable {
             // queue. Running the pass inline would cost YOLO an inference frame per detection.
             frameColorProxy?.frameTap = { [weak self] pixelBuffer in
                 guard let self else { return }
-                if self.currentInputs.aprilTagEnabled {
+                let inputs = self.currentInputs
+                if inputs.openness.usesMarkers {
+                    // Marker detection reads chroma, so it has to run on the buffer as the
+                    // sensor delivered it — before `FrameColorAdjuster` rewrites it below.
+                    var config = BinMarkerConfig.standard
+                    config.style = inputs.openness.markerStyle
+                    self.markerPipeline.apply(config: config, inks: inputs.openness.markerInks)
+                    self.markerPipeline.submit(pixelBuffer)
+                } else if inputs.aprilTagEnabled {
                     self.aprilTagPipeline.submit(pixelBuffer)
                 }
-                if self.currentInputs.settings.barcodeAssistEnabled {
+                if inputs.settings.barcodeAssistEnabled {
                     self.barcodeScanner.submit(pixelBuffer)
                 }
             }
             aprilTagPipeline.onTags = { [weak self] tags, timestamp in
                 self?.aprilTagBinDetector.ingest(tags: tags, timestamp: timestamp)
+            }
+            markerPipeline.onDetections = { [weak self] detections, timestamp in
+                self?.markerBinDetector.ingest(detections: detections, timestamp: timestamp)
             }
             frameColorProxy?.controls = currentInputs.settings.frameColor
             frameColorProxy?.install(on: view)
@@ -691,4 +730,19 @@ private struct PipelineInputs {
     var aprilTagEnabled: Bool
     var aprilTagBindings: [UUID: [Int]]
     var aprilTagStaleTimeout: Double
+    var openness: BinOpennessInputs = BinOpennessInputs()
+}
+
+/// The marker half of the lid signal, grouped so adding to it does not widen four
+/// initialisers every time.
+struct BinOpennessInputs: Equatable, Sendable {
+    var source: BinOpennessSource = .aprilTag
+    var markerStyle: BinMarkerStyle = .color
+    var markerBindings: [UUID: Int] = [:]
+    var markerStaleTimeout: Double = BinMarkerStateConfig.standard.staleTimeout
+    /// Palette with any on-site calibration already folded in.
+    var markerInks: [BinMarkerInk] = BinMarkerInk.all
+    var markerDebugOverlay: Bool = false
+
+    var usesMarkers: Bool { source == .marker }
 }

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sortla bin marker strips — colour</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm; }
+  :root {
+    /* One printed unit. Every bar and gap is a whole number of these.
+       Raise it if the camera sits far from the bins: the detector needs roughly three
+       image samples per unit, and at 1080p over a 2 m span one sample is about 2 mm. */
+    --unit: 15mm;
+    --bar-height: 40mm;
+    --yellow: #FFF200;
+    --magenta: #EC008C;
+    --cyan: #00AEEF;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #fff;
+    color: #111;
+    font: 11pt/1.45 -apple-system, "Helvetica Neue", Arial, sans-serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  h1 { font-size: 15pt; margin: 0 0 2mm; }
+  .lede { margin: 0 0 6mm; max-width: 165mm; color: #333; }
+  .lede strong { color: #111; }
+  .marker { margin: 0 0 9mm; }
+  .caption {
+    font-size: 9pt;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #444;
+    margin: 0 0 2mm;
+  }
+  /* The quiet zone is not decoration: the scanner reads a strip as a run of bars bounded by
+     background, and a bar touching a printed edge or a dark bin has no boundary to find. */
+  .strip {
+    display: flex;
+    align-items: stretch;
+    height: var(--bar-height);
+    padding: var(--unit);
+    border: 0.3mm dashed #bbb;
+    background: #fff;
+    width: max-content;
+  }
+  .bar { height: 100%; }
+  .n { width: var(--unit); }
+  .w { width: calc(var(--unit) * 2); }
+  .gap { width: var(--unit); background: #fff; }
+  .yellow .bar { background: var(--yellow); }
+  .magenta .bar { background: var(--magenta); }
+  .cyan .bar { background: var(--cyan); }
+  .bin-line { font-size: 9pt; color: #666; margin: 2mm 0 0; }
+  .bin-line span { display: inline-block; min-width: 60mm; border-bottom: 0.3mm solid #999; }
+  .notes { font-size: 9.5pt; color: #333; border-top: 0.3mm solid #ddd; padding-top: 4mm; }
+  .notes li { margin-bottom: 1.5mm; }
+</style>
+</head>
+<body>
+
+<h1>Bin marker strips — colour</h1>
+<p class="lede">
+  Print at <strong>100% scale</strong> — no "fit to page", or the bars stop being whole units.
+  Use <strong>matte</strong> stock: a gloss finish under a ceiling lamp throws a specular
+  highlight that washes the colour out of exactly the bars being measured.
+  Cut on the dashed line; the white border around each strip is part of the marker.
+</p>
+
+<div class="marker yellow">
+  <p class="caption">Marker 1 &middot; Yellow &middot; one wide bar</p>
+  <div class="strip">
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar w"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar n"></div>
+  </div>
+  <p class="bin-line">Bin: <span></span></p>
+</div>
+
+<div class="marker magenta">
+  <p class="caption">Marker 2 &middot; Magenta &middot; two wide bars</p>
+  <div class="strip">
+    <div class="bar w"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar w"></div>
+  </div>
+  <p class="bin-line">Bin: <span></span></p>
+</div>
+
+<div class="marker cyan">
+  <p class="caption">Marker 3 &middot; Cyan &middot; three wide bars</p>
+  <div class="strip">
+    <div class="bar w"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar w"></div><div class="gap"></div>
+    <div class="bar n"></div><div class="gap"></div>
+    <div class="bar w"></div>
+  </div>
+  <p class="bin-line">Bin: <span></span></p>
+</div>
+
+<ul class="notes">
+  <li><strong>Mount inside, where a shut bin hides the strip.</strong> Visible means open, and
+      that is the entire signal.</li>
+  <li><strong>Mount level.</strong> The scanner walks rows and columns, so a strip lying flat or
+      standing upright is found and one at an angle is not.</li>
+  <li>Yellow, magenta and cyan are the three process inks, each laid down by a single cartridge.
+      That is why they reproduce consistently between printers — and why they sit further apart
+      in the camera's colour space than any palette mixed from them.</li>
+  <li>Bind each strip to a bin in Settings &rarr; Marker Strips, then open a bin with the debug
+      overlay showing and tap <em>Calibrate colours</em> once. That records what this room's
+      light actually does to the print.</li>
+  <li>Watch <em>unit px</em> in the debug overlay while placing them. Below about three, reprint
+      at a larger <code>--unit</code> in this file.</li>
+</ul>
+
+</body>
+</html>

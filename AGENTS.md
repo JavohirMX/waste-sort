@@ -5,7 +5,8 @@ deliberately. Every rule below exists because breaking it caused a real bug
 here, not because a style guide said so. Follow it.
 
 **Stack:** SwiftUI kiosk app (iOS 26.5), YOLOv8-seg via UltralyticsYOLO SPM,
-AprilTag bin-lid detection via SwiftAprilTag, AVFoundation recording.
+AprilTag bin-lid detection via SwiftAprilTag, printed marker strips via
+`Core/BinMarker`, AVFoundation recording.
 Build: Xcode with iOS 26.5+ SDK (`xcodebuild-beta`).
 
 ---
@@ -71,6 +72,7 @@ Rules that are load-bearing:
 |---|---|
 | `BinGuide` (names, colors, aliases, normalization) | Overlay video styling (`OverlayBinStyle` derives from it), CSV rows, HUD |
 | `BeliefEngine` (bin verdicts + uncertainty) | Any other confidence-vote/argmax logic; `TrackedDetection.advisedBinID` is the only advice resolver for CTA, HUD, and photo counts |
+| `BinOpennessSnapshot.openState(zones:)` (which lid detector gates deposits) | Any other AprilTag-vs-marker branch; `ZoneDepositDetector` must never learn which one is running |
 | `applyThresholds(_ settings:)` in `LiveYOLOCamera` | Inline `setConfidenceThreshold` triplets anywhere |
 | `RuntimeSettings` snapshot | Reading `AppSettings.shared` off-main |
 | `TimestampFormatters` | Allocating `DateFormatter` on any per-frame path (it cost real fps once) |
