@@ -4,7 +4,7 @@
 
 | File | What is in it |
 | --- | --- |
-| `BinMarkers_Dashes.pdf` | **Start here.** Rows of equal dashes at four sizes. Nothing encoded; the bin is named by where the row appears |
+| `BinMarkers_Dashes.pdf` | **Start here.** Rows of equal dashes at five sizes, 3–12 mm. Nothing encoded; the bin is named by where the row appears |
 | `BinMarkers_Color.pdf` | Yellow / magenta / cyan strips at six unit sizes (6–18 mm), plus a page of heights |
 | `BinMarkers_Mono.pdf` | The same in black and white |
 | `BinMarkers_Shapes.pdf` | Bars, slanted and chevron — three looks that read identically |
@@ -20,10 +20,21 @@ frame, because two of its three inks sit on the hues the room is full of.
 Start with a size that is comfortably too big, mount it, then read the two numbers the debug
 overlay prints beside each strip (Settings → Bin Openness → Marker strips → Show debug overlay):
 
-- **unit px** — samples per printed unit. Under six the bar widths stop separating and the
-  strip is named by its ink alone; under three it is not found at all.
-- **×n** — how many scan lines cross the strip. Three is the floor, and it is what a narrow
-  rim actually limits.
+- **unit px / pitch** — samples per printed unit or dash. For dashes, two is the floor and
+  nothing divides one width by another, so they hold up far smaller than the bar styles. For
+  the bar styles, under six the widths stop separating.
+- **×n** — how many scan lines cross the row. Three is the floor, and it is what a narrow rim
+  actually limits — about 1.5 cm at this site.
+
+The dash style reads the **full luma frame** rather than the half-size chroma grid the colour
+styles need, which is worth exactly double the distance: measured on the site's frames, it
+reads a row the half grid cannot see at all. It also means the dashes can be printed half the
+size, and since a bin reads open once five dashes clear the counter edge, halving the pitch
+halves the travel needed. Five 4 mm dashes clear in about 36 mm of drawer; five 8 mm dashes
+need 76 mm.
+
+Fewer than five dashes is not a setting. Below eight alternating runs the room itself starts
+producing rows — 3 over fifteen frames at seven, 39 at five.
 
 Work down through the sizes until one of those numbers gets close to its floor, then go back
 one. The height page is staggered and cycles the three markers on purpose: the detector merges

@@ -175,12 +175,23 @@ nonisolated struct BinMarkerDetection: Equatable, Sendable {
 nonisolated struct BinMarkerDashConfig: Equatable, Sendable {
     /// Alternating runs a stretch needs before it counts. Nine is five dashes and four gaps.
     ///
-    /// This single number is what separates a marker from a room. Measured on the site with no
-    /// marker installed: at five runs the frames produced 48–394 false rows, at seven, 2–28,
-    /// and at nine, none at all, at every width tolerance tried. It is also the reason the
-    /// printed row is long — a partly emerged drawer has to clear five dashes before its bin
-    /// reads open, and that is a deliberate, legible rule rather than a threshold on a blur.
-    var minRuns: Int = 9
+    /// This single number is what separates a marker from a room, and it is set by measurement
+    /// on the site's own frames with nothing installed: at five runs they produced 39 false
+    /// rows, at six 7, at seven 3, and at **eight, none at all**.
+    ///
+    /// Counted in dashes rather than runs, eight is five: a clean row of N dashes reads as
+    /// 2N−1 runs, because the printed white margin at each end merges into the surrounding
+    /// background and is cut off by the width-agreement check rather than counted. So the
+    /// deployment rule is that a drawer reads open once **five dashes** have cleared the
+    /// counter edge — and a row caught mid-gap by that edge can satisfy it with four dashes
+    /// and the partial gap beside them, which is the one place the eighth run earns its keep.
+    ///
+    /// Going lower is not a tuning question. At seven runs the room produces a false row every
+    /// eighth frame even inside a rim-sized band, which for a gate means flickering open. To
+    /// trigger sooner, print the dashes smaller rather than lowering this: five dashes at a
+    /// 4 mm pitch clear the edge in half the travel that five at 8 mm need, and full-resolution
+    /// sampling is what makes 4 mm readable.
+    var minRuns: Int = 8
 
     /// Widest run over narrowest, across a stretch. Nothing compares one run to another to
     /// extract a value — they only have to agree, which is what makes the row unmistakable
@@ -200,10 +211,15 @@ nonisolated struct BinMarkerDashConfig: Equatable, Sendable {
     /// between a dash and the paper otherwise fences every dash off from its neighbours.
     var minRunSamples: Int = 2
 
-    /// Two, which halves the cost — 8.7 ms against 17.4 on a 960x540 grid of real site frames
-    /// — at the price of needing six samples of printed height instead of three. The rim these
-    /// go on already carries 5 cm AprilTags, so six samples is about 1.5 cm and free.
-    var scanStride: Int = 2
+    /// Four, because this style reads the luma plane at full resolution rather than the
+    /// half-size chroma grid the colour style needs — and at four it scans the same number of
+    /// lines it would at two on the half grid, for the same printed height in millimetres.
+    ///
+    /// Measured across the site's frames: full resolution at stride four costs 16.6 ms against
+    /// 8.9 for the half grid at stride two, produces no false rows, and reads a row that the
+    /// half grid cannot see at all. Full resolution at stride *two* is not better — 32.3 ms
+    /// and six false rows, because twice the scan lines is also twice the chances.
+    var scanStride: Int = 4
     var minLines: Int = 3
     /// Local light-to-dark spread a scan line needs before its samples mean anything.
     var minContrast: Int = 40

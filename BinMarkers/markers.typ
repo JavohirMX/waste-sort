@@ -191,7 +191,7 @@
   text(size: 9pt, fill: luma(90))[
     #count dashes, #calc.round(span / 1mm) mm long, #calc.round((height + 6mm) / 1mm) mm tall.
     Reads once five dashes are clear of the counter edge — about
-    #calc.round((5 * dash * 2 + dash) / 1mm) mm of travel. Print at 100%, matte stock.
+    #calc.round((5 * dash * 2 - dash) / 1mm) mm of travel. Print at 100%, matte stock.
   ]
   v(5mm)
   for index in range(3) {
@@ -226,14 +226,17 @@
       "Five dashes is the threshold",
       [A drawer reveals the row a dash at a time as it slides out from under the edge. Five
         dashes clear of it is what makes the bin read open — a legible rule rather than a
-        threshold on a blur. Print more dashes to trigger earlier in the travel.],
+        threshold on a blur. To trigger sooner, print the dashes *smaller*, not fewer: five at
+        a 4 mm pitch clear the edge in half the travel that five at 8 mm need. Fewer than five
+        is not a setting — below that the room itself starts producing rows.],
     ),
     (
       "Which size to print",
       [Start large and work down. The debug overlay reports the dash count, the pitch in
         samples, and how many scan lines crossed the row. Dashes hold up down to two samples
-        of pitch — far below what the bar styles needed — but the row must be at least six
-        samples tall, about 1.5 cm at this site.],
+        of pitch, and this style reads the full luma frame rather than the half-size chroma
+        grid the colour styles need — which is worth exactly double the distance. The row must
+        be at least twelve samples tall, about 1.5 cm at this site.],
     ),
     (
       "An arm across it costs nothing",
@@ -247,7 +250,7 @@
     text(size: 9pt, fill: luma(70))[#body]
     v(3mm)
   }
-  for (dash, count) in ((6mm, 14), (8mm, 12), (10mm, 10), (14mm, 8)) {
+  for (dash, count) in ((3mm, 20), (4mm, 18), (6mm, 14), (8mm, 12), (12mm, 9)) {
     pagebreak()
     dash-page(dash, 16mm, count)
   }

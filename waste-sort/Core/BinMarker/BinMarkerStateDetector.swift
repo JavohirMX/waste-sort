@@ -109,7 +109,7 @@ nonisolated final class BinMarkerStateDetector: @unchecked Sendable {
                     state: .open,
                     // More dashes is more of the row clear of the counter edge. Five is the
                     // floor the scanner will report at all, so the scale starts there.
-                    confidence: min(0.98, 0.80 + 0.02 * Double(row.dashes - 5)),
+                    confidence: min(0.98, 0.80 + 0.02 * Double(row.dashes - 4)),
                     slot: index,
                     isDegraded: false,
                     isCoasting: false,

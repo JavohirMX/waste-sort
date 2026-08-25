@@ -31,19 +31,20 @@ struct BinMarkerDashScannerTests {
     @Test("A printed row is found and counted", arguments: [5, 8, 12, 14])
     func rowIsCounted(dashes: Int) throws {
         let scanner = BinMarkerDashScanner()
-        let found = try #require(scanner.scan(canvasWithRow(dashes: dashes, dash: 6)).first)
+        let found = try #require(scanner.scan(canvasWithRow(dashes: dashes, dash: 6, thickness: 20)).first)
         #expect(found.dashes == dashes)
         #expect(found.orientation == .horizontal)
         #expect(abs(found.pitchSamples - 6) < 1.5)
     }
 
-    /// Five dashes and four gaps is nine alternating runs, and nine is the threshold the site
-    /// frames set: at seven the real room produced false rows, at nine it produced none.
+    /// Eight runs is where the site's own frames stop producing false rows — 39 at five, 7 at
+    /// six, 3 at seven, none at eight — and a clean row of N dashes reads as 2N−1 runs, so the
+    /// floor lands on five dashes. To trigger sooner, print them smaller, not fewer.
     @Test("Four dashes is below the floor and five is above it")
     func fiveDashesIsTheFloor() {
         let scanner = BinMarkerDashScanner()
-        #expect(scanner.scan(canvasWithRow(dashes: 4, dash: 6)).isEmpty)
-        #expect(scanner.scan(canvasWithRow(dashes: 5, dash: 6)).count == 1)
+        #expect(scanner.scan(canvasWithRow(dashes: 4, dash: 6, thickness: 20)).isEmpty)
+        #expect(scanner.scan(canvasWithRow(dashes: 5, dash: 6, thickness: 20)).count == 1)
     }
 
     /// Nothing here divides one width by another, which is why dashes survive at a size the
@@ -51,7 +52,7 @@ struct BinMarkerDashScannerTests {
     @Test("Dashes hold up down to two samples", arguments: [2, 3, 4, 8])
     func smallDashes(dash: Int) {
         let scanner = BinMarkerDashScanner()
-        let found = scanner.scan(canvasWithRow(dashes: 10, dash: dash, thickness: max(6, dash * 2)))
+        let found = scanner.scan(canvasWithRow(dashes: 10, dash: dash, thickness: max(16, dash * 4)))
         #expect(found.count == 1)
         #expect(found.first?.dashes == 10)
     }
@@ -109,8 +110,8 @@ struct BinMarkerDashScannerTests {
     @Test("A row too thin for three scan lines is discarded")
     func tooThin() {
         let scanner = BinMarkerDashScanner()
-        #expect(scanner.scan(canvasWithRow(dashes: 10, dash: 6, thickness: 3)).isEmpty)
-        #expect(scanner.scan(canvasWithRow(dashes: 10, dash: 6, thickness: 8)).count == 1)
+        #expect(scanner.scan(canvasWithRow(dashes: 10, dash: 6, thickness: 6)).isEmpty)
+        #expect(scanner.scan(canvasWithRow(dashes: 10, dash: 6, thickness: 16)).count == 1)
     }
 }
 
@@ -164,7 +165,7 @@ struct BinMarkerDashStateTests {
     func dashCountDrivesConfidence() {
         let detector = BinMarkerStateDetector()
         let list = zones(2)
-        detector.ingest(rows: [row(at: list[0].centroid, dashes: 5)], timestamp: 100)
+        detector.ingest(rows: [row(at: list[0].centroid, dashes: 4)], timestamp: 100)
         let sparse = detector.update(zones: list, style: .dashes, timestamp: 100)
         detector.ingest(rows: [row(at: list[0].centroid, dashes: 14)], timestamp: 101)
         let full = detector.update(zones: list, style: .dashes, timestamp: 101)
