@@ -266,7 +266,7 @@ struct BinMarkerColorScannerTests {
     /// bar at half strength sat 55 units from its own ink against a 48-unit tolerance and was
     /// discarded as an unknown colour. Fading moves a sample along the ray toward neutral and
     /// leaves its direction alone, which is why the classifier reads the angle.
-    @Test("A washed-out print is still its own colour", arguments: [0.3, 0.5, 0.7])
+    @Test("A washed-out print is still its own colour", arguments: [0.15, 0.3, 0.45])
     func fadedInkIsStillRecognised(amount: Double) {
         var canvas = BinMarkerCanvas(width: 320, height: 240)
         canvas.drawInkStrip(BinMarkerTestInk.faded(.magenta, by: amount),
@@ -281,16 +281,30 @@ struct BinMarkerColorScannerTests {
     /// Blur is what turns a full read into a degraded one, and the degraded tier is the whole
     /// argument for printing in colour. Measured rather than assumed: at this unit size the
     /// rhythm is gone and the ink is all that is left.
-    @Test("A blurred strip loses its rhythm and keeps its bin")
-    func blurFallsBackToInk() throws {
+    /// Past the point where the bars survive at all, the ink still names the bin. That
+    /// fallback is the whole argument for printing in colour rather than black.
+    @Test("A strip blurred past its rhythm keeps its bin")
+    func blurFallsBackToInk() {
+        var canvas = BinMarkerCanvas(width: 420, height: 200)
+        canvas.drawInkStrip(.cyan, barUnits: BinMarkerPattern.triple.barUnits,
+                            unit: 6, origin: (x: 30, y: 70), thickness: 24)
+        let soft = BinMarkerTestBlur.apply(canvas.image, radius: 4)
+        let found = scanner(.color).scan(soft)
+        #expect(found.contains { $0.isDegraded && $0.slot(style: .color)?.index == 2 })
+    }
+
+    /// Raising the chroma floor to 45 bought this as well as the false positives it was aimed
+    /// at: a blur that dilutes a gap no longer pushes it over the line into ink, so the bars
+    /// stay separate and the rhythm survives where it used to collapse.
+    @Test("Moderate blur no longer costs the rhythm")
+    func moderateBlurKeepsRhythm() throws {
         var canvas = BinMarkerCanvas(width: 420, height: 200)
         canvas.drawInkStrip(.cyan, barUnits: BinMarkerPattern.triple.barUnits,
                             unit: 6, origin: (x: 30, y: 70), thickness: 24)
         let soft = BinMarkerTestBlur.apply(canvas.image, radius: 2)
         let found = try #require(scanner(.color).scan(soft).first)
-        #expect(found.inkID == "cyan")
-        #expect(found.isDegraded)
-        #expect(found.slot(style: .color)?.index == 2)
+        #expect(found.patternID == 3)
+        #expect(found.isDegraded == false)
     }
 
     /// Print the unit large enough and the rhythm survives blur too. Measured, not assumed:

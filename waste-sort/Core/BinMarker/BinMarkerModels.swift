@@ -98,7 +98,10 @@ nonisolated struct BinMarkerConfig: Equatable, Sendable {
     ///
     /// No luma test goes with it: a gap only has to be *not ink*, and leaving brightness out
     /// is what lets the same code read a white-gapped strip and a black-gapped one.
-    var inkChromaThreshold: Double = 16
+    /// Raised from 16 after the colour style outlined half a bin room. Sixteen is 14% of a
+    /// saturated ink's chroma — a threshold that admits almost anything that is not literally
+    /// grey. A printed ink under working light sits far above 40%.
+    var inkChromaThreshold: Double = 45
     /// How far a sample's hue may sit from an ink's before it stops being that ink, in degrees
     /// around the chroma plane.
     ///
@@ -112,7 +115,16 @@ nonisolated struct BinMarkerConfig: Equatable, Sendable {
     ///
     /// The three inks sit at least 92 degrees apart, so this stays unambiguous with room to
     /// spare, and it is what keeps a saturated colour that is none of ours out.
-    var maxInkHueDegrees: Double = 35
+    ///
+    /// Narrowed from 35 after the field reported the colour style outlining everything in
+    /// sight. Three cones of ±35° claim 58% of every hue there is — most coloured rubbish
+    /// lands inside one. At ±20° they claim a third, and on a synthetic cluttered scene that
+    /// took false detections from five per twelve frames to zero without costing a single
+    /// real read, blurred or crisp.
+    ///
+    /// It does mean an uncalibrated print whose hue is off by more than 20° goes unread, so
+    /// the colour style now genuinely depends on calibrating against the real print.
+    var maxInkHueDegrees: Double = 20
 
     /// Local light-to-dark spread a mono scan line needs before its samples mean anything.
     /// Flat wall is not a strip with unlucky thresholds; it is flat wall.
