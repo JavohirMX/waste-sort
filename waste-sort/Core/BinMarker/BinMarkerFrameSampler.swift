@@ -1,4 +1,3 @@
-import Accelerate
 import CoreVideo
 import Foundation
 

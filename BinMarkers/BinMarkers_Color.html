@@ -10,7 +10,11 @@
        Raise it if the camera sits far from the bins: the detector needs roughly three
        image samples per unit, and at 1080p over a 2 m span one sample is about 2 mm. */
     --unit: 15mm;
-    --bar-height: 40mm;
+    --bar-height: 30mm;
+    /* White margin printed around the strip. The scanner does not measure it — it only needs
+       the outermost bars to end against something that is not ink, and a bin's own surface
+       cannot be relied on for that. */
+    --quiet: 10mm;
     --yellow: #FFF200;
     --magenta: #EC008C;
     --cyan: #00AEEF;
@@ -40,13 +44,12 @@
   .strip {
     display: flex;
     align-items: stretch;
-    height: var(--bar-height);
-    padding: var(--unit);
+    padding: var(--quiet);
     border: 0.3mm dashed #bbb;
     background: #fff;
     width: max-content;
   }
-  .bar { height: 100%; }
+  .bar { height: var(--bar-height); }
   .n { width: var(--unit); }
   .w { width: calc(var(--unit) * 2); }
   .gap { width: var(--unit); background: #fff; }
@@ -55,7 +58,15 @@
   .cyan .bar { background: var(--cyan); }
   .bin-line { font-size: 9pt; color: #666; margin: 2mm 0 0; }
   .bin-line span { display: inline-block; min-width: 60mm; border-bottom: 0.3mm solid #999; }
-  .notes { font-size: 9.5pt; color: #333; border-top: 0.3mm solid #ddd; padding-top: 4mm; }
+  /* Second page on purpose: page one is the sheet you cut up, and a set of instructions
+     stapled to the middle of it would be cut up too. */
+  .notes {
+    page-break-before: always;
+    break-before: page;
+    font-size: 9.5pt;
+    color: #333;
+    padding-top: 2mm;
+  }
   .notes li { margin-bottom: 1.5mm; }
 </style>
 </head>
