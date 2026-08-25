@@ -93,7 +93,8 @@ changes by design), then export and look for a `"pipeline":"belief"` line.
 | Records show `skippedQuota` all day | Daily quota exhausted | Expected under heavy testing; resumes after reset time shown in Status |
 | Records show `.error("gate: breaker open")` streaks | Three consecutive transport failures tripped the breaker | It auto-closes after 120 s; check network |
 | `mappingFailed:true` lines | Model returned a label outside the taxonomy | Data, not a bug — kept for analysis |
-| App crashes when PCC receives an image | **iOS 27 beta bug**: the runtime declares `.vision` but traps (EXC_BAD_ACCESS) on any image attachment — CGImage and file-URL variants confirmed; text-only calls work | Keep "Attempt image judgments" OFF in the smoke screen; use the text-only probe. Re-test after each beta, then re-enable |
+| App crashes when PCC receives an image | **iOS 27 beta ≤4 + old Xcode 27 beta SDK**: the runtime declared `.vision` but trapped (EXC_BAD_ACCESS) on any image attachment. Fixed by matching toolchain and OS (Xcode 27 beta 6 + matching device beta) | Always keep Xcode beta and device beta on the SAME version; re-test after updates, then re-enable image attempts |
+| "The prompt contains content that the model cannot process" | PCC rejected the prompt/image with a clean framework error (post-fix behavior) | Run "Cross-check same image on-device": on-device answers → content is fine, PCC pipeline rejects it (file Feedback with the recorded case name); both fail → try a different photo |
 
 ---
 

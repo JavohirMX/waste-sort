@@ -16,6 +16,9 @@ struct PhotoSortView: View {
     @State private var isProbing = false
     @State private var judgment: PCCArbiterService.SmokeJudgment?
     @State private var probeJudgment: PCCArbiterService.SmokeJudgment?
+    @State private var afmJudgment: PCCArbiterService.SmokeJudgment?
+    @State private var isCrossChecking = false
+    @State private var afmJudge: PCCArbiterService?
     @State private var errorMessage: String?
     @State private var availability = PCCJudgeAvailability.current
     @State private var capabilitiesSummary: String?
@@ -63,6 +66,8 @@ struct PhotoSortView: View {
                     }
 
                     textProbeSection
+
+                    crossCheckSection
                 }
                 .padding(20)
             }
@@ -88,6 +93,12 @@ struct PhotoSortView: View {
             .task {
                 if judge == nil {
                     judge = PCCArbiterService(store: PCCRecordStore())
+                }
+                if #available(iOS 27.0, *), afmJudge == nil {
+                    afmJudge = PCCArbiterService(
+                        store: PCCRecordStore(),
+                        transport: PCCTransportFactory.onDeviceTransport()
+                    )
                 }
                 availability = PCCJudgeAvailability.current
                 if #available(iOS 27.0, *) {
@@ -186,6 +197,57 @@ struct PhotoSortView: View {
                             Label("Even the text-only probe failed", systemImage: "xmark.octagon.fill")
                                 .foregroundStyle(.red)
                             Text(outcomeDescription(record.outcome))
+                                .font(.system(.footnote, design: .default))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .font(.system(.footnote, design: .default))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    /// Control experiment for the PCC image path: same image, on-device
+    /// model. The result card states the conclusion outright so the operator
+    /// knows whether to blame the content or the PCC pipeline.
+    private var crossCheckSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                Task { await runAFMCrossCheck() }
+            } label: {
+                Label(
+                    isCrossChecking ? "Checking on-device model…" : "Cross-check same image on-device",
+                    systemImage: "cpu"
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.bordered)
+            .disabled(isCrossChecking || isJudging || isProbing || afmJudge == nil || sourceImage == nil)
+
+            if isCrossChecking {
+                progressCard(title: "Asking the on-device model…", detail: "Control experiment for the PCC path")
+            } else if let afmJudgment {
+                let record = afmJudgment.record
+                Group {
+                    if afmJudgment.answered {
+                        Label(
+                            "On-device model answered: \(record.pccRawBinLabel ?? "?") "
+                                + "(\(record.latencyMs ?? 0) ms). The image content is fine — "
+                                + "the rejection is specific to the PCC pipeline.",
+                            systemImage: "checkmark.circle.fill"
+                        )
+                        .foregroundStyle(.green)
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("The on-device model failed too", systemImage: "xmark.octagon.fill")
+                                .foregroundStyle(.orange)
+                            Text(outcomeDescription(record.outcome))
+                                .font(.system(.footnote, design: .default))
+                                .foregroundStyle(.secondary)
+                            Text("Try a different photo — the content itself may be tripping guardrails.")
                                 .font(.system(.footnote, design: .default))
                                 .foregroundStyle(.secondary)
                         }
@@ -347,15 +409,7 @@ struct PhotoSortView: View {
             errorMessage = "Could not read that image."
             return
         }
-        // Whole-frame "crop", downscaled — the model sees the full photo.
-        let crop = ItemCropper.crop(
-            frameCG,
-            to: CGRect(x: 0, y: 0, width: 1, height: 1),
-            padding: 0,
-            maximumSide: 1024,
-            minimumSide: 96
-        ) ?? frameCG
-
+        let crop = smokeCrop(from: frameCG)
         nextTrackID += 1
         let context = ArbiterRequestContext(
             trackId: nextTrackID,
@@ -369,6 +423,47 @@ struct PhotoSortView: View {
             triggeredAt: Date()
         )
         judgment = await judge.smokeJudge(context, crop: crop)
+        availability = PCCJudgeAvailability.current
+    }
+
+    /// Whole-frame "crop", downscaled — the model sees the full photo.
+    private func smokeCrop(from frameCG: CGImage) -> CGImage {
+        ItemCropper.crop(
+            frameCG,
+            to: CGRect(x: 0, y: 0, width: 1, height: 1),
+            padding: 0,
+            maximumSide: 1024,
+            minimumSide: 96
+        ) ?? frameCG
+    }
+
+    /// Decisive bisection: the SAME prompt and normalized image sent to the
+    /// on-device model. On-device answer + PCC rejection = the image content
+    /// is fine and the PCC image pipeline is what rejects it (beta
+    /// limitation, worth a Feedback). Both fail = the content itself trips
+    /// guardrails; try a different photo.
+    private func runAFMCrossCheck() async {
+        guard let afmJudge, let sourceImage else { return }
+        afmJudgment = nil
+        isCrossChecking = true
+        defer { isCrossChecking = false }
+        guard let frameCG = UprightFrameImage.cgImage(from: sourceImage) else {
+            errorMessage = "Could not read that image."
+            return
+        }
+        nextTrackID += 1
+        let context = ArbiterRequestContext(
+            trackId: nextTrackID,
+            sessionId: "photo-smoke",
+            yoloLabel: "photo_smoke",
+            yoloConfidence: 0,
+            beliefUncertain: false,
+            beliefMargin: 0,
+            engineBinID: BinGuide.unknown.id,
+            pipeline: "photo-smoke-afm",
+            triggeredAt: Date()
+        )
+        afmJudgment = await afmJudge.smokeJudge(context, crop: smokeCrop(from: frameCG))
         availability = PCCJudgeAvailability.current
     }
 
