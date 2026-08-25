@@ -57,35 +57,40 @@ nonisolated enum BinMarkerSampleClassifier {
     ) {
         if codes.count < count { codes = [Int8](repeating: BinMarkerCode.other, count: count) }
 
+        // Each ink reduced to a direction in the chroma plane, once per line rather than once
+        // per sample. Comparison is then a dot product against the cosine of the tolerance —
+        // no trigonometry on the hot path.
+        var directions: [(cb: Double, cr: Double)] = []
+        directions.reserveCapacity(inks.count)
+        for ink in inks {
+            let dcb = ink.cb - 128
+            let dcr = ink.cr - 128
+            let length = (dcb * dcb + dcr * dcr).squareRoot()
+            directions.append(length > 0 ? (dcb / length, dcr / length) : (0, 0))
+        }
+        let minimumCosine = cos(config.maxInkHueDegrees * .pi / 180)
+
         for index in 0..<count {
             let pixel = start + index * step
-            let cb = Double(chroma[pixel * 2])
-            let cr = Double(chroma[pixel * 2 + 1])
-            let dcb = cb - 128
-            let dcr = cr - 128
+            let dcb = Double(chroma[pixel * 2]) - 128
+            let dcr = Double(chroma[pixel * 2 + 1]) - 128
             let magnitude = (dcb * dcb + dcr * dcr).squareRoot()
 
-            if magnitude <= config.maxGapChroma {
+            guard magnitude >= config.inkChromaThreshold else {
                 codes[index] = BinMarkerCode.gap
-                continue
-            }
-            guard magnitude >= config.minInkChroma else {
-                // Between "clearly nothing" and "clearly an ink" — an edge pixel, or a
-                // washed-out print. Calling it either way would only manufacture confidence.
-                codes[index] = BinMarkerCode.other
                 continue
             }
 
             var bestIndex = -1
-            var bestDistance = Double.greatestFiniteMagnitude
-            for (inkIndex, ink) in inks.enumerated() {
-                let distance = ink.distance(cb: cb, cr: cr)
-                if distance < bestDistance {
-                    bestDistance = distance
+            var bestCosine = -Double.greatestFiniteMagnitude
+            for (inkIndex, direction) in directions.enumerated() {
+                let cosine = (dcb * direction.cb + dcr * direction.cr) / magnitude
+                if cosine > bestCosine {
+                    bestCosine = cosine
                     bestIndex = inkIndex
                 }
             }
-            codes[index] = bestDistance <= config.maxInkDistance
+            codes[index] = bestCosine >= minimumCosine
                 ? Int8(bestIndex)
                 : BinMarkerCode.other
         }

@@ -77,14 +77,34 @@ nonisolated struct BinMarkerConfig: Equatable, Sendable {
     /// coincidence, which is the only kind of noise that reliably survives everything else.
     var minLines: Int = 3
 
-    /// Chroma magnitude, measured from neutral, below which a sample carries no usable color.
-    var minInkChroma: Double = 18
-    /// Distance from a sample's chroma to the nearest ink before it counts as that ink.
-    var maxInkDistance: Double = 48
-    /// Chroma magnitude below which a sample is the strip's white background. No luma test
-    /// goes with it: the gap only has to be *not ink*, and leaving brightness out of it is
-    /// what lets the same code read a black-gapped strip and a white-gapped one.
-    var maxGapChroma: Double = 14
+    /// Chroma magnitude, measured from neutral, that separates the strip's background from
+    /// its bars. One threshold, not a band with a no-man's-land in the middle.
+    ///
+    /// That detail is load-bearing and was learned the hard way. A gap of "neither" between
+    /// the two classes costs nothing on a synthetic frame with razor edges, and everything on
+    /// a real one: blur turns every bar edge into a ramp, the ramp spends several samples
+    /// inside the band, and those samples break the alternation the scan is looking for. With
+    /// a single threshold the boundary lands on one sample, and since it moves outward on one
+    /// side of a bar exactly as far as it moves inward on the other, the width ratios the
+    /// rhythm is read from come out unchanged.
+    ///
+    /// No luma test goes with it: a gap only has to be *not ink*, and leaving brightness out
+    /// is what lets the same code read a white-gapped strip and a black-gapped one.
+    var inkChromaThreshold: Double = 16
+    /// How far a sample's hue may sit from an ink's before it stops being that ink, in degrees
+    /// around the chroma plane.
+    ///
+    /// An **angle**, not a distance to the ink's centroid, and that is the whole point.
+    /// Everything that weakens a printed colour — blur mixing in the paper, a faded print,
+    /// haze, a camera that under-saturates — slides the sample along the ray toward neutral.
+    /// Its distance from the fully saturated centroid grows, while its direction does not
+    /// move at all. Measuring the distance meant a bar dissolving into its own background was
+    /// read as some unknown colour and thrown away; measuring the angle means it is read as a
+    /// paler version of itself, which is what it is.
+    ///
+    /// The three inks sit at least 92 degrees apart, so this stays unambiguous with room to
+    /// spare, and it is what keeps a saturated colour that is none of ours out.
+    var maxInkHueDegrees: Double = 35
 
     /// Local light-to-dark spread a mono scan line needs before its samples mean anything.
     /// Flat wall is not a strip with unlucky thresholds; it is flat wall.

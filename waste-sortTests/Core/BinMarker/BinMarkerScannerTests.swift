@@ -37,15 +37,21 @@ struct BinMarkerPatternTests {
         #expect(BinMarkerPattern.matching([2, 1, 2, 1, 2])?.id == 3)
     }
 
+    /// Classification is by hue, so what has to be far apart is the angle, not the distance.
     @Test("No sample can sit near two inks at once")
     func paletteIsWellSeparated() {
+        func angle(_ ink: BinMarkerInk) -> Double {
+            atan2(ink.cr - 128, ink.cb - 128) * 180 / .pi
+        }
         var closest = Double.greatestFiniteMagnitude
         for (index, ink) in BinMarkerInk.all.enumerated() {
             for other in BinMarkerInk.all.dropFirst(index + 1) {
-                closest = min(closest, ink.distance(cb: other.cb, cr: other.cr))
+                var separation = abs(angle(ink) - angle(other)).truncatingRemainder(dividingBy: 360)
+                if separation > 180 { separation = 360 - separation }
+                closest = min(closest, separation)
             }
         }
-        #expect(closest > 2 * BinMarkerConfig.standard.maxInkDistance)
+        #expect(closest > 2 * BinMarkerConfig.standard.maxInkHueDegrees)
     }
 }
 
@@ -210,6 +216,54 @@ struct BinMarkerColorScannerTests {
         canvas.drawInkStrip(.magenta, barUnits: [1, 1], unit: 6,
                             origin: (x: 40, y: 90), thickness: 24)
         #expect(scanner(.color).scan(canvas.image).isEmpty)
+    }
+
+    /// The bug this guards: identity used to be nearest-centroid by Euclidean distance, so a
+    /// bar at half strength sat 55 units from its own ink against a 48-unit tolerance and was
+    /// discarded as an unknown colour. Fading moves a sample along the ray toward neutral and
+    /// leaves its direction alone, which is why the classifier reads the angle.
+    @Test("A washed-out print is still its own colour", arguments: [0.3, 0.5, 0.7])
+    func fadedInkIsStillRecognised(amount: Double) {
+        var canvas = BinMarkerCanvas(width: 320, height: 240)
+        canvas.drawInkStrip(BinMarkerTestInk.faded(.magenta, by: amount),
+                            barUnits: BinMarkerPattern.single.barUnits,
+                            unit: 6, origin: (x: 40, y: 90), thickness: 24)
+        let found = scanner(.color).scan(canvas.image)
+        #expect(found.count == 1)
+        #expect(found.first?.inkID == "magenta")
+        #expect(found.first?.patternID == 1)
+    }
+
+    /// Blur is what turns a full read into a degraded one, and the degraded tier is the whole
+    /// argument for printing in colour. Measured rather than assumed: at this unit size the
+    /// rhythm is gone and the ink is all that is left.
+    @Test("A blurred strip loses its rhythm and keeps its bin")
+    func blurFallsBackToInk() throws {
+        var canvas = BinMarkerCanvas(width: 420, height: 200)
+        canvas.drawInkStrip(.cyan, barUnits: BinMarkerPattern.triple.barUnits,
+                            unit: 6, origin: (x: 30, y: 70), thickness: 24)
+        let soft = BinMarkerTestBlur.apply(canvas.image, radius: 2)
+        let found = try #require(scanner(.color).scan(soft).first)
+        #expect(found.inkID == "cyan")
+        #expect(found.isDegraded)
+        #expect(found.slot(style: .color)?.index == 2)
+    }
+
+    /// Print the unit large enough and the rhythm survives blur too. Measured, not assumed:
+    /// a radius-1 box applied in both axes spreads over five samples, so at unit 14 that is
+    /// about a third of a unit and the widths still separate. Around unit 10 and below the
+    /// same blur takes the rhythm and leaves only the ink — which is the trade the two styles
+    /// are really being asked to make.
+    @Test("A large enough unit keeps its rhythm through blur")
+    func largeUnitKeepsRhythmUnderBlur() {
+        var canvas = BinMarkerCanvas(width: 620, height: 200)
+        canvas.drawInkStrip(.magenta, barUnits: BinMarkerPattern.double.barUnits,
+                            unit: 14, origin: (x: 30, y: 70), thickness: 24)
+        let soft = BinMarkerTestBlur.apply(canvas.image, radius: 1)
+        let found = scanner(.color).scan(soft)
+        #expect(found.count == 1)
+        #expect(found.first?.patternID == 2)
+        #expect(found.first?.isDegraded == false)
     }
 
     @Test("Bounds land where the strip was drawn")
