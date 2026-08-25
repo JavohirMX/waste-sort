@@ -397,7 +397,8 @@ struct LiveYOLOCamera: UIViewRepresentable {
                     tracked: tracked,
                     confirmationFrame: confirmationFrame,
                     originalImage: result.originalImage,
-                    pipeline: inputs.settings.decisionPipeline
+                    pipeline: inputs.settings.decisionPipeline,
+                    confidentAuditEnabled: inputs.settings.pccConfidentAuditEnabled
                 )
             }
             if phaseMirror.current == .recording {
@@ -488,7 +489,8 @@ struct LiveYOLOCamera: UIViewRepresentable {
             tracked: [TrackedDetection],
             confirmationFrame: ConfirmationFrame,
             originalImage: UIImage?,
-            pipeline: DecisionPipeline
+            pipeline: DecisionPipeline,
+            confidentAuditEnabled: Bool
         ) {
             guard !deposits.isEmpty else { return }
             var cropsByTrack: [Int: CGImage] = [:]
@@ -505,29 +507,38 @@ struct LiveYOLOCamera: UIViewRepresentable {
                 }
             }
             let status = pccJudge.currentStatus()
-            for deposit in deposits where deposit.wasUncertain {
+            // Spec 003: iterate ALL deposits, uncertain first (stable). The
+            // primary path is served before audits, so daily quota
+            // starvation can only ever hit audits — never uncertain judging.
+            let orderedDeposits = deposits.enumerated().sorted { lhs, rhs in
+                let lhsRank = lhs.element.wasUncertain ? 0 : 1
+                let rhsRank = rhs.element.wasUncertain ? 0 : 1
+                return (lhsRank, lhs.offset) < (rhsRank, rhs.offset)
+            }
+            for (_, deposit) in orderedDeposits {
                 guard let track = tracked.first(where: { $0.id == deposit.trackID }) else { continue }
                 let context = ArbiterRequestContext(
                     trackId: deposit.trackID,
                     sessionId: nil,
                     yoloLabel: deposit.modelTopClassKey,
                     yoloConfidence: Double(deposit.conf),
-                    beliefUncertain: true,
+                    beliefUncertain: deposit.wasUncertain,
                     beliefMargin: Double(deposit.margin),
                     engineBinID: deposit.classKey,
                     pipeline: String(describing: pipeline),
                     triggeredAt: Date()
                 )
-                let inputs = PCCTriggerPolicy.Inputs(
+                let policyInputs = PCCTriggerPolicy.Inputs(
                     wasUncertainFallback: deposit.wasUncertain,
                     confirmationLocked: confirmationFrame.state(for: deposit.trackID) == .confirmed,
+                    confidentAuditEnabled: confidentAuditEnabled,
                     judgeEnabled: true,
                     availabilityIsReady: status.availability.isReady,
                     quotaLimited: !status.isUsable && status.availability.isReady,
                     breakerOpen: status.breakerOpenUntil.map { $0 > Date() } ?? false,
                     alreadyRequested: pccJudge.hasRequested(trackId: deposit.trackID)
                 )
-                switch PCCTriggerPolicy.decision(for: inputs) {
+                switch PCCTriggerPolicy.decision(for: policyInputs) {
                 case .trigger:
                     pccJudge.arbitrate(context, crop: cropsByTrack[deposit.trackID])
                 case .skip(let reason):

@@ -30,6 +30,10 @@ enum WasteSortConfig {
     // MARK: PCC uncertainty judge (specs/001-pcc-uncertainty-judge)
     /// Silent second opinions default on: every uncertain deposit becomes data.
     static let defaultPCCJudgeEnabled = true
+    /// Spec 003: PCC also double-checks CONFIDENT verdicts (log-only).
+    /// Uncertain deposits keep first priority, so quota starvation can only
+    /// ever hit audits — never the primary path.
+    static let defaultPCCConfidentAuditEnabled = true
     static let defaultPCCReasoningLevel = "moderate"
     /// Wall-clock budget for one cloud arbitration.
     /// 20 s: measured PCC vision latency on real photos (iOS 27 sim) was 1.3 s
@@ -107,6 +111,7 @@ struct RuntimeSettings: Equatable {
     var recheckAssistEnabled: Bool
     var verboseDetectionLogging: Bool
     var pccJudgeEnabled: Bool
+    var pccConfidentAuditEnabled: Bool
     var confirmHits: Int
     var maxMisses: Int
     var trackerIou: Double
@@ -282,6 +287,10 @@ final class AppSettings: ObservableObject {
     @Published var pccJudgeEnabled: Bool {
         didSet { persist(pccJudgeEnabled, key: Keys.pccJudgeEnabled) }
     }
+    /// Spec 003: audit confident verdicts too (log-only, uncertain-first).
+    @Published var pccConfidentAuditEnabled: Bool {
+        didSet { persist(pccConfidentAuditEnabled, key: Keys.pccConfidentAuditEnabled) }
+    }
     /// Gates the first-launch onboarding flow. Intentionally left out of `resetToDefaults()`
     /// so restoring tuning values does not relaunch the tutorial — Settings offers a
     /// dedicated "Show onboarding again" action instead.
@@ -330,6 +339,7 @@ final class AppSettings: ObservableObject {
             recheckAssistEnabled: recheckAssistEnabled,
             verboseDetectionLogging: verboseDetectionLogging,
             pccJudgeEnabled: pccJudgeEnabled,
+            pccConfidentAuditEnabled: pccConfidentAuditEnabled,
             confirmHits: confirmHits,
             maxMisses: maxMisses,
             trackerIou: trackerIou,
@@ -397,6 +407,7 @@ final class AppSettings: ObservableObject {
         static let recheckAssistEnabled = "settings.recheckAssistEnabled"
         static let verboseDetectionLogging = "settings.verboseDetectionLogging"
         static let pccJudgeEnabled = "settings.pccJudgeEnabled"
+        static let pccConfidentAuditEnabled = "settings.pccConfidentAuditEnabled"
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
         static let foundationConfirmation = "settings.foundationConfirmation"
         static let foundationVerdictLog = "settings.foundationVerdictLog"
@@ -484,6 +495,11 @@ final class AppSettings: ObservableObject {
         recheckAssistEnabled = Self.loadBool(defaults, Keys.recheckAssistEnabled, WasteSortConfig.defaultRecheckAssistEnabled)
         verboseDetectionLogging = Self.loadBool(defaults, Keys.verboseDetectionLogging, WasteSortConfig.defaultVerboseDetectionLogging)
         pccJudgeEnabled = Self.loadBool(defaults, Keys.pccJudgeEnabled, WasteSortConfig.defaultPCCJudgeEnabled)
+        pccConfidentAuditEnabled = Self.loadBool(
+            defaults,
+            Keys.pccConfidentAuditEnabled,
+            WasteSortConfig.defaultPCCConfidentAuditEnabled
+        )
         hasCompletedOnboarding = Self.loadBool(
             defaults,
             Keys.hasCompletedOnboarding,
@@ -546,6 +562,7 @@ final class AppSettings: ObservableObject {
         recheckAssistEnabled = WasteSortConfig.defaultRecheckAssistEnabled
         verboseDetectionLogging = WasteSortConfig.defaultVerboseDetectionLogging
         pccJudgeEnabled = WasteSortConfig.defaultPCCJudgeEnabled
+        pccConfidentAuditEnabled = WasteSortConfig.defaultPCCConfidentAuditEnabled
         foundationConfirmationEnabled = WasteSortConfig.defaultFoundationConfirmation
         foundationVerdictLogEnabled = WasteSortConfig.defaultFoundationVerdictLog
         showLastDepositOnLive = WasteSortConfig.defaultShowLastDepositOnLive

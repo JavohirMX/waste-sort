@@ -58,6 +58,19 @@ struct PCCPolicyAnalyzerTests {
         #expect(PCCPolicyAnalyzer.suggestions(from: records) == [])
     }
 
+    @Test("Confident (beliefUncertain=false) records are mined too (spec 003)")
+    func confidentRecordsMined() throws {
+        let confident = (0..<12).map { index -> PCCVerdictRecord in
+            var record = answered(label: "tissue", pccBin: "clean_inorganic")
+            record.beliefUncertain = false
+            record.engineBinID = BinGuide.residual.id
+            record.trackId = index
+            return record
+        }
+        let suggestions = PCCPolicyAnalyzer.suggestions(from: confident)
+        #expect(suggestions.contains { $0.id == "tissue" && $0.suggestedBinID == BinGuide.cleanInorganic.id })
+    }
+
     @Test("Into-residual suggestion at standard thresholds")
     func intoResidual() throws {
         let records = (0..<9).map { _ in answered(label: "clean_inorganic", pccBin: BinGuide.residual.id) }

@@ -95,6 +95,7 @@ changes by design), then export and look for a `"pipeline":"belief"` line.
 | `mappingFailed:true` lines | Model returned a label outside the taxonomy | Data, not a bug — kept for analysis |
 | App crashes when PCC receives an image | **iOS 27 beta ≤4 + old Xcode 27 beta SDK**: the runtime declared `.vision` but trapped (EXC_BAD_ACCESS) on any image attachment. Fixed by matching toolchain and OS (Xcode 27 beta 6 + matching device beta) | Always keep Xcode beta and device beta on the SAME version; re-test after updates, then re-enable image attempts |
 | "The prompt contains content that the model cannot process" | PCC rejected the prompt/image with a clean framework error (post-fix behavior) | Run "Cross-check same image on-device": on-device answers → content is fine, PCC pipeline rejects it (file Feedback with the recorded case name); both fail → try a different photo |
+| Many `skippedQuota` records after audits turned on | Daily cloud quota exhausted; uncertain items are always served first, so only audits starve | Expected at high volume (~200 people/day). Check the starvation rate in exports; if chronic, add a 1-in-N audit sampling knob (pre-approved ~10-line change in `evaluatePCCJudgments`) |
 
 ---
 

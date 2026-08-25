@@ -71,6 +71,35 @@ struct PCCArbiterServiceTests {
     }
 
     @Test("Answered transport produces an answered record with mapped bin and agreement")
+    func confidentAuditRecordDisagreement() async throws {
+        // Spec 003: a confident deposit audited in the background records
+        // agreement against the ADVISED bin (deposit.classKey), not the raw
+        // YOLO label's static routing.
+        let context = ArbiterRequestContext(
+            trackId: 777,
+            sessionId: "live",
+            yoloLabel: "tissue",
+            yoloConfidence: 0.9,
+            beliefUncertain: false,
+            beliefMargin: 0.4,
+            engineBinID: BinGuide.residual.id,
+            pipeline: "belief",
+            triggeredAt: Date()
+        )
+        let service = PCCArbiterService(
+            store: store,
+            transport: answeredTransport(label: "clean_inorganic"),
+            availabilityOverride: .ready
+        )
+        service.arbitrate(context, crop: makeCrop())
+        let settled = await waitUntil { self.allRecords().count == 1 }
+        #expect(settled, "arbiter never recorded an answer")
+        let record = try #require(allRecords().first)
+        #expect(record.beliefUncertain == false)
+        #expect(record.pccBinID == BinGuide.cleanInorganic.id)
+        #expect(record.agreesWithEngine == false)
+    }
+
     func answeredRecord() async throws {
         let service = PCCArbiterService(
             store: store,

@@ -170,9 +170,13 @@ production crop constants again.
 3. **Circuit breaker (3 failures → 120 s cooldown) applies to smoke runs
    too.** If you are iterating failures, the screen will honestly say the
    breaker is open — wait it out rather than reinstalling.
-4. **Spec 003 (confident-verdict audit)** is approved and parked at
-   `specs/003-confident-verdict-audit/PLAN.md` — the reason this branch
-   exists is so that work starts on a proven PCC path.
+4. **Spec 003 (confident-verdict audit) is IMPLEMENTED** on branch
+   `003-confident-verdict-audit`: PCC now also double-checks confident
+   verdicts (log-only, uncertain-first, toggle `pccConfidentAuditEnabled`,
+   default ON). Exports gained minute-precision ranges and ship a README.txt
+   mapping the bundle straight into `scripts/prepare_cls_dataset.py` for YOLO
+   fine-tuning. Watch `skippedQuota` rates at ~200 people/day; the 1-in-N
+   audit sampling knob is the pre-approved lever if quota starves audits.
 
 ## 7. Beta-update protocol (repeat this every beta)
 

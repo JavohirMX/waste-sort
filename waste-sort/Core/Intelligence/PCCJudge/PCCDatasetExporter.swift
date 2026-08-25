@@ -59,6 +59,11 @@ nonisolated enum PCCDatasetExporter {
                 to: bundleURL.appendingPathComponent("manifest.json"),
                 options: .atomic
             )
+            try Self.fineTuneReadme.write(
+                to: bundleURL.appendingPathComponent("README.txt"),
+                atomically: true,
+                encoding: .utf8
+            )
             log.info("PCC judge exported \(ids.count) records to \(bundleURL.lastPathComponent)")
             return ExportBundle(directoryURL: bundleURL, recordCount: ids.count, manifest: manifest)
         } catch {
@@ -66,6 +71,27 @@ nonisolated enum PCCDatasetExporter {
             throw ExportError.encodingFailed
         }
     }
+    private static let fineTuneReadme = """
+        PCC judge export — teaching dataset for YOLO fine-tuning
+        ========================================================
+
+        records.jsonl  one judgment per line (JSON). The fields that matter:
+                       pccBinID   the bin PCC assigned (the label)
+                       cropFile   which image in crops/ it refers to
+                       sessionId  groups crops of the same physical item
+                       agreesWithEngine  did PCC disagree with the kiosk
+        crops/         the exact images the model judged (production 448 px)
+        manifest.json  export metadata; exported records are never pruned
+
+        Build a train/val classification dataset (session-aware split so
+        near-duplicate crops of one item cannot leak across splits):
+
+            python3 scripts/prepare_cls_dataset.py <this folder> -o dataset
+
+        Only answered, successfully-mapped records with a crop are used;
+        everything else is dropped and counted. Train your classifier on
+        <out>/train and evaluate on <out>/val.
+        """
 }
 
 private extension ISO8601DateFormatter {

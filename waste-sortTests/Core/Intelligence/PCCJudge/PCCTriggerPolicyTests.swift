@@ -6,6 +6,7 @@ struct PCCTriggerPolicyTests {
     private func inputs(
         wasUncertainFallback: Bool = true,
         confirmationLocked: Bool = false,
+        confidentAuditEnabled: Bool = false,
         judgeEnabled: Bool = true,
         availabilityIsReady: Bool = true,
         quotaLimited: Bool = false,
@@ -15,6 +16,7 @@ struct PCCTriggerPolicyTests {
         PCCTriggerPolicy.Inputs(
             wasUncertainFallback: wasUncertainFallback,
             confirmationLocked: confirmationLocked,
+            confidentAuditEnabled: confidentAuditEnabled,
             judgeEnabled: judgeEnabled,
             availabilityIsReady: availabilityIsReady,
             quotaLimited: quotaLimited,
@@ -52,6 +54,70 @@ struct PCCTriggerPolicyTests {
         )
         #expect(
             PCCTriggerPolicy.decision(for: inputs(alreadyRequested: true)) == .skip(.alreadyRequested)
+        )
+    }
+
+    @Test("Audit path: confident verdict triggers when audit is on (spec 003)")
+    func auditTriggers() {
+        #expect(
+            PCCTriggerPolicy.decision(
+                for: inputs(wasUncertainFallback: false, confidentAuditEnabled: true)
+            ) == .trigger
+        )
+    }
+
+    @Test("Audit path deliberately ignores confirmationLocked")
+    func auditIgnoresConfirmationLock() {
+        #expect(
+            PCCTriggerPolicy.decision(
+                for: inputs(
+                    wasUncertainFallback: false,
+                    confirmationLocked: true,
+                    confidentAuditEnabled: true
+                )
+            ) == .trigger
+        )
+    }
+
+    @Test("Uncertain path still refuses confirmationLocked even with audits on")
+    func uncertainStillRespectsLock() {
+        #expect(
+            PCCTriggerPolicy.decision(
+                for: inputs(confirmationLocked: true, confidentAuditEnabled: true)
+            ) == .skip(.confirmationLocked)
+        )
+    }
+
+    @Test("Audit off restores legacy behavior for confident deposits")
+    func auditOffIsLegacy() {
+        #expect(
+            PCCTriggerPolicy.decision(for: inputs(wasUncertainFallback: false))
+                == .skip(.notUncertainFallback)
+        )
+    }
+
+    @Test("Audit path is still gated by quota, breaker, and dedupe")
+    func auditSharedGates() {
+        let base = (wasUncertainFallback: false, confidentAuditEnabled: true)
+        #expect(
+            PCCTriggerPolicy.decision(
+                for: inputs(wasUncertainFallback: base.wasUncertainFallback, confidentAuditEnabled: true, quotaLimited: true)
+            ) == .skip(.quotaLimited)
+        )
+        #expect(
+            PCCTriggerPolicy.decision(
+                for: inputs(wasUncertainFallback: base.wasUncertainFallback, confidentAuditEnabled: true, breakerOpen: true)
+            ) == .skip(.breakerOpen)
+        )
+        #expect(
+            PCCTriggerPolicy.decision(
+                for: inputs(wasUncertainFallback: base.wasUncertainFallback, confidentAuditEnabled: true, alreadyRequested: true)
+            ) == .skip(.alreadyRequested)
+        )
+        #expect(
+            PCCTriggerPolicy.decision(
+                for: inputs(wasUncertainFallback: base.wasUncertainFallback, confidentAuditEnabled: true, judgeEnabled: false)
+            ) == .skip(.disabled)
         )
     }
 

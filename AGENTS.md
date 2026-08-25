@@ -115,10 +115,12 @@ Don't re-implement these, extend them:
 - **TipKit**: `SettingsAccessTip` reveals the long-press gesture; retires via
   donated event. Configure happens once in `WasteSortApp.init`.
 - **PCC judge** (`Core/Intelligence/PCCJudge/`): silent Private Cloud Compute
-  second opinion for uncertain→residual deposits; log-only, never touches live
-  verdicts. iOS-27-gated behind `PCCJudgeABI` dlsym probes; quota/breaker
-  discipline built in. Setup + export workflow:
-  `specs/001-pcc-uncertainty-judge/quickstart.md`.
+  second opinion — uncertain→residual deposits first, then (spec 003,
+  `pccConfidentAuditEnabled`) confident verdicts audited too; log-only, never
+  touches live verdicts. iOS-27-gated behind `PCCJudgeABI` dlsym probes;
+  quota/breaker discipline built in; uncertain deposits are always served
+  before audits so quota starvation only ever hits audits. Setup + export
+  workflow: `specs/001-pcc-uncertainty-judge/quickstart.md`.
 - **Learned corrections** (specs/002, same folder): pure analyzer mines judge
   records for dominant PCC-vs-BinGuide disagreements (asymmetric thresholds:
   into-residual 12@75%, out-of-residual 30@85%); operator applies via Settings.

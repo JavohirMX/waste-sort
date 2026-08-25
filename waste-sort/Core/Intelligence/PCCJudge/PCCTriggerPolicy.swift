@@ -23,6 +23,10 @@ nonisolated enum PCCTriggerPolicy {
         var wasUncertainFallback: Bool
         /// The confirmation layer has locked a verdict onto this track.
         var confirmationLocked: Bool
+        /// Spec 003: audit confident verdicts too. Deliberately ignores
+        /// `confirmationLocked` on this path — verifying locked verdicts is
+        /// the point. Log-only either way; quota and breaker still gate.
+        var confidentAuditEnabled: Bool
         var judgeEnabled: Bool
         var availabilityIsReady: Bool
         var quotaLimited: Bool
@@ -32,6 +36,7 @@ nonisolated enum PCCTriggerPolicy {
         init(
             wasUncertainFallback: Bool,
             confirmationLocked: Bool = false,
+            confidentAuditEnabled: Bool = false,
             judgeEnabled: Bool = true,
             availabilityIsReady: Bool = true,
             quotaLimited: Bool = false,
@@ -40,6 +45,7 @@ nonisolated enum PCCTriggerPolicy {
         ) {
             self.wasUncertainFallback = wasUncertainFallback
             self.confirmationLocked = confirmationLocked
+            self.confidentAuditEnabled = confidentAuditEnabled
             self.judgeEnabled = judgeEnabled
             self.availabilityIsReady = availabilityIsReady
             self.quotaLimited = quotaLimited
@@ -55,8 +61,16 @@ nonisolated enum PCCTriggerPolicy {
 
     static func decision(for inputs: Inputs) -> Decision {
         guard inputs.judgeEnabled else { return .skip(.disabled) }
-        guard inputs.wasUncertainFallback else { return .skip(.notUncertainFallback) }
-        guard !inputs.confirmationLocked else { return .skip(.confirmationLocked) }
+        if inputs.wasUncertainFallback {
+            // Primary path: a confirmation-locked verdict is settled; the
+            // judge never relitigates what the confirmation layer decided.
+            guard !inputs.confirmationLocked else { return .skip(.confirmationLocked) }
+        } else {
+            // Audit path (spec 003): confident verdicts get a silent second
+            // opinion when enabled. `confirmationLocked` is intentionally not
+            // consulted here.
+            guard inputs.confidentAuditEnabled else { return .skip(.notUncertainFallback) }
+        }
         guard inputs.availabilityIsReady else {
             return .skip(.unavailable("service not ready"))
         }

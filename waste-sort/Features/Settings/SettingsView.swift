@@ -640,6 +640,7 @@ struct SettingsView: View {
     private var pccJudgeSection: some View {
         Section {
             Toggle("Silent PCC judge", isOn: $settings.pccJudgeEnabled)
+            Toggle("Audit confident verdicts", isOn: $settings.pccConfidentAuditEnabled)
 
             LabeledContent("Status") {
                 Text(pccJudgeAvailability.summary)
@@ -647,8 +648,8 @@ struct SettingsView: View {
                     .multilineTextAlignment(.trailing)
             }
 
-            DatePicker("From", selection: $pccExportStart, displayedComponents: .date)
-            DatePicker("To", selection: $pccExportEnd, displayedComponents: .date)
+            DatePicker("From", selection: $pccExportStart, displayedComponents: [.date, .hourAndMinute])
+            DatePicker("To", selection: $pccExportEnd, displayedComponents: [.date, .hourAndMinute])
 
             Button("Export judgments for range") {
                 exportPCCJudgments()
@@ -719,8 +720,10 @@ struct SettingsView: View {
         } footer: {
             Text(
                 "When an item is guided to residual because the engine is unsure, Apple's Private Cloud Compute model "
-                    + "silently judges it too. Nothing on screen changes; answers and crops are logged so future training "
-                    + "can compare them against what YOLO believed. Uses your device's daily cloud-request quota."
+                    + "silently judges it too. With audits on, it also double-checks confident verdicts — nothing on "
+                    + "screen changes either way; answers and crops are logged so training can compare them against "
+                    + "what YOLO believed. Unsure items are always judged first; audits use whatever quota remains. "
+                    + "Exports bundle the crops + labels ready for YOLO fine-tuning."
             )
         }
     }
@@ -771,12 +774,11 @@ struct SettingsView: View {
     }
 
     private func exportPCCJudgments() {
+        // Minute precision, no day-snapping: operators slice sessions by
+        // hour when assembling teaching datasets.
         let start = min(pccExportStart, pccExportEnd)
         let end = max(pccExportStart, pccExportEnd)
-        let interval = DateInterval(
-            start: Calendar.current.startOfDay(for: start),
-            end: Calendar.current.startOfDay(for: end).addingTimeInterval(86_399)
-        )
+        let interval = DateInterval(start: start, end: end)
         do {
             let bundle = try PCCDatasetExporter.export(
                 records: interval,

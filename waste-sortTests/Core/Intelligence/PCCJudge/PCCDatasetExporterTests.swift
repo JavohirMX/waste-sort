@@ -42,6 +42,29 @@ struct PCCDatasetExporterTests {
         }
     }
 
+    @Test("Bundle carries a fine-tuning README pointing at the dataset script")
+    func bundleReadme() throws {
+        try seed(trackId: 1, timestamp: Date())
+        let bundle = try PCCDatasetExporter.export(records: allTime, from: store)
+        let readme = try String(
+            contentsOf: bundle.directoryURL.appendingPathComponent("README.txt"),
+            encoding: .utf8
+        )
+        #expect(readme.contains("prepare_cls_dataset.py"))
+        #expect(readme.contains("pccBinID"))
+    }
+
+    @Test("Minute-precision ranges select sub-day slices (spec 003 export)")
+    func minutePrecisionRange() throws {
+        let now = Date()
+        try seed(trackId: 1, timestamp: now.addingTimeInterval(-600))
+        try seed(trackId: 2, timestamp: now.addingTimeInterval(-3_600 * 5))
+        // 30-minute window catches only the recent record — no day snapping.
+        let range = DateInterval(start: now.addingTimeInterval(-1_800), end: now)
+        let bundle = try PCCDatasetExporter.export(records: range, from: store)
+        #expect(bundle.recordCount == 1)
+    }
+
     @Test("Bundle contains valid JSONL for every record, referenced crops, and a manifest")
     func bundleRoundTrip() throws {
         let now = Date()
