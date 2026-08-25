@@ -29,6 +29,24 @@ struct BinMarkerPatternTests {
         #expect(BinMarkerPattern.all.map(\.id) == [1, 2, 3])
     }
 
+    /// Pinned against `BinMarkers/markers.typ`, which draws these same three rhythms onto the
+    /// printable sheets. The two are not compiled together, so this is what stops them
+    /// drifting apart — and a sheet that disagrees with the scanner is the worst bug this
+    /// feature could have, because it presents as a detection fault for ever.
+    ///
+    /// If this fails, the rhythms changed: update the sheet and reprint, or put them back.
+    @Test("The printed rhythms are the rhythms the scanner accepts")
+    func patternsMatchThePrintedSheet() {
+        #expect(BinMarkerPattern.all.map(\.barUnits) == [
+            [1, 1, 2, 1, 1],
+            [2, 1, 1, 1, 2],
+            [2, 1, 2, 1, 2]
+        ])
+        #expect(BinMarkerInk.all.map(\.id) == ["yellow", "magenta", "cyan"])
+        // The sheet prints one unit of white between bars and one at each end.
+        #expect(BinMarkerPattern.gapUnits == 1)
+    }
+
     @Test("A rhythm we never printed does not resolve")
     func unknownRhythmIsRejected() {
         #expect(BinMarkerPattern.matching([1, 2, 2, 1, 1]) == nil)
