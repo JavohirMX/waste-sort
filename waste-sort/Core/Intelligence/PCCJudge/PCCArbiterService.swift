@@ -321,6 +321,12 @@ nonisolated final class PCCArbiterService: VerdictArbitrating, @unchecked Sendab
     }
 }
 
+/// Sentinel label for text-only PCC probes. Kept outside the iOS-27 gate so
+/// diagnostic surfaces (which run on any OS) can reference it.
+nonisolated enum PCCTextProbe {
+    static let label = "text_probe"
+}
+
 #if canImport(FoundationModels)
 import UIKit
 
@@ -350,34 +356,70 @@ nonisolated enum PCCTransportFactory {
         bin=<organic|residual|clean_inorganic|dirty_recyclable>; material=<primary material, short>; rationale=<one short sentence>
         """
 
+    /// Sentinel `yoloLabel` that makes the transport send a text-only probe
+    /// (no attachment). The one non-crashing way to prove PCC connectivity,
+    /// quota, and entitlement channel while the vision path is under diagnosis.
+    /// Declared outside the iOS-27 gate so diagnostic surfaces can reference it.
+    static let textProbeLabel = PCCTextProbe.label
+
     static func defaultTransport() -> ArbitrationTransport {
         { query, crop in
-            guard let crop else { return .failure(.failed("no crop available")) }
-            let imageURL: URL
-            do {
-                imageURL = try normalizedJPEGURL(crop)
-            } catch {
-                return .failure(.failed("image normalization failed: \(error.localizedDescription)"))
+            let isTextProbe = query.yoloLabel == textProbeLabel
+            var imageURL: URL?
+            if !isTextProbe {
+                guard let crop else { return .failure(.failed("no crop available")) }
+                do {
+                    imageURL = try normalizedJPEGURL(crop)
+                } catch {
+                    return .failure(.failed("image normalization failed: \(error.localizedDescription)"))
+                }
             }
-            defer { try? FileManager.default.removeItem(at: imageURL) }
+            if let imageURL {
+                defer { try? FileManager.default.removeItem(at: imageURL) }
+            }
             do {
                 let model = PrivateCloudComputeLanguageModel()
-                let session = LanguageModelSession(
-                    model: model,
-                    instructions: instructions
-                )
+                // Vision preflight: the SDK exposes capability flags precisely
+                // so callers do not send unsupported content. A beta runtime
+                // that lacks vision may trap on attachments instead of
+                // throwing `unsupportedCapability` — never hand it an image
+                // it did not declare support for.
+                if !isTextProbe, !model.capabilities.contains(.vision) {
+                    return .failure(.unavailable(
+                        "this PCC runtime does not declare vision support (capabilities: \(describe(model.capabilities)))"
+                    ))
+                }
+                // Session + respond form mirrored from the validated
+                // text-based PCC app on this device: `LanguageModelSession(
+                // model:)` with no instructions parameter. The prompt builder
+                // is required to carry an Attachment; the text probe uses the
+                // same builder WITHOUT one, so on-device results bisect
+                // cleanly: probe OK + image trap = the Attachment path itself.
+                let session = LanguageModelSession(model: model)
                 let started = CFAbsoluteTimeGetCurrent()
-                let response = try await session.respond(
-                    options: GenerationOptions(
-                        samplingMode: .greedy,
-                        maximumResponseTokens: 256
-                    )
-                ) {
-                    "Judge the item in the attached image. On-device label hint: \(query.yoloLabel) (may be unavailable)."
-                    Attachment(imageURL: imageURL).label("cropped item")
+                let response = try await session.respond {
+                    if isTextProbe {
+                        "Connectivity probe. Reply with exactly: OK"
+                    } else {
+                        """
+                        \(instructions)
+                        Judge the item in the attached image. On-device label hint: \(query.yoloLabel) (may be unavailable).
+                        """
+                        if let imageURL {
+                            Attachment(imageURL: imageURL).label("cropped item")
+                        }
+                    }
                 }
                 let latencyMs = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
                 let text = response.content
+                if isTextProbe {
+                    return .success(ArbiterAnswer(
+                        rawBinLabel: text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(64).description,
+                        material: "connectivity probe",
+                        reasoningSummary: "text-only PCC probe succeeded",
+                        latencyMs: latencyMs
+                    ))
+                }
                 guard let parsed = parseVerdict(text) else {
                     return .failure(.failed("unparseable PCC response: \(String(text.prefix(160)))"))
                 }
@@ -401,6 +443,24 @@ nonisolated enum PCCTransportFactory {
                 return .failure(.failed(error.localizedDescription))
             }
         }
+    }
+
+    /// Human-readable capability set for diagnostics surfaces.
+    static func capabilitiesSummary() -> String? {
+        guard #available(iOS 27.0, *) else { return nil }
+        let capabilities = PrivateCloudComputeLanguageModel().capabilities
+        return describe(capabilities)
+    }
+
+    private static func describe(_ capabilities: LanguageModelCapabilities) -> String {
+        let all: [(LanguageModelCapabilities.Capability, String)] = [
+            (.vision, "vision"),
+            (.guidedGeneration, "guidedGeneration"),
+            (.reasoning, "reasoning"),
+            (.toolCalling, "toolCalling"),
+        ]
+        let supported = all.filter { capabilities.contains($0.0) }.map(\.1)
+        return supported.isEmpty ? "none" : supported.joined(separator: ", ")
     }
 
     /// Redraws any bitmap into a plain 8-bit sRGB JPEG on disk. Gallery-derived

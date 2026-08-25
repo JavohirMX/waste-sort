@@ -13,9 +13,12 @@ struct PhotoSortView: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var sourceImage: UIImage?
     @State private var isJudging = false
+    @State private var isProbing = false
     @State private var judgment: PCCArbiterService.SmokeJudgment?
+    @State private var probeJudgment: PCCArbiterService.SmokeJudgment?
     @State private var errorMessage: String?
     @State private var availability = PCCJudgeAvailability.current
+    @State private var capabilitiesSummary: String?
     /// Distinct, growing track ids so repeated smoke tests never collide with
     /// the arbiter's one-request-per-track dedupe (live tracks use small ids).
     @State private var nextTrackID = 900_000
@@ -26,6 +29,13 @@ struct PhotoSortView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     statusRow
+
+                    if let capabilitiesSummary {
+                        Text("PCC capabilities: \(capabilitiesSummary)")
+                            .font(.system(.caption, design: .default).monospaced())
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
 
                     if let errorMessage {
                         Text(errorMessage)
@@ -38,15 +48,18 @@ struct PhotoSortView: View {
                     }
 
                     if isJudging {
-                        ProgressView("Asking Private Cloud Compute…\n(can take 5–15 s)")
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 24)
+                        progressCard(title: "Asking Private Cloud Compute…", detail: "Vision calls take 5–15 s")
                     } else if let judgment {
                         judgmentCard(judgment)
-                    } else if sourceImage == nil {
+                    } else if sourceImage != nil {
+                        Text("Pick the photo again to judge it.")
+                            .font(.system(.footnote, design: .default))
+                            .foregroundStyle(.secondary)
+                    } else {
                         emptyState
                     }
+
+                    textProbeSection
                 }
                 .padding(20)
             }
@@ -74,6 +87,9 @@ struct PhotoSortView: View {
                     judge = PCCArbiterService(store: PCCRecordStore())
                 }
                 availability = PCCJudgeAvailability.current
+                if #available(iOS 27.0, *) {
+                    capabilitiesSummary = PCCTransportFactory.capabilitiesSummary()
+                }
             }
             .onChange(of: pickerItem) { _, newItem in
                 Task { await importPhoto(newItem) }
@@ -100,9 +116,72 @@ struct PhotoSortView: View {
                 Image(uiImage: sourceImage)
                     .resizable()
                     .scaledToFit()
+                    .frame(maxHeight: 340)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .frame(maxWidth: .infinity)
             }
         }
+    }
+
+    private func progressCard(title: String, detail: String) -> some View {
+        VStack(spacing: 10) {
+            ProgressView()
+            Text(title)
+                .font(.system(.subheadline, design: .default).weight(.medium))
+            Text(detail)
+                .font(.system(.caption, design: .default))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+    }
+
+    /// Text-only PCC probe: same session/respond shape as the vision call but
+    /// with NO attachment. If this succeeds while the image path traps, the
+    /// attachment pipeline itself is the broken layer on this OS build.
+    private var textProbeSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                Task { await runTextProbe() }
+            } label: {
+                Label(
+                    isProbing ? "Probing…" : "Run text-only probe",
+                    systemImage: "antenna.radiowaves.left.and.right"
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.bordered)
+            .disabled(isProbing || isJudging || judge == nil)
+
+            if isProbing {
+                progressCard(title: "Probing PCC without an image…", detail: "Usually 1–3 s")
+            } else if let probeJudgment {
+                let record = probeJudgment.record
+                Group {
+                    if probeJudgment.answered {
+                        let reply = record.pccRawBinLabel ?? "?"
+                        let latency = record.latencyMs ?? 0
+                        Label(
+                            "PCC reachable — replied “\(reply)” in \(latency) ms. The trap is specific to the image-attachment path.",
+                            systemImage: "checkmark.circle.fill"
+                        )
+                        .foregroundStyle(.green)
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("Even the text-only probe failed", systemImage: "xmark.octagon.fill")
+                                .foregroundStyle(.red)
+                            Text(outcomeDescription(record.outcome))
+                                .font(.system(.footnote, design: .default))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .font(.system(.footnote, design: .default))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.top, 4)
     }
 
     private var emptyState: some View {
@@ -272,6 +351,36 @@ struct PhotoSortView: View {
             triggeredAt: Date()
         )
         judgment = await judge.smokeJudge(context, crop: crop)
+        availability = PCCJudgeAvailability.current
+    }
+
+    private func runTextProbe() async {
+        guard let judge else { return }
+        probeJudgment = nil
+        isProbing = true
+        defer { isProbing = false }
+
+        // Tiny placeholder bitmap: the pipeline requires a crop to record, but
+        // the text-probe transport never attaches it.
+        let probeCrop = CGContext(
+            data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 32,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ).flatMap { $0.makeImage() }
+
+        nextTrackID += 1
+        let context = ArbiterRequestContext(
+            trackId: nextTrackID,
+            sessionId: "photo-smoke",
+            yoloLabel: PCCTextProbe.label,
+            yoloConfidence: 0,
+            beliefUncertain: false,
+            beliefMargin: 0,
+            engineBinID: BinGuide.unknown.id,
+            pipeline: "photo-smoke",
+            triggeredAt: Date()
+        )
+        probeJudgment = await judge.smokeJudge(context, crop: probeCrop)
         availability = PCCJudgeAvailability.current
     }
 }
