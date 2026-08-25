@@ -49,9 +49,17 @@ nonisolated enum BinMarkerOrientation: String, Equatable, Sendable {
 nonisolated struct BinMarkerConfig: Equatable, Sendable {
     var style: BinMarkerStyle = .color
 
-    /// Examine every Nth row and every Nth column. Two is already fine: a strip is many
-    /// samples tall, so it is crossed by plenty of lines either way.
-    var scanStride: Int = 2
+    /// Examine every Nth row and every Nth column.
+    ///
+    /// One, because the short side of the strip is the scarce dimension in practice. A camera
+    /// looking down at a row of bins sees their walls as narrow rims, and a marker has to live
+    /// on that rim. Three scan lines must cross the strip before it is believed, so the stride
+    /// sets the minimum thickness directly: at two it takes six samples, at one it takes three.
+    ///
+    /// Measured on a 960x540 working grid, one strip present: 1.5 ms per frame for the colour
+    /// style against 0.7 ms at stride two, and 6 ms against 3 ms for mono, whose sliding local
+    /// threshold is the expensive part. Halving what has to be printed is worth that.
+    var scanStride: Int = 1
 
     /// A one-unit bar narrower than this is below the resolution where widths mean anything.
     var minUnitSamples: Double = 2.0

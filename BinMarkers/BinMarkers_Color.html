@@ -10,11 +10,17 @@
        Raise it if the camera sits far from the bins: the detector needs roughly three
        image samples per unit, and at 1080p over a 2 m span one sample is about 2 mm. */
     --unit: 15mm;
-    --bar-height: 30mm;
-    /* White margin printed around the strip. The scanner does not measure it — it only needs
-       the outermost bars to end against something that is not ink, and a bin's own surface
-       cannot be relied on for that. */
-    --quiet: 10mm;
+    /* The short side, and the scarce one: a camera looking down at the bins sees their walls
+       as narrow rims. Three scan lines have to cross the strip, so this only has to survive
+       as three samples in the image — a few millimetres at any sensible distance. Nothing
+       ties it to the unit, so a strip may be as long and thin as its rim is. */
+    --bar-height: 14mm;
+    /* White margin at the two ENDS. Only there: each scan line is read on its own, so what
+       lies above and below a bar is never consulted, while what lies beyond the outermost
+       bars is what tells the scan where the strip stops. The 3mm above and below is for the
+       cutting, not the camera. */
+    --quiet: 15mm;
+    --bleed: 3mm;
     --yellow: #FFF200;
     --magenta: #EC008C;
     --cyan: #00AEEF;
@@ -44,7 +50,7 @@
   .strip {
     display: flex;
     align-items: stretch;
-    padding: var(--quiet);
+    padding: var(--bleed) var(--quiet);
     border: 0.3mm dashed #bbb;
     background: #fff;
     width: max-content;
@@ -77,7 +83,9 @@
   Print at <strong>100% scale</strong> — no "fit to page", or the bars stop being whole units.
   Use <strong>matte</strong> stock: a gloss finish under a ceiling lamp throws a specular
   highlight that washes the colour out of exactly the bars being measured.
-  Cut on the dashed line; the white border around each strip is part of the marker.
+  Cut on the dashed line. The white at the two <strong>ends</strong> is part of the marker —
+  it is what tells the scan where the strip stops; the few millimetres above and below are
+  only for cutting.
 </p>
 
 <div class="marker yellow">
@@ -127,8 +135,12 @@
   <li>Bind each strip to a bin in Settings &rarr; Marker Strips, then open a bin with the debug
       overlay showing and tap <em>Calibrate colours</em> once. That records what this room's
       light actually does to the print.</li>
-  <li>Watch <em>unit px</em> in the debug overlay while placing them. Below about three, reprint
-      at a larger <code>--unit</code> in this file.</li>
+  <li>Watch the two numbers in the debug overlay while placing them. <em>unit px</em> is samples
+      per printed unit — below six the bar widths stop separating and the strip is named by its
+      ink alone; raise <code>--unit</code> in this file. The <em>×n</em> after it is how many scan
+      lines cross the strip — three is the floor; raise <code>--bar-height</code>.</li>
+  <li>The strip is deliberately long and thin, because that is the shape of the rim it goes on.
+      Its length and its height are unrelated, so both can be set to whatever the bin allows.</li>
 </ul>
 
 </body>

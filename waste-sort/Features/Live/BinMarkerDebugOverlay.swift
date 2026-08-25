@@ -100,11 +100,16 @@ struct BinMarkerDebugOverlay: View {
         )
     }
 
+    /// Two numbers, and they answer the two ways a marker gets printed wrong.
+    ///
+    /// `unit` is samples per printed unit — too few and the bar widths stop separating, which
+    /// costs the rhythm first and the strip second. The line count is how many scan lines
+    /// crossed it, which is the *thickness* the camera sees: three is the floor, and a marker
+    /// hovering there wants a taller print or a nearer camera.
     private func label(for detection: BinMarkerDetection) -> String {
         guard let slot = detection.slot(style: style) else { return "?" }
-        let identity = "M\(slot.index + 1)"
-        let unit = String(format: "%.1fpx", detection.unitSamples)
-        return detection.isDegraded ? "\(identity) ink \(unit)" : "\(identity) \(unit)"
+        let identity = detection.isDegraded ? "M\(slot.index + 1) ink" : "M\(slot.index + 1)"
+        return String(format: "%@ %.1fpx ×%d", identity, detection.unitSamples, detection.lineCount)
     }
 
     private func badge(for status: BinMarkerOpenness) -> String {

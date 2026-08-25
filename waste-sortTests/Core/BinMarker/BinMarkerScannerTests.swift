@@ -163,12 +163,38 @@ struct BinMarkerColorScannerTests {
         }
     }
 
-    @Test("A strip too thin to cross several scan lines is noise")
-    func thinStripIsDiscarded() {
-        var canvas = BinMarkerCanvas(width: 320, height: 240)
+    /// The short side is the scarce one: a top-down camera sees a bin wall as a narrow rim,
+    /// and that is where the marker has to go. Three samples is the floor, and it is the floor
+    /// for a structural reason — three scan lines have to cross the strip.
+    @Test("A strip three samples thin is still read", arguments: [3, 4, 6])
+    func thinStripsAreRead(thickness: Int) {
+        var canvas = BinMarkerCanvas(width: 420, height: 200)
         canvas.drawInkStrip(.magenta, barUnits: BinMarkerPattern.single.barUnits,
-                            unit: 6, origin: (x: 40, y: 90), thickness: 2)
+                            unit: 8, origin: (x: 40, y: 90), thickness: thickness)
+        let found = scanner(.color).scan(canvas.image)
+        #expect(found.count == 1)
+        #expect(found.first?.patternID == 1)
+        #expect((found.first?.lineCount ?? 0) >= BinMarkerConfig.standard.minLines)
+    }
+
+    @Test("Two samples is below the floor and is discarded")
+    func tooThinIsDiscarded() {
+        var canvas = BinMarkerCanvas(width: 420, height: 200)
+        canvas.drawInkStrip(.magenta, barUnits: BinMarkerPattern.single.barUnits,
+                            unit: 8, origin: (x: 40, y: 90), thickness: 2)
         #expect(scanner(.color).scan(canvas.image).isEmpty)
+    }
+
+    /// Length and thickness are independent — nothing ties a bar's height to its width — so a
+    /// marker for a rim can be as long and thin as the rim is.
+    @Test("A strip twenty times longer than it is thick reads fine")
+    func extremeAspectRatioIsFine() {
+        var canvas = BinMarkerCanvas(width: 620, height: 200)
+        canvas.drawInkStrip(.cyan, barUnits: BinMarkerPattern.triple.barUnits,
+                            unit: 10, origin: (x: 40, y: 90), thickness: 5)
+        let found = scanner(.color).scan(canvas.image)
+        #expect(found.count == 1)
+        #expect(found.first?.patternID == 3)
     }
 
     @Test("An empty frame finds nothing")
@@ -287,7 +313,7 @@ struct BinMarkerColorScannerTests {
         let stats = scan.lastFrameStats
         #expect(stats.sourceWidth == 320)
         #expect(stats.sourceHeight == 240)
-        #expect(stats.linesScanned == 160 + 120)
+        #expect(stats.linesScanned == 240 + 320)
         #expect(stats.acceptedCount == 1)
         #expect((stats.largestUnitSamples ?? 0) > 4)
         #expect(!stats.missingChroma)
