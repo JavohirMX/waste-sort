@@ -168,6 +168,60 @@ nonisolated struct BinMarkerDetection: Equatable, Sendable {
     var isDegraded: Bool { patternID == nil }
 }
 
+/// Knobs for the dash-row scanner.
+///
+/// Every threshold here was set against fifteen frames of the real site rather than against a
+/// synthetic scene, which is the whole reason this design exists.
+nonisolated struct BinMarkerDashConfig: Equatable, Sendable {
+    /// Alternating runs a stretch needs before it counts. Nine is five dashes and four gaps.
+    ///
+    /// This single number is what separates a marker from a room. Measured on the site with no
+    /// marker installed: at five runs the frames produced 48–394 false rows, at seven, 2–28,
+    /// and at nine, none at all, at every width tolerance tried. It is also the reason the
+    /// printed row is long — a partly emerged drawer has to clear five dashes before its bin
+    /// reads open, and that is a deliberate, legible rule rather than a threshold on a blur.
+    var minRuns: Int = 9
+
+    /// Widest run over narrowest, across a stretch. Nothing compares one run to another to
+    /// extract a value — they only have to agree, which is what makes the row unmistakable
+    /// without making it fragile.
+    ///
+    /// Also what keeps a wide-angle lens survivable: a row bending away from the camera has
+    /// its far end compressed, and the stretch simply ends there instead of being rejected.
+    var maxPitchSpread: Double = 1.8
+
+    /// A dash narrower than this is below the resolution where anything can be said about it.
+    /// Two samples is enough — measured, and far below what the bar rhythm needed, because
+    /// nothing here divides one width by another.
+    var minPitchSamples: Double = 2
+    var maxPitchSamples: Double = 60
+
+    /// Runs shorter than this are folded into their neighbour first: the sub-pixel edge
+    /// between a dash and the paper otherwise fences every dash off from its neighbours.
+    var minRunSamples: Int = 2
+
+    /// Two, which halves the cost — 8.7 ms against 17.4 on a 960x540 grid of real site frames
+    /// — at the price of needing six samples of printed height instead of three. The rim these
+    /// go on already carries 5 cm AprilTags, so six samples is about 1.5 cm and free.
+    var scanStride: Int = 2
+    var minLines: Int = 3
+    /// Local light-to-dark spread a scan line needs before its samples mean anything.
+    var minContrast: Int = 40
+    /// Half-width of the sliding window the threshold is taken from. Costs nothing to widen —
+    /// the sliding extreme is linear in the line length whatever this is — so it is set by
+    /// what it should span (several dashes) rather than by what it can afford.
+    var windowRadius: Int = 24
+
+    /// How far a detected row may sit from a zone's centre and still be taken as that bin's.
+    ///
+    /// This is the whole identity mechanism, and it replaces every code that came before it.
+    /// The camera does not move and neither do the bins, so *where* a row appears already says
+    /// which bin opened; nothing has to be encoded in the marker at all.
+    var maxBindingDistance: CGFloat = 0.35
+
+    static let standard = BinMarkerDashConfig()
+}
+
 /// Openness of one zone, as the marker layer sees it.
 nonisolated struct BinMarkerOpenness: Equatable, Sendable {
     var state: BinOpennessState = .unknown
@@ -186,6 +240,8 @@ nonisolated struct BinMarkerOpenness: Equatable, Sendable {
 nonisolated struct BinMarkerStatusFrame: Equatable, Sendable {
     var statuses: [UUID: BinMarkerOpenness] = [:]
     var detections: [BinMarkerDetection] = []
+    /// Populated instead of `detections` under the dash style.
+    var rows: [BinMarkerDashRow] = []
     var timestamp: CFAbsoluteTime = 0
     /// Diagnostics from the most recent scan, for the debug overlay. Nil when marker
     /// detection is off.
@@ -211,6 +267,9 @@ nonisolated struct BinMarkerStateConfig: Equatable, Sendable {
     /// reads as closed too. Longer is more forgiving of that and slower to notice a real lid
     /// coming down.
     var staleTimeout: CFAbsoluteTime = 2.0
+
+    /// How far a dash row may sit from a zone's centre and still be taken as that bin's.
+    var maxBindingDistance: CGFloat = 0.35
 
     static let staleTimeoutRange = 0.2...5.0
     static let staleTimeoutStep = 0.1

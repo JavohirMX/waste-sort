@@ -5,6 +5,9 @@ import Foundation
 /// The two styles exist to be compared on site, not in theory: which one survives the room's
 /// lighting and the camera's white balance is not something this file can decide.
 nonisolated enum BinMarkerStyle: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// A row of equal black dashes along the rim, carrying nothing at all. Which bin it is
+    /// comes from where the row appears, because the camera and the bins do not move.
+    case dashes
     /// Saturated bars on white. The ink names the bin, so identity survives a distance at
     /// which the bar widths have already smeared into each other.
     case color
@@ -16,6 +19,7 @@ nonisolated enum BinMarkerStyle: String, Codable, CaseIterable, Identifiable, Se
 
     var displayName: String {
         switch self {
+        case .dashes: return "Dashes"
         case .color: return "Color"
         case .mono: return "Black & white"
         }
@@ -23,18 +27,26 @@ nonisolated enum BinMarkerStyle: String, Codable, CaseIterable, Identifiable, Se
 
     var detail: String {
         switch self {
+        case .dashes:
+            return "A row of equal dashes along the rim, with nothing encoded in it — the bin "
+                + "is named by where the row appears. On fifteen frames of the site with "
+                + "nothing installed it produced no false readings at all, and an arm across "
+                + "the middle or a half-open drawer only lowers the count."
         case .color:
-            return "Yellow, magenta, and cyan strips. Read from chroma alone, so shadows and "
-                + "uneven lighting do not move the signal. Needs a color printer."
+            return "Magenta, yellow, and cyan strips read from chroma. Measured against this "
+                + "site, two of those three land on the colours the room is already full of — "
+                + "blue liners and denim near cyan, the floor near yellow."
         case .mono:
-            return "Black strips, told apart by bar rhythm. Prints anywhere and works on a "
-                + "monochrome camera, but a blurred strip becomes unidentifiable rather than "
-                + "merely uncertain."
+            return "Black strips told apart by bar rhythm. Nothing false in this room, but bar "
+                + "widths are what distance takes first, so it wants a large print."
         }
     }
 
     /// Whether a strip may be accepted on ink alone, without a readable rhythm.
     var allowsInkOnlyIdentity: Bool { self == .color }
+
+    /// Whether this style is read by the dash scanner rather than the bar scanner.
+    var usesDashRows: Bool { self == .dashes }
 }
 
 /// The bar rhythm printed on one strip: five bars, each one or two units wide, separated by
@@ -182,6 +194,10 @@ extension BinMarkerDetection {
     /// Which printed strip this is, or nil when the two halves of its identity disagree.
     func slot(style: BinMarkerStyle) -> BinMarkerSlot? {
         switch style {
+        case .dashes:
+            // The dash style carries no identity in the marker at all — a row is bound to a
+            // bin by where it appears. Nothing here can answer for it.
+            return nil
         case .color:
             guard let inkID, let slot = BinMarkerSlot.withInkID(inkID) else { return nil }
             // A readable rhythm has to back the ink up. An unreadable one is allowed: that is

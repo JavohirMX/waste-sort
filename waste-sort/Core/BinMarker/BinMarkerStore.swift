@@ -71,7 +71,7 @@ final class BinMarkerStore: ObservableObject {
         self.source = defaults.string(forKey: Keys.source)
             .flatMap(BinOpennessSource.init(rawValue:)) ?? .aprilTag
         self.style = defaults.string(forKey: Keys.style)
-            .flatMap(BinMarkerStyle.init(rawValue:)) ?? .color
+            .flatMap(BinMarkerStyle.init(rawValue:)) ?? .dashes
         self.staleTimeout = defaults.object(forKey: Keys.staleTimeout) != nil
             ? defaults.double(forKey: Keys.staleTimeout)
             : BinMarkerStateConfig.standard.staleTimeout

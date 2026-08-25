@@ -36,6 +36,25 @@ struct BinMarkerDebugOverlay: View {
                         .position(x: rect.midX, y: max(10, rect.minY - 10))
                 }
 
+                ForEach(Array(frame.rows.enumerated()), id: \.offset) { _, row in
+                    let rect = toViewSpace(row.bounds)
+                    RoundedRectangle(cornerRadius: 3)
+                        .stroke(Color.green, lineWidth: 3)
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+
+                    // Dashes first, because that is the number the whole style turns on: five
+                    // is the floor, and more of them means more of the drawer is out.
+                    Text(String(format: "%d dashes  %.1fpx ×%d",
+                                row.dashes, row.pitchSamples, row.lineCount))
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.85), in: RoundedRectangle(cornerRadius: 3))
+                        .position(x: rect.midX, y: max(10, rect.minY - 10))
+                }
+
                 ForEach(zones) { zone in
                     if let status = frame.statuses[zone.id] {
                         let center = toViewSpace(centroid(of: zone))

@@ -14,8 +14,14 @@ nonisolated final class BinMarkerFramePipeline: @unchecked Sendable {
     let scanner: BinMarkerScanner
     let temporalFilter: BinMarkerTemporalFilter
 
+    let dashScanner = BinMarkerDashScanner()
+
     /// Called on the pipeline's queue with the strips that survived confirmation.
     var onDetections: (([BinMarkerDetection], CFAbsoluteTime) -> Void)?
+    /// Called instead, under the dash style. No confirmation gate: nine alternating runs of
+    /// one pitch produced nothing false across the site's own frames, so a second sighting
+    /// would only add latency to a signal that is already specific.
+    var onDashRows: (([BinMarkerDashRow], CFAbsoluteTime) -> Void)?
 
     private let queue = DispatchQueue(label: "com.ecodyssey.binmarker.detect", qos: .userInitiated)
     private let sampler = BinMarkerFrameSampler()
@@ -84,6 +90,14 @@ nonisolated final class BinMarkerFramePipeline: @unchecked Sendable {
         let style = scanner.config.style
         queue.async { [weak self] in
             guard let self else { return }
+            if style.usesDashRows {
+                let rows = self.dashScanner.scan(image, timestamp: timestamp)
+                self.lock.lock()
+                self.busy = false
+                self.lock.unlock()
+                self.onDashRows?(rows, timestamp)
+                return
+            }
             let found = self.scanner.scan(image, inks: inks, timestamp: timestamp)
             let confirmed = self.temporalFilter.filter(found, style: style, timestamp: timestamp)
             self.lock.lock()

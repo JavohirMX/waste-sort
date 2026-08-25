@@ -8,8 +8,8 @@
 // pins them and names this file, so changing one without the other fails a test rather than
 // producing a sheet the scanner quietly cannot read.
 
-#let style = sys.inputs.at("style", default: "color")
-#let colored = style != "mono"
+#let style = sys.inputs.at("style", default: "dashes")
+#let colored = style == "color" or style == "shapes"
 
 #set page(paper: "a4", flipped: true, margin: 12mm)
 #set text(font: ("Helvetica Neue", "Helvetica", "Arial"), size: 9pt, fill: rgb("#1a1a1a"))
@@ -164,9 +164,94 @@
   ),
 )
 
+// A row of equal dashes, half duty, carrying nothing at all.
+//
+// Which bin it is comes from where the row appears — the camera is bolted overhead and the
+// bins do not move, so position already answers the question a code was being asked to answer.
+// What the marker has to be is only unmistakable, and on fifteen frames of the real site with
+// nothing installed, nine alternating runs of one pitch never once occurred by accident.
+#let dash-row(count, dash, height) = {
+  let quiet = dash
+  box(
+    fill: white,
+    stroke: (paint: luma(180), thickness: 0.3mm, dash: "dashed"),
+    inset: (x: quiet, y: 3mm),
+    stack(
+      dir: ltr,
+      ..range(count).map(_ => rect(width: dash, height: height, fill: black, stroke: none))
+        .intersperse(h(dash)),
+    ),
+  )
+}
+
+#let dash-page(dash, height, count) = {
+  let span = count * dash * 2 - dash + dash * 2
+  text(size: 15pt, weight: "bold")[Dash row — #calc.round(dash / 1mm) mm dashes]
+  v(1mm, weak: true)
+  text(size: 9pt, fill: luma(90))[
+    #count dashes, #calc.round(span / 1mm) mm long, #calc.round((height + 6mm) / 1mm) mm tall.
+    Reads once five dashes are clear of the counter edge — about
+    #calc.round((5 * dash * 2 + dash) / 1mm) mm of travel. Print at 100%, matte stock.
+  ]
+  v(5mm)
+  for index in range(3) {
+    text(size: 7.5pt, fill: luma(110), tracking: 0.4pt)[#upper("Bin " + str(index + 1))]
+    v(1.5mm, weak: true)
+    dash-row(count, dash, height)
+    v(1.5mm, weak: true)
+    bin-line
+    v(6mm)
+  }
+}
+
 // MARK: - Documents
 
-#if style == "shapes" {
+#if style == "dashes" {
+  text(size: 18pt, weight: "bold")[Bin marker dash rows]
+  v(3mm)
+  let notes = (
+    (
+      "All three rows are identical",
+      [There is nothing to tell them apart, and nothing to bind in settings. A row is credited
+        to whichever bin it appears nearest, because the camera and the bins do not move —
+        which is the whole reason this design has no colour, no rhythm and no code in it.],
+    ),
+    (
+      "Mount along the rim, inside",
+      [Where a shut drawer hides the row under the counter. Visible means open. Mount it level:
+        the scan walks rows and columns, so a row lying flat or standing upright is found and
+        one at an angle is not.],
+    ),
+    (
+      "Five dashes is the threshold",
+      [A drawer reveals the row a dash at a time as it slides out from under the edge. Five
+        dashes clear of it is what makes the bin read open — a legible rule rather than a
+        threshold on a blur. Print more dashes to trigger earlier in the travel.],
+    ),
+    (
+      "Which size to print",
+      [Start large and work down. The debug overlay reports the dash count, the pitch in
+        samples, and how many scan lines crossed the row. Dashes hold up down to two samples
+        of pitch — far below what the bar styles needed — but the row must be at least six
+        samples tall, about 1.5 cm at this site.],
+    ),
+    (
+      "An arm across it costs nothing",
+      [Repetition is the design. Covering the middle of the row leaves two shorter rows, and
+        the longer one still answers.],
+    ),
+  )
+  for (title, body) in notes {
+    text(size: 10.5pt, weight: "bold")[#title]
+    v(0.5mm, weak: true)
+    text(size: 9pt, fill: luma(70))[#body]
+    v(3mm)
+  }
+  for (dash, count) in ((6mm, 14), (8mm, 12), (10mm, 10), (14mm, 8)) {
+    pagebreak()
+    dash-page(dash, 16mm, count)
+  }
+} else if style == "shapes" {
   text(size: 18pt, weight: "bold")[Bar shapes]
   v(2mm)
   text(size: 10pt)[

@@ -405,7 +405,9 @@ struct LiveYOLOCamera: UIViewRepresentable {
                     style: inputs.openness.markerStyle,
                     config: BinMarkerStateConfig(staleTimeout: inputs.openness.markerStaleTimeout)
                 )
-                markerFrame.stats = markerPipeline.scanner.lastFrameStats
+                markerFrame.stats = inputs.openness.markerStyle.usesDashRows
+                    ? markerPipeline.dashScanner.lastFrameStats
+                    : markerPipeline.scanner.lastFrameStats
             }
             let openness = BinOpennessSnapshot(
                 source: inputs.openness.source,
@@ -631,6 +633,9 @@ struct LiveYOLOCamera: UIViewRepresentable {
             }
             markerPipeline.onDetections = { [weak self] detections, timestamp in
                 self?.markerBinDetector.ingest(detections: detections, timestamp: timestamp)
+            }
+            markerPipeline.onDashRows = { [weak self] rows, timestamp in
+                self?.markerBinDetector.ingest(rows: rows, timestamp: timestamp)
             }
             frameColorProxy?.controls = currentInputs.settings.frameColor
             frameColorProxy?.install(on: view)

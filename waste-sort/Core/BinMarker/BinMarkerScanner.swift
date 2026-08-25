@@ -134,6 +134,10 @@ nonisolated final class BinMarkerScanner {
         guard count > 0 else { return }
 
         switch config.style {
+        case .dashes:
+            // Read by `BinMarkerDashScanner`, which is a different shape of problem: a row of
+            // equal dashes with nothing encoded in it, rather than a strip to decode.
+            return
         case .color:
             guard let chroma = image.chroma else { return }
             BinMarkerSampleClassifier.classifyColor(
