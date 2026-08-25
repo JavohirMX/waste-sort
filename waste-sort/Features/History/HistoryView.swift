@@ -2,80 +2,87 @@ import SwiftUI
 
 /// Persistent log of items dropped into calibrated zones.
 struct HistoryView: View {
+    var body: some View {
+        NavigationStack {
+            HistoryContentView()
+        }
+        .tint(BinGuide.organic.color)
+    }
+}
+
+/// History list without its own stack, for push from Settings.
+struct HistoryContentView: View {
     @EnvironmentObject private var history: ZoneEventHistoryStore
     @EnvironmentObject private var zoneStore: ZoneStore
-    @EnvironmentObject private var binStyle: BinStyleStore
     @State private var showClearConfirm = false
     @State private var exportURL: URL?
 
     private var events: [ZoneEventRecord] { history.events }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if events.isEmpty {
-                    emptyState
-                } else {
-                    List {
-                        Section {
-                            HistorySummaryView(events: events)
-                                .listRowInsets(EdgeInsets())
-                                .listRowBackground(Color.clear)
-                        }
+        Group {
+            if events.isEmpty {
+                emptyState
+            } else {
+                List {
+                    Section {
+                        HistorySummaryView(events: events)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                    }
 
-                        ForEach(groupedDays, id: \.day) { group in
-                            Section(dayTitle(group.day)) {
-                                ForEach(group.events) { event in
-                                    HistoryRow(event: event)
-                                }
+                    ForEach(groupedDays, id: \.day) { group in
+                        Section(dayTitle(group.day)) {
+                            ForEach(group.events) { event in
+                                HistoryRow(event: event)
                             }
                         }
                     }
-                    .listStyle(.insetGrouped)
                 }
+                .listStyle(.insetGrouped)
             }
-            .navigationTitle("History")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(BinGuide.residual.color.opacity(0.92), for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button {
-                            exportURL = history.exportCSV()
-                        } label: {
-                            Label("Export CSV to Files", systemImage: "square.and.arrow.down")
-                        }
-                        .disabled(events.isEmpty)
-
-                        Button(role: .destructive) {
-                            showClearConfirm = true
-                        } label: {
-                            Label("Clear history", systemImage: "trash")
-                        }
-                        .disabled(events.isEmpty)
+        }
+        .navigationTitle("History")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(BinGuide.residual.color.opacity(0.92), for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        exportURL = history.exportCSV()
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Label("Export CSV to Files", systemImage: "square.and.arrow.down")
                     }
+                    .disabled(events.isEmpty)
+
+                    Button(role: .destructive) {
+                        showClearConfirm = true
+                    } label: {
+                        Label("Clear history", systemImage: "trash")
+                    }
+                    .disabled(events.isEmpty)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
             }
-            .confirmationDialog(
-                "Delete all \(events.count) recorded items?",
-                isPresented: $showClearConfirm,
-                titleVisibility: .visible
-            ) {
-                Button("Clear history", role: .destructive) { history.clear() }
-                Button("Cancel", role: .cancel) {}
-            }
-            .alert(
-                "Exported",
-                isPresented: Binding(get: { exportURL != nil }, set: { if !$0 { exportURL = nil } })
-            ) {
-                Button("OK") { exportURL = nil }
-            } message: {
-                Text("Saved \(exportURL?.lastPathComponent ?? "") to On My iPad → Sortla.")
-            }
+        }
+        .confirmationDialog(
+            "Delete all \(events.count) recorded items?",
+            isPresented: $showClearConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Clear history", role: .destructive) { history.clear() }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert(
+            "Exported",
+            isPresented: Binding(get: { exportURL != nil }, set: { if !$0 { exportURL = nil } })
+        ) {
+            Button("OK") { exportURL = nil }
+        } message: {
+            Text("Saved \(exportURL?.lastPathComponent ?? "") to On My iPad → Sortla.")
         }
         .tint(BinGuide.organic.color)
     }

@@ -4,7 +4,6 @@ import UltralyticsYOLO
 
 struct PhotoSortView: View {
     @EnvironmentObject private var settings: AppSettings
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var pickerItem: PhotosPickerItem?
     @State private var model: YOLO?
@@ -32,56 +31,51 @@ struct PhotoSortView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                Group {
-                    if isLoadingModel {
-                        ProgressView("Loading model")
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 40)
-                    } else if let errorMessage {
-                        Text(errorMessage)
-                            .font(.system(.body, design: .default))
-                            .foregroundStyle(.red)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else if isInferring {
-                        ProgressView("Sorting")
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 40)
-                    } else if sourceImage != nil {
-                        resultsLayout
-                    } else {
-                        emptyState
-                    }
-                }
-                .padding(20)
-            }
-            .background(Theme.photoBackground)
-            .navigationTitle("Sort photo")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
-                        Label("Choose photo", systemImage: "photo.on.rectangle")
-                            .font(.system(.body, design: .default).weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(BinGuide.organic.color, in: Capsule())
-                    }
-                    .disabled(isLoadingModel || isInferring)
-                    .accessibilityHint("Opens the photo library to sort a waste image")
+        ScrollView {
+            Group {
+                if isLoadingModel {
+                    ProgressView("Loading model")
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                } else if let errorMessage {
+                    Text(errorMessage)
+                        .font(.system(.body, design: .default))
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if isInferring {
+                    ProgressView("Sorting")
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                } else if sourceImage != nil {
+                    resultsLayout
+                } else {
+                    emptyState
                 }
             }
-            .task { loadModel() }
-            .onChange(of: pickerItem) { _, newItem in
-                Task { await importPhoto(newItem) }
+            .padding(20)
+        }
+        .background(Theme.photoBackground)
+        .navigationTitle("Sort photo")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
+                    Label("Choose photo", systemImage: "photo.on.rectangle")
+                        .font(.system(.body, design: .default).weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(BinGuide.organic.color, in: Capsule())
+                }
+                .disabled(isLoadingModel || isInferring)
+                .accessibilityHint("Opens the photo library to sort a waste image")
             }
-            .onChange(of: settings.selectedModelName) { _, _ in
-                reloadModel()
-            }
+        }
+        .task { loadModel() }
+        .onChange(of: pickerItem) { _, newItem in
+            Task { await importPhoto(newItem) }
+        }
+        .onChange(of: settings.selectedModelName) { _, _ in
+            reloadModel()
         }
         .environment(\.hudTextScale, CGFloat(settings.hudTextScale))
     }

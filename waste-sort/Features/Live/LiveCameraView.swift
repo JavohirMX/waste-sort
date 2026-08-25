@@ -235,7 +235,9 @@ struct LiveCameraView: View {
                         throwFeedbackToken: throwFeedbackGate.token,
                         onTripleTap: {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            showSettings = true
+                            withAnimation(.easeInOut(duration: 0.35)) {
+                                showSettings = true
+                            }
                         }
                     )
                     .frame(maxWidth: .infinity)
@@ -363,10 +365,16 @@ struct LiveCameraView: View {
             VerdictHistoryView()
                 .environmentObject(verdictLog)
         }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+        .overlay {
+            if showSettings {
+                SettingsView(onClose: {
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        showSettings = false
+                    }
+                })
+                .transition(.move(edge: .trailing))
+                .zIndex(2)
+            }
         }
         .overlay {
             if showStats {
@@ -380,6 +388,7 @@ struct LiveCameraView: View {
                 .zIndex(1)
             }
         }
+        .animation(.easeInOut(duration: 0.35), value: showSettings)
         .animation(.easeInOut(duration: 0.35), value: showStats)
     }
 
