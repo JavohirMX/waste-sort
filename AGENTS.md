@@ -157,6 +157,12 @@ Don't re-implement these, extend them:
 
 ## 10. House rules
 
+- **Skill check per phase (Constitution VIII)**: at the start of each phase,
+  wave, or non-trivial task — and when picking up existing work — check the
+  installed skills and the ecosystem (`find-skills`) for anything applicable.
+  Verdict honestly before adopting: project rules win, battle-tested sources
+  only, skip duplicates of existing guards. Apply what passes without being
+  asked; record the verdict in the summary.
 - Branch from latest `main`. Commit in logical units; keep behavior-preserving
   refactors separate from features (history shows how).
 - No secrets, no network calls, no analytics: this kiosk runs fully on-device

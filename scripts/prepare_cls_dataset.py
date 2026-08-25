@@ -23,6 +23,23 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 
+def outcome_of(record: dict) -> str | None:
+    """The codec encodes Outcome as a tagged object: {"outcome": "answered"}.
+    Handle that form (and tolerate a flat string for older exports)."""
+    outcome = record.get("outcome")
+    if isinstance(outcome, dict):
+        return outcome.get("outcome")
+    return outcome
+
+
+def is_pcc_teacher(record: dict) -> bool:
+    """Only PCC verdicts may label training data. The smoke screen's AFM
+    cross-check records (pipeline containing 'afm') are ON-DEVICE model
+    verdicts — a different teacher; mixing them would dilute the label
+    source this flywheel exists to distill."""
+    return "afm" not in (record.get("pipeline") or "").lower()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bundle", type=Path, help="exported bundle directory")
@@ -35,13 +52,21 @@ def main() -> None:
     crops_dir = args.bundle / "crops"
     records = [json.loads(line) for line in records_path.read_text().splitlines() if line.strip()]
 
-    usable = [
-        r for r in records
-        if r.get("outcome") == "answered"
-        and not r.get("mappingFailed")
-        and r.get("pccBinID")
-        and r.get("cropFile")
-    ]
+    drop_reasons: Counter[str] = Counter()
+    usable = []
+    for r in records:
+        if outcome_of(r) != "answered":
+            drop_reasons["not answered"] += 1
+        elif r.get("mappingFailed"):
+            drop_reasons["mapping failed"] += 1
+        elif not r.get("pccBinID"):
+            drop_reasons["no pccBinID"] += 1
+        elif not r.get("cropFile"):
+            drop_reasons["no crop"] += 1
+        elif not is_pcc_teacher(r):
+            drop_reasons["non-PCC teacher (afm cross-check)"] += 1
+        else:
+            usable.append(r)
     dropped = len(records) - len(usable)
 
     by_session: dict[str, list[dict]] = defaultdict(list)
@@ -71,6 +96,8 @@ def main() -> None:
         counts[f"{split}/{record['pccBinID']}"] += 1
 
     print(f"records total: {len(records)}  usable: {len(usable)}  dropped: {dropped}")
+    for reason, count in sorted(drop_reasons.items()):
+        print(f"  dropped ({reason}): {count}")
     print(f"sessions: {len(session_keys)} train-sessions: {len(session_keys) - len(val_sessions)}")
     for name, count in sorted(counts.items()):
         print(f"  {name}: {count}")

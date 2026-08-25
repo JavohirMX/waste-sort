@@ -10,26 +10,63 @@ nonisolated enum PCCTextProbe {
     static let label = "text_probe"
 }
 
-/// Opt-in switch for PCC image-attachment attempts. Lives outside the iOS-27
+/// Kill switch for PCC image-attachment attempts. Lives outside the iOS-27
 /// gate so diagnostic surfaces (which run on any OS) can read and flip it.
 ///
-/// Image attempts are opt-in because the iOS 27 beta traps (EXC_BAD_ACCESS)
-/// inside the framework when a PCC session is handed any image attachment —
-/// CGImage and file-URL variants both confirmed, with the runtime
-/// simultaneously *declaring* `.vision` capability and the text path working
-/// perfectly. A trap cannot be caught in-process, so until a beta fixes it the
-/// only safe default is off. The text probe and all live-path gating (quota,
-/// breaker, records) are unaffected; when Apple ships a fixed beta, turn the
-/// toggle on to re-test, then flip the default here.
+/// History: the iOS 27 betas ≤4 (with a mismatched Xcode 27 beta-1 SDK)
+/// trapped (EXC_BAD_ACCESS) inside the framework on any image attachment, so
+/// this was default-OFF. Beta 6 with a matched toolchain verified image calls
+/// end-to-end on device and simulator, so the default is now ON. The gate
+/// stays as a one-toggle kill switch: if a future beta reintroduces the trap
+/// (which cannot be caught in-process), flip it OFF here and the app records
+/// honest `skippedUnavailable` records instead of crashing. The text probe
+/// and all live-path gating (quota, breaker, records) are unaffected.
 nonisolated enum PCCVisionGate {
     static let defaultsKey = "settings.pccVisionAttemptsEnabled"
 
     nonisolated(unsafe) static var enabled =
-        UserDefaults.standard.bool(forKey: defaultsKey)
+        (UserDefaults.standard.object(forKey: defaultsKey) as? Bool) ?? true
 
     static func setEnabled(_ newValue: Bool) {
         enabled = newValue
         UserDefaults.standard.set(newValue, forKey: defaultsKey)
+    }
+}
+
+/// Strict parser for the model's one-line output contract. Pure string logic,
+/// deliberately OUTSIDE the iOS-27 gate so it is unit-testable on every
+/// simulator and reusable by any transport.
+///
+/// The bin comes ONLY from the `bin=` field: whole-line matching let a
+/// rationale such as "not clean_inorganic because dirty" flip the parsed
+/// label, and bad labels poison both the corrections analyzer and the
+/// fine-tuning dataset. No `bin=` field or an unknown token = failure, never
+/// a guess (Constitution III).
+nonisolated enum PCCVerdictParser {
+    private static let candidates = ["dirty_recyclable", "clean_inorganic", "residual", "organic"]
+
+    static func parse(_ text: String) -> (bin: String, material: String?, rationale: String?)? {
+        let lowered = text.lowercased().replacingOccurrences(of: "-", with: "_")
+        guard let binRange = lowered.range(
+            of: "(?<![a-z])bin\\s*=\\s*([a-z_]+)",
+            options: .regularExpression
+        ) else { return nil }
+        let binToken = lowered[binRange]
+            .replacingOccurrences(of: "bin", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ="))
+        guard candidates.contains(binToken) else { return nil }
+        // Material/rationale keep their ORIGINAL casing: match case-insensitively
+        // on the untouched text so dataset metadata is not degraded to lowercase.
+        return (binToken, materialValue(in: text, key: "material"), materialValue(in: text, key: "rationale"))
+    }
+
+    private static func materialValue(in text: String, key: String) -> String? {
+        guard let range = text.range(of: "(?i)\(key)\\s*=\\s*([^;\\n]+)", options: .regularExpression) else {
+            return nil
+        }
+        let value = text[range].replacingOccurrences(of: "\(key)", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ="))
+        return value.isEmpty ? nil : value
     }
 }
 
@@ -39,15 +76,14 @@ import UIKit
 /// Builds the real FoundationModels transport. Isolated here so the rest of
 /// the service stays unit-testable without touching iOS-27-only symbols.
 ///
-/// Call-pattern notes from the first on-device smoke run (iPhone, iOS 27
-/// beta): `respond(generating:)` — guided generation — combined with a raw
-/// `CGImage` attachment trapped inside the framework (EXC_BAD_ACCESS) even
-/// with the entitlement present in binary and profile. The transport now uses
-/// the most conservative proven pattern instead: a plain-text `respond`, a
-/// strict one-line output contract parsed in-app (unparseable output is an
-/// honest error, never a guess), and the image normalized to an 8-bit sRGB
-/// JPEG file handed over via `Attachment(imageURL:)` — the same shape the
-/// validated `fm` CLI benchmark used.
+/// Call-pattern notes from on-device bring-up (iPhone, iOS 27 betas):
+/// `respond(generating:)` — guided generation — combined with a raw `CGImage`
+/// trapped inside the framework on early betas, so the transport uses the
+/// most conservative proven pattern instead: a plain-text `respond`, a strict
+/// one-line output contract parsed in-app (unparseable output is an honest
+/// error, never a guess), and the image normalized to an 8-bit sRGB JPEG
+/// file handed over via `Attachment(imageURL:)` — the shape verified
+/// end-to-end on beta 6 (device + simulator, ~1–2 s verdicts).
 @available(iOS 27.0, *)
 nonisolated enum PCCTransportFactory {
     private static let instructions = """
@@ -68,10 +104,10 @@ nonisolated enum PCCTransportFactory {
     static let textProbeLabel = PCCTextProbe.label
 
     /// Vision preflight, two layers, kept out of the transport closure for
-    /// size: the opt-in switch first (this beta traps on attachments despite
-    /// declaring `.vision`), then the SDK capability flags for runtimes that
-    /// honestly lack vision. Returns the failure answer to record, or nil
-    /// when image content may proceed.
+    /// size: the kill switch first (a beta regression must degrade to honest
+    /// records, never a trap), then the SDK capability flags for runtimes
+    /// that honestly lack vision. Returns the failure answer to record, or
+    /// nil when image content may proceed.
     private static func visionGateFailure(
         isTextProbe: Bool,
         model: PrivateCloudComputeLanguageModel
@@ -278,25 +314,10 @@ nonisolated enum PCCTransportFactory {
         return url
     }
 
-    /// Strict parser for the one-line output contract. Longest/most-specific
-    /// bin tokens are matched before "organic" so "clean_inorganic" can never
-    /// degrade into "organic". No match = failure, never a guess.
+    /// Strict parser for the one-line output contract. See `PCCVerdictParser`
+    /// (ungated) for the field-scoped matching rules.
     static func parseVerdict(_ text: String) -> (bin: String, material: String?, rationale: String?)? {
-        let lowered = text.lowercased().replacingOccurrences(of: "-", with: "_")
-        let candidates = ["dirty_recyclable", "clean_inorganic", "residual", "organic"]
-        guard let bin = candidates.first(where: { lowered.contains($0) }) else { return nil }
-        let material = materialValue(in: lowered, key: "material")
-        let rationale = materialValue(in: lowered, key: "rationale")
-        return (bin, material, rationale)
-    }
-
-    private static func materialValue(in text: String, key: String) -> String? {
-        guard let range = text.range(of: "\(key)\\s*=\\s*([^;\\n]+)", options: .regularExpression) else {
-            return nil
-        }
-        let value = text[range].replacingOccurrences(of: "\(key)", with: "")
-            .trimmingCharacters(in: CharacterSet(charactersIn: " ="))
-        return value.isEmpty ? nil : value
+        PCCVerdictParser.parse(text)
     }
 }
 

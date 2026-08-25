@@ -36,3 +36,7 @@ xcuserdata/
 ._*
 .Spotlight-V100
 .Trashes
+
+# Operator export bundles + macOS noise — data, not source
+PCC-Export*
+.DS_Store

@@ -66,6 +66,22 @@ entitlement, availability/quota checks before each call, and an accurate
 `PrivacyInfo.xcprivacy`. Any other networking requires a constitution
 amendment first.
 
+### VIII. Skill Check Before Each Phase
+At the start of every phase, wave, or non-trivial task — and retroactively
+when picking up existing work — proactively check the installed skill arsenal
+and the open ecosystem (`find-skills` / `npx skills find`) for skills
+applicable to the work at hand. Verdict every candidate honestly before
+adopting it:
+1. Project-specific rules win over generic doctrine (AGENTS.md, RUNBOOK, this
+   constitution).
+2. Battle-tested sources only: prefer 1K+ installs and reputable owners;
+   treat low-install unknown-author skills with skepticism.
+3. Skip anything that duplicates an existing guard or conflicts with house
+   rules — redundancy costs context and creates contradictory guidance.
+Apply what passes automatically, without waiting to be asked, and record the
+verdict (installed / skipped + why) in the phase summary so the decision is
+auditable.
+
 ## Additional Constraints
 
 - **Deployment target**: iOS 26.5. iOS 27-only APIs (FoundationModels PCC)
@@ -102,4 +118,7 @@ MINOR: new principle/material expansion; PATCH: clarifications), and a Sync
 Impact Report. All plans include a Constitution Check gate; violations block
 implementation.
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-24
+**Version**: 1.1.0 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-25
+**Sync Impact Report (v1.1.0)**: added Principle VIII (Skill Check Before Each
+Phase — proactive, verdicted skill discovery per phase/wave, retroactive).
+Mirrored in AGENTS.md §10. No existing principles changed.

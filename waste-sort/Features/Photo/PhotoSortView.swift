@@ -522,17 +522,18 @@ private struct PCCVisionStatusCard: View {
 
             if enabled {
                 Label(
-                    "Image attempts are ON. On this iOS beta the framework traps (app crash) when PCC receives an image — "
-                        + "that is an Apple bug, not a setup problem. The text probe below stays safe.",
-                    systemImage: "exclamationmark.triangle.fill"
+                    "Image attempts are ON — verified working on iOS 27 beta 6 with a matched Xcode "
+                        + "(~1–2 s verdicts). If a future beta reintroduces the crash, switch this OFF: "
+                        + "the app then records honest skipped entries instead of crashing.",
+                    systemImage: "checkmark.seal.fill"
                 )
                 .font(.system(.footnote, design: .default))
-                .foregroundStyle(.orange)
+                .foregroundStyle(.green)
             } else {
                 Label(
-                    "Image judgments are OFF: this iOS beta crashes on PCC image attachments even though the runtime "
-                        + "claims vision support. Text probing works — use it to confirm PCC health. Turn the toggle on "
-                        + "only to re-test after a beta update.",
+                    "Image judgments are OFF (kill switch). Every image request records a skipped "
+                        + "entry instead of calling PCC; the text-only probe below still works. Turn ON "
+                        + "to judge images.",
                     systemImage: "photo.slash"
                 )
                 .font(.system(.footnote, design: .default))
