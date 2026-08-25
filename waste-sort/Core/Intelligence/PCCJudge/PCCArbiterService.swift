@@ -326,7 +326,16 @@ import UIKit
 
 /// Builds the real FoundationModels transport. Isolated here so the rest of
 /// the service stays unit-testable without touching iOS-27-only symbols.
-/// Mirrors the session/prompt idioms of `FoundationImagePrompt` exactly.
+///
+/// Call-pattern notes from the first on-device smoke run (iPhone, iOS 27
+/// beta): `respond(generating:)` — guided generation — combined with a raw
+/// `CGImage` attachment trapped inside the framework (EXC_BAD_ACCESS) even
+/// with the entitlement present in binary and profile. The transport now uses
+/// the most conservative proven pattern instead: a plain-text `respond`, a
+/// strict one-line output contract parsed in-app (unparseable output is an
+/// honest error, never a guess), and the image normalized to an 8-bit sRGB
+/// JPEG file handed over via `Attachment(imageURL:)` — the same shape the
+/// validated `fm` CLI benchmark used.
 @available(iOS 27.0, *)
 nonisolated enum PCCTransportFactory {
     private static let instructions = """
@@ -336,13 +345,21 @@ nonisolated enum PCCTransportFactory {
         clean_inorganic (clean recyclables such as dry plastic, metal, glass,
         paper), or dirty_recyclable (recyclable items possibly contaminated by
         food, drink, sauce, or oil — rinse then recycle, otherwise residual).
-        When unsure even after careful examination, choose residual. Name the
-        primary material and give a one-sentence disposal rationale.
+        When unsure even after careful examination, choose residual.
+        Reply with EXACTLY one line and nothing else, in this format:
+        bin=<organic|residual|clean_inorganic|dirty_recyclable>; material=<primary material, short>; rationale=<one short sentence>
         """
 
     static func defaultTransport() -> ArbitrationTransport {
         { query, crop in
             guard let crop else { return .failure(.failed("no crop available")) }
+            let imageURL: URL
+            do {
+                imageURL = try normalizedJPEGURL(crop)
+            } catch {
+                return .failure(.failed("image normalization failed: \(error.localizedDescription)"))
+            }
+            defer { try? FileManager.default.removeItem(at: imageURL) }
             do {
                 let model = PrivateCloudComputeLanguageModel()
                 let session = LanguageModelSession(
@@ -351,21 +368,23 @@ nonisolated enum PCCTransportFactory {
                 )
                 let started = CFAbsoluteTimeGetCurrent()
                 let response = try await session.respond(
-                    generating: PCCBinVerdict.self,
                     options: GenerationOptions(
                         samplingMode: .greedy,
-                        maximumResponseTokens: 512
+                        maximumResponseTokens: 256
                     )
                 ) {
                     "Judge the item in the attached image. On-device label hint: \(query.yoloLabel) (may be unavailable)."
-                    Attachment(crop).label("cropped item")
+                    Attachment(imageURL: imageURL).label("cropped item")
                 }
-                let verdict = response.content
                 let latencyMs = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
+                let text = response.content
+                guard let parsed = parseVerdict(text) else {
+                    return .failure(.failed("unparseable PCC response: \(String(text.prefix(160)))"))
+                }
                 return .success(ArbiterAnswer(
-                    rawBinLabel: verdict.bin,
-                    material: verdict.material,
-                    reasoningSummary: verdict.rationale,
+                    rawBinLabel: parsed.bin,
+                    material: parsed.material,
+                    reasoningSummary: parsed.rationale,
                     latencyMs: latencyMs,
                     inputTokens: response.usage.input.totalTokenCount,
                     outputTokens: response.usage.output.totalTokenCount
@@ -384,16 +403,58 @@ nonisolated enum PCCTransportFactory {
         }
     }
 
-    /// Structured verdict the model must fill. Kept deliberately small; the bin
-    /// label maps through `BinGuide` afterwards, and unknown labels are data.
-    @Generable
-    nonisolated struct PCCBinVerdict {
-        @Guide(description: "One of: organic, residual, clean_inorganic, dirty_recyclable")
-        var bin: String
-        @Guide(description: "Primary material of the item, e.g. PET plastic, foil laminate")
-        var material: String
-        @Guide(description: "One sentence disposal rationale")
-        var rationale: String
+    /// Redraws any bitmap into a plain 8-bit sRGB JPEG on disk. Gallery-derived
+    /// CGImages can be 10-bit, Display-P3, or float; the framework's attachment
+    /// path is at its most proven with exactly what the validated benchmark fed it.
+    private static func normalizedJPEGURL(_ image: CGImage) throws -> URL {
+        guard let context = CGContext(
+            data: nil,
+            width: image.width,
+            height: image.height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { throw PCCImageNormalizationError.contextFailed }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard let normalized = context.makeImage() else {
+            throw PCCImageNormalizationError.makeImageFailed
+        }
+        guard let jpeg = UIImage(cgImage: normalized).jpegData(compressionQuality: 0.85) else {
+            throw PCCImageNormalizationError.jpegFailed
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pcc-judge-\(UUID().uuidString).jpg")
+        try jpeg.write(to: url, options: .atomic)
+        return url
     }
+
+    /// Strict parser for the one-line output contract. Longest/most-specific
+    /// bin tokens are matched before "organic" so "clean_inorganic" can never
+    /// degrade into "organic". No match = failure, never a guess.
+    static func parseVerdict(_ text: String) -> (bin: String, material: String?, rationale: String?)? {
+        let lowered = text.lowercased().replacingOccurrences(of: "-", with: "_")
+        let candidates = ["dirty_recyclable", "clean_inorganic", "residual", "organic"]
+        guard let bin = candidates.first(where: { lowered.contains($0) }) else { return nil }
+        let material = materialValue(in: lowered, key: "material")
+        let rationale = materialValue(in: lowered, key: "rationale")
+        return (bin, material, rationale)
+    }
+
+    private static func materialValue(in text: String, key: String) -> String? {
+        guard let range = text.range(of: "\(key)\\s*=\\s*([^;\\n]+)", options: .regularExpression) else {
+            return nil
+        }
+        let value = text[range].replacingOccurrences(of: "\(key)", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ="))
+        return value.isEmpty ? nil : value
+    }
+}
+
+/// Why image normalization could not produce the JPEG the transport needs.
+private enum PCCImageNormalizationError: Error {
+    case contextFailed
+    case makeImageFailed
+    case jpegFailed
 }
 #endif
