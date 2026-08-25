@@ -289,57 +289,72 @@ nonisolated final class BinMarkerScanner {
     ) -> Segment? {
         guard barCount >= 2 else { return nil }
 
-        var gapWidths: [Double] = []
-        var barWidths: [Double] = []
-        gapWidths.reserveCapacity(barCount - 1)
-        barWidths.reserveCapacity(barCount)
+        var barRuns: [Int] = []
+        var gapRuns: [Int] = []
+        barRuns.reserveCapacity(barCount)
+        gapRuns.reserveCapacity(barCount - 1)
         var run = firstRun
         while run <= lastRun {
             if runs[run].code == BinMarkerCode.gap {
-                gapWidths.append(Double(runs[run].length))
+                gapRuns.append(run)
             } else {
-                barWidths.append(Double(runs[run].length))
+                barRuns.append(run)
             }
             run += 1
         }
-        guard let smallestGap = gapWidths.min(), let largestGap = gapWidths.max(),
-              smallestGap > 0
-        else { return nil }
 
-        // The gaps are the ruler. If they disagree with each other, the ruler is broken and
-        // nothing measured against it can be trusted — including a rhythm that happens to
-        // look right.
-        guard largestGap / smallestGap <= config.maxGapSpread else { return nil }
-        let unit = median(gapWidths)
-        guard unit >= config.minUnitSamples, unit <= config.maxUnitSamples else { return nil }
+        func measure(_ indices: [Int]) -> [Double] { indices.map { Double(runs[$0].length) } }
 
+        guard var unit = ruler(measure(gapRuns)) else { return nil }
+
+        // Trim an over-wide bar off either end.
+        //
+        // The bins are in pull-out drawers, so a strip emerges from under a counter edge and
+        // the surface just past it is deep shadow. Under the mono style that shadow *is* a
+        // black bar as far as a local threshold is concerned, and it joins the strip across
+        // the printed margin as a sixth bar — which is not a rhythm we print, so the bin goes
+        // unread at the very moment it opens. A bar many times the ruler is not part of the
+        // marker, whichever end it sits on.
+        let ceiling = config.maxBarUnits * unit
+        while barRuns.count > 2, Double(runs[barRuns[0]].length) > ceiling {
+            barRuns.removeFirst()
+            gapRuns.removeFirst()
+        }
+        while barRuns.count > 2, let last = barRuns.last, Double(runs[last].length) > ceiling {
+            barRuns.removeLast()
+            gapRuns.removeLast()
+        }
+        guard barRuns.count >= 2, let trimmed = ruler(measure(gapRuns)) else { return nil }
+        unit = trimmed
+
+        let barWidths = measure(barRuns)
         let patternID = resolvePattern(barWidths: barWidths, unit: unit)
         if patternID == nil {
             // No readable rhythm. Only the color style can go on from here, because only it
             // has a second, independent way to say which bin this is.
             guard config.style.allowsInkOnlyIdentity,
                   config.allowDegradedColor,
-                  barCount >= config.minDegradedBars
+                  barRuns.count >= config.minDegradedBars
             else { return nil }
         }
 
-        let start = runs[firstRun].start
-        let end = runs[lastRun].start + runs[lastRun].length
+        let firstBar = barRuns[0]
+        let lastBar = barRuns[barRuns.count - 1]
+        let start = runs[firstBar].start
+        let end = runs[lastBar].start + runs[lastBar].length
         var cbSum = 0.0
         var crSum = 0.0
         var samples = 0
         if let chroma = image.chroma {
-            var barRun = firstRun
-            while barRun <= lastRun {
-                if runs[barRun].code >= BinMarkerCode.firstInk {
-                    for offset in 0..<runs[barRun].length {
-                        let pixel = lineStart + (runs[barRun].start + offset) * step
-                        cbSum += Double(chroma[pixel * 2])
-                        crSum += Double(chroma[pixel * 2 + 1])
-                        samples += 1
-                    }
+            // Only the bars that survived trimming: averaging in a shadow that was just
+            // rejected would drag the reading the calibration depends on toward neutral.
+            for barRun in barRuns {
+                for offset in 0..<runs[barRun].length {
+                    let pixel = lineStart + (runs[barRun].start + offset) * step
+                    cbSum += Double(chroma[pixel * 2])
+                    crSum += Double(chroma[pixel * 2 + 1])
+                    samples += 1
                 }
-                barRun += 1
             }
         }
 
@@ -411,6 +426,26 @@ nonisolated final class BinMarkerScanner {
                 }
             }
             closed.append(contentsOf: open)
+
+            // One strip can leave two clusters with a gap of unscanned lines between them.
+            // A blurred marker is brightest through its middle, where the bars merge into a
+            // single smear that reads as nothing, while the softer bands along its two long
+            // edges still alternate. Same identity, same span, one strip — and reporting it
+            // twice would misstate how much of the frame is marker.
+            var settled = false
+            while !settled {
+                settled = true
+                var merged: [Cluster] = []
+                for cluster in closed {
+                    if let index = merged.firstIndex(where: { $0.overlaps(cluster) }) {
+                        merged[index].absorb(cluster)
+                        settled = false
+                    } else {
+                        merged.append(cluster)
+                    }
+                }
+                closed = merged
+            }
 
             for cluster in closed {
                 guard cluster.segments.count >= config.minLines,
@@ -495,9 +530,39 @@ nonisolated final class BinMarkerScanner {
             start = min(start, segment.start)
             end = max(end, segment.end)
         }
+
+        /// Whether another cluster of the same identity covers the same stretch, and so is
+        /// the same strip seen through a gap in the scan lines.
+        func overlaps(_ other: Cluster) -> Bool {
+            let shared = min(end, other.end) - max(start, other.start)
+            guard shared > 0 else { return false }
+            return Double(shared) / Double(min(end - start, other.end - other.start)) >= 0.5
+        }
+
+        mutating func absorb(_ other: Cluster) {
+            segments.append(contentsOf: other.segments)
+            lastLine = max(lastLine, other.lastLine)
+            start = min(start, other.start)
+            end = max(end, other.end)
+        }
     }
 
     // MARK: - Helpers
+
+    /// The printed unit, measured off the gaps — or nil when the gaps disagree with each other.
+    ///
+    /// Every gap on a strip is one unit wide, which makes them the only self-describing thing
+    /// in the image and is why the scan never needs to know how far away the bins are. It also
+    /// means a set of gaps that contradicts itself is a broken ruler, and nothing measured
+    /// against it can be trusted — including a rhythm that happens to look right.
+    private func ruler(_ gapWidths: [Double]) -> Double? {
+        guard let smallest = gapWidths.min(), let largest = gapWidths.max(), smallest > 0,
+              largest / smallest <= config.maxGapSpread
+        else { return nil }
+        let unit = median(gapWidths)
+        guard unit >= config.minUnitSamples, unit <= config.maxUnitSamples else { return nil }
+        return unit
+    }
 
     private func median(_ values: [Double]) -> Double {
         guard !values.isEmpty else { return 0 }

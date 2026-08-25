@@ -320,6 +320,60 @@ struct BinMarkerColorScannerTests {
     }
 }
 
+/// The bins are in pull-out drawers, so a marker emerges from under a counter edge and the
+/// surface just past it is deep shadow. These are the cases that only exist because of that.
+@Suite("Bin marker scanner against a counter edge")
+struct BinMarkerEdgeTests {
+    /// Under the mono style a shadow *is* a black bar as far as a local threshold is
+    /// concerned. Across the printed margin it joins the strip as a sixth bar, and six bars
+    /// is not a rhythm we print — so the bin went unread at the very moment it opened.
+    @Test("A shadow beyond the printed margin is not a sixth bar",
+          arguments: [BinMarkerStyle.color, .mono])
+    func shadowBesideTheStripIsTrimmed(style: BinMarkerStyle) {
+        var canvas = BinMarkerCanvas(width: 460, height: 160)
+        let origin = (x: 60, y: 60)
+        let length: Int
+        if style == .color {
+            length = canvas.drawInkStrip(.magenta, barUnits: BinMarkerPattern.single.barUnits,
+                                         unit: 8, origin: origin, thickness: 12)
+        } else {
+            length = canvas.drawMonoStrip(barUnits: BinMarkerPattern.single.barUnits,
+                                          unit: 8, origin: origin, thickness: 12)
+        }
+        // One unit of printed white past the last bar, then the counter's shadow.
+        let edge = origin.x + length + 8
+        canvas.fill(x: edge, y: 0, width: 460 - edge, height: 160, gray: 30)
+
+        let found = scanner(style).scan(canvas.image)
+        #expect(found.count == 1)
+        #expect(found.first?.patternID == 1)
+    }
+
+    /// Half out is enough for colour and not for mono, because the ink keeps naming the bin
+    /// after the rhythm has been cut in half. Worth pinning: it is the difference the two
+    /// styles actually make in this deployment.
+    @Test("Half emerged, colour names the bin and mono does not",
+          arguments: [BinMarkerStyle.color, .mono])
+    func halfEmerged(style: BinMarkerStyle) {
+        var canvas = BinMarkerCanvas(width: 460, height: 160)
+        let origin = (x: 60, y: 60)
+        let length: Int
+        if style == .color {
+            length = canvas.drawInkStrip(.cyan, barUnits: BinMarkerPattern.triple.barUnits,
+                                         unit: 8, origin: origin, thickness: 12)
+        } else {
+            length = canvas.drawMonoStrip(barUnits: BinMarkerPattern.triple.barUnits,
+                                          unit: 8, origin: origin, thickness: 12)
+        }
+        let edge = origin.x + length / 2
+        canvas.fill(x: edge, y: 0, width: 460 - edge, height: 160, gray: 30)
+
+        let named = scanner(style).scan(canvas.image)
+            .contains { $0.slot(style: style)?.index == 2 }
+        #expect(named == (style == .color))
+    }
+}
+
 @Suite("Bin marker scanner, black and white")
 struct BinMarkerMonoScannerTests {
     @Test("A black-on-white strip reads its rhythm", arguments: BinMarkerPattern.all)
