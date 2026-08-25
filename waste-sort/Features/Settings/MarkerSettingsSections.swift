@@ -9,6 +9,9 @@ struct MarkerSettingsSections: View {
     @EnvironmentObject private var markerStore: BinMarkerStore
     @EnvironmentObject private var zoneStore: ZoneStore
     @EnvironmentObject private var binStyle: BinStyleStore
+    /// Only for the capture-resolution picker, which lives in that store for historical
+    /// reasons and is not an AprilTag setting at all — both detectors read the same frames.
+    @EnvironmentObject private var aprilTagStore: AprilTagBindingStore
 
     var body: some View {
         sourceSection
@@ -61,6 +64,17 @@ struct MarkerSettingsSections: View {
 
             Toggle("Show debug overlay", isOn: $markerStore.showDebugOverlay)
 
+            Picker("Capture resolution", selection: $aprilTagStore.rangeProfile) {
+                ForEach(AprilTagRangeProfile.allCases) { profile in
+                    Text(profile.displayName).tag(profile)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Text(captureDetail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             SettingsSliderRow(
                 title: "Closed delay",
                 help: "How long a strip can be missing before the bin is marked closed. "
@@ -110,6 +124,17 @@ struct MarkerSettingsSections: View {
                 }
             }
             .pickerStyle(.menu)
+        }
+    }
+
+    /// Marker detection works on the chroma grid, which is half the capture width and is then
+    /// capped, so the two useful settings are 720p and 1080p — and 4K is worse than neither,
+    /// costing frame rate to produce samples that are thrown away again.
+    private var captureDetail: String {
+        switch aprilTagStore.rangeProfile {
+        case .near: return "720p — 640 samples across. Halves the working grid; strips have to be printed larger."
+        case .far: return "1080p — 960 samples across. The right setting for marker strips."
+        case .veryFar: return "4K — decimated back to 960 samples for markers, so it buys range only for AprilTags."
         }
     }
 
