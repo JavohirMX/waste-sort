@@ -19,6 +19,7 @@ struct PhotoSortView: View {
     @State private var errorMessage: String?
     @State private var availability = PCCJudgeAvailability.current
     @State private var capabilitiesSummary: String?
+    @State private var visionAttemptsEnabled = PCCVisionGate.enabled
     /// Distinct, growing track ids so repeated smoke tests never collide with
     /// the arbiter's one-request-per-track dedupe (live tracks use small ids).
     @State private var nextTrackID = 900_000
@@ -42,6 +43,8 @@ struct PhotoSortView: View {
                             .font(.system(.body, design: .default))
                             .foregroundStyle(.red)
                     }
+
+                    visionStatusCard
 
                     if let sourceImage {
                         imageCard
@@ -123,6 +126,17 @@ struct PhotoSortView: View {
         }
     }
 
+    /// States the current vision situation plainly: this beta's PCC declares
+    /// vision support but traps on any image attachment, so attempts are
+    /// opt-in. The toggle is the only way a user re-arms the crash path (e.g.
+    /// to re-test after a beta update).
+    private var visionStatusCard: some View {
+        PCCVisionStatusCard(
+            busy: isJudging || isProbing,
+            enabled: $visionAttemptsEnabled
+        )
+    }
+
     private func progressCard(title: String, detail: String) -> some View {
         VStack(spacing: 10) {
             ProgressView()
@@ -197,7 +211,8 @@ struct PhotoSortView: View {
             }
             .disabled(isJudging || judge == nil)
 
-            Text("Diagnostic mode: the photo is judged ONLY by Apple's Private Cloud Compute. No on-device model runs. Use any gallery image of a waste item.")
+            Text("Diagnostic mode: photos are judged ONLY by Apple's Private Cloud Compute — no on-device model runs. "
+                + "Start with the text-only probe below; it is the crash-safe health check on this iOS beta.")
                 .font(.system(.footnote, design: .default))
                 .foregroundStyle(.secondary)
         }
@@ -283,11 +298,14 @@ struct PhotoSortView: View {
         case .timeout:
             return "The request timed out after \(Int(WasteSortConfig.defaultPCCTimeoutSeconds)) s. Check the network and try again."
         case .skippedQuota:
-            return "The daily Private Cloud Compute quota is exhausted on this device. It resets automatically; the exact reset time appears in Settings → PCC second opinion → Status."
+            return "The daily Private Cloud Compute quota is exhausted on this device. It resets automatically; "
+                + "the exact reset time appears in Settings → PCC second opinion → Status."
         case .skippedUnavailable(let reason):
-            return "PCC is unavailable on this device: \(reason). Check the checklist in RUNBOOK.md Part A (iOS 27, Apple Intelligence on, entitlement attached)."
+            return "PCC is unavailable on this device: \(reason). Check the checklist in RUNBOOK.md Part A "
+                + "(iOS 27, Apple Intelligence on, entitlement attached)."
         case .error(let message):
-            return "The request failed: \(message). Repeated failures trip the circuit breaker for \(Int(WasteSortConfig.defaultPCCBreakerCooldownSeconds)) s."
+            return "The request failed: \(message). Repeated failures trip the circuit breaker for "
+                + "\(Int(WasteSortConfig.defaultPCCBreakerCooldownSeconds)) s."
         case .cropFailed:
             return "The image could not be prepared for the model."
         case .skippedOffline:
@@ -382,5 +400,49 @@ struct PhotoSortView: View {
         )
         probeJudgment = await judge.smokeJudge(context, crop: probeCrop)
         availability = PCCJudgeAvailability.current
+    }
+}
+
+/// Opt-in switch for image judgments, with the honest state of the vision
+/// path spelled out. Extracted from the smoke screen to keep that struct
+/// under its size budget; the copy doubles as the operator's memory of WHY
+/// the default is off on this iOS beta.
+private struct PCCVisionStatusCard: View {
+    let busy: Bool
+    @Binding var enabled: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Attempt image judgments", isOn: Binding(
+                get: { enabled },
+                set: { on in
+                    PCCVisionGate.setEnabled(on)
+                    enabled = on
+                }
+            ))
+            .disabled(busy)
+
+            if enabled {
+                Label(
+                    "Image attempts are ON. On this iOS beta the framework traps (app crash) when PCC receives an image — "
+                        + "that is an Apple bug, not a setup problem. The text probe below stays safe.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.system(.footnote, design: .default))
+                .foregroundStyle(.orange)
+            } else {
+                Label(
+                    "Image judgments are OFF: this iOS beta crashes on PCC image attachments even though the runtime "
+                        + "claims vision support. Text probing works — use it to confirm PCC health. Turn the toggle on "
+                        + "only to re-test after a beta update.",
+                    systemImage: "photo.slash"
+                )
+                .font(.system(.footnote, design: .default))
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

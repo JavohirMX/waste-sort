@@ -2,7 +2,10 @@ import Foundation
 import Testing
 @testable import waste_sort
 
-@Suite("BinGuide learned-override layer")
+/// `.serialized` because every test swaps the process-wide
+/// `BinGuide.overrideProvider`; parallel execution inside the suite would let
+/// one test observe another's provider (real flake seen in CI-style runs).
+@Suite("BinGuide learned-override layer", .serialized)
 struct BinGuideOverrideTests {
 
     private func withProvider(

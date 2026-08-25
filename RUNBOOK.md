@@ -68,9 +68,11 @@ The fastest, most direct check: **Sort photo → PCC smoke test** (the photo-sor
 screen is now a pure-PCC diagnostic — no on-device model runs).
 
 1. Pick ANY gallery image of a waste item.
-2. Expected: a colored verdict card with PCC's bin (raw label, material,
-   rationale, latency). The call goes through the exact production pipeline —
-   availability gates, quota, breaker, store recording.
+2. On this beta: run the **text-only probe** first — a green result proves
+   PCC connectivity, quota, and the entitlement channel end-to-end (the exact
+   production pipeline: gates, breaker, store recording). Image judgments are
+   opt-in ("Attempt image judgments" toggle) because the beta traps on
+   attachments; flip it only to re-test after a beta update.
 3. If you get the orange card instead, the failure text tells you which gate
    failed (quota / unavailable / timeout) and what to fix — that is the honest
    answer to "is PCC working on this device".
@@ -91,6 +93,7 @@ changes by design), then export and look for a `"pipeline":"belief"` line.
 | Records show `skippedQuota` all day | Daily quota exhausted | Expected under heavy testing; resumes after reset time shown in Status |
 | Records show `.error("gate: breaker open")` streaks | Three consecutive transport failures tripped the breaker | It auto-closes after 120 s; check network |
 | `mappingFailed:true` lines | Model returned a label outside the taxonomy | Data, not a bug — kept for analysis |
+| App crashes when PCC receives an image | **iOS 27 beta bug**: the runtime declares `.vision` but traps (EXC_BAD_ACCESS) on any image attachment — CGImage and file-URL variants confirmed; text-only calls work | Keep "Attempt image judgments" OFF in the smoke screen; use the text-only probe. Re-test after each beta, then re-enable |
 
 ---
 

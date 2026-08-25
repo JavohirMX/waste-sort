@@ -327,6 +327,29 @@ nonisolated enum PCCTextProbe {
     static let label = "text_probe"
 }
 
+/// Opt-in switch for PCC image-attachment attempts. Lives outside the iOS-27
+/// gate so diagnostic surfaces (which run on any OS) can read and flip it.
+///
+/// Image attempts are opt-in because the iOS 27 beta traps (EXC_BAD_ACCESS)
+/// inside the framework when a PCC session is handed any image attachment —
+/// CGImage and file-URL variants both confirmed, with the runtime
+/// simultaneously *declaring* `.vision` capability and the text path working
+/// perfectly. A trap cannot be caught in-process, so until a beta fixes it the
+/// only safe default is off. The text probe and all live-path gating (quota,
+/// breaker, records) are unaffected; when Apple ships a fixed beta, turn the
+/// toggle on to re-test, then flip the default here.
+nonisolated enum PCCVisionGate {
+    static let defaultsKey = "settings.pccVisionAttemptsEnabled"
+
+    nonisolated(unsafe) static var enabled =
+        UserDefaults.standard.bool(forKey: defaultsKey)
+
+    static func setEnabled(_ newValue: Bool) {
+        enabled = newValue
+        UserDefaults.standard.set(newValue, forKey: defaultsKey)
+    }
+}
+
 #if canImport(FoundationModels)
 import UIKit
 
@@ -359,8 +382,31 @@ nonisolated enum PCCTransportFactory {
     /// Sentinel `yoloLabel` that makes the transport send a text-only probe
     /// (no attachment). The one non-crashing way to prove PCC connectivity,
     /// quota, and entitlement channel while the vision path is under diagnosis.
-    /// Declared outside the iOS-27 gate so diagnostic surfaces can reference it.
     static let textProbeLabel = PCCTextProbe.label
+
+    /// Vision preflight, two layers, kept out of the transport closure for
+    /// size: the opt-in switch first (this beta traps on attachments despite
+    /// declaring `.vision`), then the SDK capability flags for runtimes that
+    /// honestly lack vision. Returns the failure answer to record, or nil
+    /// when image content may proceed.
+    private static func visionGateFailure(
+        isTextProbe: Bool,
+        model: PrivateCloudComputeLanguageModel
+    ) -> ArbiterError? {
+        if isTextProbe { return nil }
+        if !PCCVisionGate.enabled {
+            return .unavailable(
+                "image attachments are disabled: this iOS beta traps on PCC vision calls "
+                    + "(text path verified working). Re-enable image judgments after a beta update to test again."
+            )
+        }
+        if !model.capabilities.contains(.vision) {
+            return .unavailable(
+                "this PCC runtime does not declare vision support (capabilities: \(describe(model.capabilities)))"
+            )
+        }
+        return nil
+    }
 
     static func defaultTransport() -> ArbitrationTransport {
         { query, crop in
@@ -379,15 +425,8 @@ nonisolated enum PCCTransportFactory {
             }
             do {
                 let model = PrivateCloudComputeLanguageModel()
-                // Vision preflight: the SDK exposes capability flags precisely
-                // so callers do not send unsupported content. A beta runtime
-                // that lacks vision may trap on attachments instead of
-                // throwing `unsupportedCapability` — never hand it an image
-                // it did not declare support for.
-                if !isTextProbe, !model.capabilities.contains(.vision) {
-                    return .failure(.unavailable(
-                        "this PCC runtime does not declare vision support (capabilities: \(describe(model.capabilities)))"
-                    ))
+                if let gateFailure = visionGateFailure(isTextProbe: isTextProbe, model: model) {
+                    return .failure(gateFailure)
                 }
                 // Session + respond form mirrored from the validated
                 // text-based PCC app on this device: `LanguageModelSession(
@@ -457,7 +496,7 @@ nonisolated enum PCCTransportFactory {
             (.vision, "vision"),
             (.guidedGeneration, "guidedGeneration"),
             (.reasoning, "reasoning"),
-            (.toolCalling, "toolCalling"),
+            (.toolCalling, "toolCalling")
         ]
         let supported = all.filter { capabilities.contains($0.0) }.map(\.1)
         return supported.isEmpty ? "none" : supported.joined(separator: ", ")
