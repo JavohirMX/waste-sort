@@ -192,6 +192,9 @@ Live segmentation is powered by [Ultralytics YOLO for iOS](https://github.com/ul
 
 ## Silent second opinions (PCC judge)
 
+**Full A→Z walkthrough** — enabling PCC, collecting evidence, applying corrections,
+and retraining YOLO on PCC data: see [RUNBOOK.md](RUNBOOK.md).
+
 When the belief engine routes an item to residual because it is unsure, the app
 also asks Apple's Private Cloud Compute model for a structured second opinion
 and logs it beside what YOLO believed — nothing on screen changes. Records

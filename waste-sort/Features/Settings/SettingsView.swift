@@ -658,6 +658,10 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if let pccExportURL {
+                ShareLink("Share exported bundle", item: pccExportURL)
+            }
+
             Button("Analyze judge records") {
                 refreshPCCCorrections()
             }
