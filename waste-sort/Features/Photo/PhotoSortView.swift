@@ -54,7 +54,7 @@ struct PhotoSortView: View {
                     }
 
                     if isJudging {
-                        progressCard(title: "Asking Private Cloud Compute…", detail: "Vision calls take 5–15 s")
+                        progressCard(title: "Asking Private Cloud Compute…", detail: "Usually 1–8 s")
                     } else if let judgment {
                         judgmentCard(judgment)
                     } else if sourceImage != nil {
@@ -426,14 +426,17 @@ struct PhotoSortView: View {
         availability = PCCJudgeAvailability.current
     }
 
-    /// Whole-frame "crop", downscaled — the model sees the full photo.
+    /// Whole-frame "crop", downscaled to the SAME size the live judge sends
+    /// (448 px). Measured on the iOS 27 sim: 512 px answered in ~1.3 s while
+    /// 1024 px took 6–8 s and straddled the 10 s timeout — the smoke screen
+    /// must exercise the shape production uses, not a heavier one.
     private func smokeCrop(from frameCG: CGImage) -> CGImage {
         ItemCropper.crop(
             frameCG,
             to: CGRect(x: 0, y: 0, width: 1, height: 1),
-            padding: 0,
-            maximumSide: 1024,
-            minimumSide: 96
+            padding: WasteSortConfig.defaultPCCCropPadding,
+            maximumSide: WasteSortConfig.defaultPCCCropMaximumSide,
+            minimumSide: WasteSortConfig.defaultPCCCropMinimumPixels
         ) ?? frameCG
     }
 

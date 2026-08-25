@@ -32,7 +32,10 @@ enum WasteSortConfig {
     static let defaultPCCJudgeEnabled = true
     static let defaultPCCReasoningLevel = "moderate"
     /// Wall-clock budget for one cloud arbitration.
-    static let defaultPCCTimeoutSeconds = 10.0
+    /// 20 s: measured PCC vision latency on real photos (iOS 27 sim) was 1.3 s
+    /// at the production 448 px crop but 6–8 s at 1024 px with one timeout at
+    /// 10 s. The judge is silent and background, so headroom is free.
+    static let defaultPCCTimeoutSeconds = 20.0
     /// Consecutive failed arbitrations before the circuit breaker opens.
     static let defaultPCCBreakerThreshold = 3
     /// How long the breaker stays open after tripping.
