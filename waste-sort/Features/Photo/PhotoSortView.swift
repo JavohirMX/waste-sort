@@ -1,63 +1,57 @@
 import PhotosUI
 import SwiftUI
-import UltralyticsYOLO
 
+/// Diagnostic surface: photos are judged by Apple's Private Cloud Compute
+/// ALONE — no on-device model, no belief engine, no fuser. Built to answer one
+/// question with gallery images: does the PCC path work on this device?
+/// Every attempt is recorded through the same arbiter pipeline the kiosk uses,
+/// so what you see here is exactly what the live judge would get.
 struct PhotoSortView: View {
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var pickerItem: PhotosPickerItem?
-    @State private var model: YOLO?
-    @State private var isLoadingModel = true
-    @State private var isInferring = false
     @State private var sourceImage: UIImage?
-    @State private var fused: [FusedPhotoDetection] = []
-    /// User resolutions for unsure items, keyed by detection index.
-    @State private var overrides: [Int: String] = [:]
+    @State private var isJudging = false
+    @State private var judgment: PCCArbiterService.SmokeJudgment?
     @State private var errorMessage: String?
-
-    private var photoTracks: [TrackedDetection] {
-        fused.enumerated().map { index, item in
-            let overridden = overrides[index]
-            let classKey = overridden ?? item.classKey
-            return TrackedDetection(
-                id: index + 1,
-                classKey: classKey,
-                className: BinGuide.bin(id: classKey).title,
-                conf: item.conf,
-                displayXywhn: item.box.xywhn,
-                beliefUncertain: item.wasUncertain && overridden == nil
-            )
-        }
-    }
+    @State private var availability = PCCJudgeAvailability.current
+    /// Distinct, growing track ids so repeated smoke tests never collide with
+    /// the arbiter's one-request-per-track dedupe (live tracks use small ids).
+    @State private var nextTrackID = 900_000
+    @State private var judge: PCCArbiterService?
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                Group {
-                    if isLoadingModel {
-                        ProgressView("Loading model")
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 40)
-                    } else if let errorMessage {
+                VStack(alignment: .leading, spacing: 16) {
+                    statusRow
+
+                    if let errorMessage {
                         Text(errorMessage)
                             .font(.system(.body, design: .default))
                             .foregroundStyle(.red)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else if isInferring {
-                        ProgressView("Sorting")
+                    }
+
+                    if let sourceImage {
+                        imageCard
+                    }
+
+                    if isJudging {
+                        ProgressView("Asking Private Cloud Compute…\n(can take 5–15 s)")
+                            .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity)
-                            .padding(.top, 40)
-                    } else if sourceImage != nil {
-                        resultsLayout
-                    } else {
+                            .padding(.top, 24)
+                    } else if let judgment {
+                        judgmentCard(judgment)
+                    } else if sourceImage == nil {
                         emptyState
                     }
                 }
                 .padding(20)
             }
             .background(Theme.photoBackground)
-            .navigationTitle("Sort photo")
+            .navigationTitle("PCC smoke test")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Done") { dismiss() }
@@ -71,182 +65,159 @@ struct PhotoSortView: View {
                             .padding(.vertical, 8)
                             .background(BinGuide.organic.color, in: Capsule())
                     }
-                    .disabled(isLoadingModel || isInferring)
-                    .accessibilityHint("Opens the photo library to sort a waste image")
+                    .disabled(isJudging || judge == nil)
+                    .accessibilityHint("Opens the photo library to judge one image with Private Cloud Compute")
                 }
             }
-            .task { loadModel() }
+            .task {
+                if judge == nil {
+                    judge = PCCArbiterService(store: PCCRecordStore())
+                }
+                availability = PCCJudgeAvailability.current
+            }
             .onChange(of: pickerItem) { _, newItem in
                 Task { await importPhoto(newItem) }
-            }
-            .onChange(of: settings.selectedModelName) { _, _ in
-                reloadModel()
             }
         }
         .environment(\.hudTextScale, CGFloat(settings.hudTextScale))
     }
 
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            pickerButton
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Point the camera, or pick a photo.")
-                    .font(.system(.title3, design: .default).weight(.semibold))
-                Text("Items are sorted into Organic, Residual, or Inorganic.")
-                    .font(.system(.body, design: .default))
-                    .foregroundStyle(.secondary)
-            }
-
-            CategoryBar(counts: [:])
-                .opacity(0.85)
-                .padding(.top, 8)
+    private var statusRow: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(availability.isReady ? Color.green : Color.orange)
+                .frame(width: 10, height: 10)
+            Text(availability.summary)
+                .font(.system(.footnote, design: .default))
+                .foregroundStyle(.secondary)
         }
-        .padding(.top, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var pickerButton: some View {
-        PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
-            Text("Choose photo")
-                .font(.system(.headline, design: .default))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .foregroundStyle(.white)
-                .background(BinGuide.organic.color)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-        .disabled(isLoadingModel || isInferring)
-        .accessibilityHint("Opens the photo library to sort a waste image")
-    }
-
-    @ViewBuilder
-    private var resultsLayout: some View {
-        if horizontalSizeClass == .regular {
-            HStack(alignment: .top, spacing: 20) {
-                annotatedImage
-                    .frame(maxWidth: .infinity)
-                resultsList
-                    .frame(maxWidth: 420)
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 16) {
-                annotatedImage
-                resultsList
-            }
-        }
-    }
-
-    private var annotatedImage: some View {
+    private var imageCard: some View {
         Group {
             if let sourceImage {
-                Color.clear
-                    .aspectRatio(sourceImage.size, contentMode: .fit)
-                    .overlay {
-                        Image(uiImage: sourceImage)
-                            .resizable()
-                            .scaledToFit()
-                    }
-                    .overlay {
-                        GeometryReader { geo in
-                            DetectionBoxOverlay(
-                                tracks: photoTracks,
-                                imageSize: sourceImage.size,
-                                viewSize: geo.size,
-                                useAspectFill: false,
-                                style: settings.boxOverlayStyle
-                            )
-                        }
-                    }
+                Image(uiImage: sourceImage)
+                    .resizable()
+                    .scaledToFit()
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
     }
 
-    private var resultsList: some View {
+    private var emptyState: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(fused.isEmpty ? "No items found" : "\(fused.count) item\(fused.count == 1 ? "" : "s")")
-                .font(.system(.title3, design: .default).weight(.semibold))
-
-            CategoryBar(counts: photoCounts)
-                .padding(.bottom, 4)
-
-            ForEach(fused.indices, id: \.self) { index in
-                DetectionRow(
-                    className: displayName(for: index),
-                    confidence: fused[index].conf
-                )
-                if fused[index].wasUncertain, overrides[index] == nil {
-                    resolveChip(index: index)
-                }
+            PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
+                Text("Choose photo")
+                    .font(.system(.headline, design: .default))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .foregroundStyle(.white)
+                    .background(BinGuide.organic.color)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
-        }
-    }
+            .disabled(isJudging || judge == nil)
 
-    private func displayName(for index: Int) -> String {
-        if let override = overrides[index] {
-            return BinGuide.bin(id: override).displayName
-        }
-        return fused[index].wasUncertain
-            ? "UNSURE → \(BinGuide.bin(id: fused[index].classKey).displayName)"
-            : BinGuide.bin(id: fused[index].classKey).displayName
-    }
-
-    /// Two-button resolution for an unsure photo item; photo mode is not
-    /// throughput-bound, so asking beats guessing.
-    private func resolveChip(index: Int) -> some View {
-        HStack(spacing: 8) {
-            Text("Not sure about this one?")
+            Text("Diagnostic mode: the photo is judged ONLY by Apple's Private Cloud Compute. No on-device model runs. Use any gallery image of a waste item.")
                 .font(.system(.footnote, design: .default))
                 .foregroundStyle(.secondary)
-            Button("Inorganic") { overrides[index] = BinGuide.cleanInorganic.id }
-                .buttonStyle(.bordered)
-                .tint(BinGuide.cleanInorganic.color)
-            Button("Residual") { overrides[index] = BinGuide.residual.id }
-                .buttonStyle(.borderedProminent)
-                .tint(BinGuide.residual.color)
         }
+        .padding(.top, 8)
     }
 
-    private var photoCounts: [String: Int] {
-        var counts: [String: Int] = [:]
-        for track in photoTracks {
-            counts[track.advisedBinID, default: 0] += 1
-        }
-        return counts
-    }
-
-    private func loadModel() {
-        guard model == nil else {
-            isLoadingModel = false
-            return
-        }
-        beginModelLoad(named: settings.selectedModelName)
-    }
-
-    private func reloadModel() {
-        model = nil
-        isLoadingModel = true
-        errorMessage = nil
-        beginModelLoad(named: settings.selectedModelName)
-    }
-
-    private func beginModelLoad(named name: String) {
-        // YOLO's async loader captures `[weak self]`. Keep the instance in
-        // `@State` immediately so the completion can fire.
-        let yolo = YOLO(name, task: .segment) { result in
-            Task { @MainActor in
-                switch result {
-                case .success(let loaded):
-                    applyThresholds(loaded)
-                    isLoadingModel = false
-                case .failure(let error):
-                    model = nil
-                    errorMessage = "Could not load model: \(error.localizedDescription)"
-                    isLoadingModel = false
+    @ViewBuilder
+    private func judgmentCard(_ judgment: PCCArbiterService.SmokeJudgment) -> some View {
+        let record = judgment.record
+        if judgment.answered {
+            let bin = BinGuide.bin(id: record.pccBinID ?? BinGuide.unknown.id)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Image(systemName: bin.symbolName)
+                        .font(.title)
+                        .foregroundStyle(bin.color)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(bin.displayName)
+                            .font(.system(.title2, design: .default).weight(.bold))
+                            .foregroundStyle(bin.color)
+                        Text("PCC verdict")
+                            .font(.system(.caption, design: .default))
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                verdictRow("Raw label", record.pccRawBinLabel ?? "—")
+                verdictRow("Material", record.material ?? "—")
+                if let rationale = record.reasoningSummary, !rationale.isEmpty {
+                    verdictRow("Why", rationale)
+                }
+                verdictRow("Agrees with device", record.agreesWithEngine.map { $0 ? "yes" : "no" } ?? "—")
+                diagnostics(judgment)
             }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(bin.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("PCC did not return an answer", systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(.headline, design: .default))
+                    .foregroundStyle(.orange)
+                Text(outcomeDescription(record.outcome))
+                    .font(.system(.body, design: .default))
+                Text("Device status: \(judgment.availabilitySummary)")
+                    .font(.system(.footnote, design: .default))
+                    .foregroundStyle(.secondary)
+                diagnostics(judgment)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
-        model = yolo
+    }
+
+    private func diagnostics(_ judgment: PCCArbiterService.SmokeJudgment) -> some View {
+        let record = judgment.record
+        return VStack(alignment: .leading, spacing: 4) {
+            if let latency = record.latencyMs {
+                verdictRow("Latency", "\(latency) ms")
+            }
+            if let quota = record.quotaStateAtCall {
+                verdictRow("Quota", quota)
+            }
+            verdictRow("Recorded", "yes (pipeline: \(record.pipeline))")
+        }
+        .padding(.top, 4)
+    }
+
+    private func verdictRow(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(.system(.subheadline, design: .default))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.system(.subheadline, design: .default).weight(.medium))
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    private func outcomeDescription(_ outcome: PCCVerdictRecord.Outcome) -> String {
+        switch outcome {
+        case .timeout:
+            return "The request timed out after \(Int(WasteSortConfig.defaultPCCTimeoutSeconds)) s. Check the network and try again."
+        case .skippedQuota:
+            return "The daily Private Cloud Compute quota is exhausted on this device. It resets automatically; the exact reset time appears in Settings → PCC second opinion → Status."
+        case .skippedUnavailable(let reason):
+            return "PCC is unavailable on this device: \(reason). Check the checklist in RUNBOOK.md Part A (iOS 27, Apple Intelligence on, entitlement attached)."
+        case .error(let message):
+            return "The request failed: \(message). Repeated failures trip the circuit breaker for \(Int(WasteSortConfig.defaultPCCBreakerCooldownSeconds)) s."
+        case .cropFailed:
+            return "The image could not be prepared for the model."
+        case .skippedOffline:
+            return "The device appears to be offline."
+        case .skippedDisabled:
+            return "The PCC judge toggle is off."
+        case .answered:
+            return "Answered."
+        }
     }
 
     private func importPhoto(_ item: PhotosPickerItem?) async {
@@ -258,70 +229,49 @@ struct PhotoSortView: View {
                 errorMessage = "Could not read that photo."
                 return
             }
-            await runInference(on: image)
+            await judgePhoto(image)
         } catch {
             errorMessage = "Could not read that photo."
         }
     }
 
-    private func runInference(on image: UIImage) async {
-        guard let model else {
-            errorMessage = "Model is not ready yet."
+    private func judgePhoto(_ image: UIImage) async {
+        guard let judge else {
+            errorMessage = "Judge is not ready yet — try again in a moment."
             return
         }
-
         errorMessage = nil
+        judgment = nil
         sourceImage = image
-        isInferring = true
-        fused = []
-        overrides = [:]
+        isJudging = true
+        defer { isJudging = false }
 
-        applyThresholds(model)
-        let minConf = Float(settings.confidence)
-        let color = settings.runtime.frameColor.clamped
-        let prepared: UIImage
-        if color.isIdentity {
-            prepared = image
-        } else {
-            let adjusted = FrameColorAdjuster.apply(color, to: FrameColorAdjuster.ciImage(from: image))
-            prepared = FrameColorAdjuster.uiImage(from: adjusted) ?? image
+        guard let frameCG = UprightFrameImage.cgImage(from: image) else {
+            errorMessage = "Could not read that image."
+            return
         }
-        sourceImage = prepared
+        // Whole-frame "crop", downscaled — the model sees the full photo.
+        let crop = ItemCropper.crop(
+            frameCG,
+            to: CGRect(x: 0, y: 0, width: 1, height: 1),
+            padding: 0,
+            maximumSide: 1024,
+            minimumSide: 96
+        ) ?? frameCG
 
-        // Two-pass ensemble: the mirror pass supplies a second opinion without a
-        // second model; disagreement is what powers the unsure state below.
-        let result = await Task.detached(priority: .userInitiated) {
-            let flipped = FrameColorAdjuster.uiImage(
-                from: FrameColorAdjuster.ciImage(from: prepared).oriented(.upMirrored)
-            ) ?? prepared
-            return (model(prepared), model(flipped))
-        }.value
-
-        var priors: [AppearancePrior?] = []
-        if settings.appearanceAssistEnabled {
-            let sampler = BoxAppearanceSampler()
-            for box in result.0.boxes where box.conf >= minConf {
-                priors.append(
-                    sampler.sample(image: prepared, rectNorm: box.xywhn)
-                        .map { AppearanceAnalyzer.prior(for: $0) }
-                )
-            }
-        }
-
-        let fusedDetections = PhotoDetectionFuser.fuse(
-            passes: [
-                Array(result.0.boxes.filter { $0.conf >= minConf }),
-                Array(result.1.boxes.filter { $0.conf >= minConf })
-            ],
-            priors: priors
+        nextTrackID += 1
+        let context = ArbiterRequestContext(
+            trackId: nextTrackID,
+            sessionId: "photo-smoke",
+            yoloLabel: "photo_smoke",
+            yoloConfidence: 0,
+            beliefUncertain: false,
+            beliefMargin: 0,
+            engineBinID: BinGuide.unknown.id,
+            pipeline: "photo-smoke",
+            triggeredAt: Date()
         )
-        fused = fusedDetections
-        isInferring = false
-    }
-
-    private func applyThresholds(_ model: YOLO) {
-        model.setConfidenceThreshold(settings.confidence)
-        model.setIouThreshold(settings.iou)
-        model.setNumItemsThreshold(settings.maxItems)
+        judgment = await judge.smokeJudge(context, crop: crop)
+        availability = PCCJudgeAvailability.current
     }
 }

@@ -145,6 +145,20 @@ struct PCCPolicyAnalyzerTests {
         #expect(suggestions.first?.direction == .intoResidual)
     }
 
+    @Test("Diagnostic smoke records never count as routing evidence")
+    func diagnosticsExcluded() {
+        var records = (0..<8).map { _ in answered(label: "clean_inorganic", pccBin: BinGuide.residual.id) }
+        // Same verdicts, but from the photo smoke screen: connectivity
+        // evidence, not model-disagreement evidence. If these leaked into the
+        // pool the class would cross the minimum-samples bar.
+        for _ in 0..<20 {
+            var smoke = answered(label: "clean_inorganic", pccBin: BinGuide.residual.id)
+            smoke.pipeline = "photo-smoke"
+            records.append(smoke)
+        }
+        #expect(PCCPolicyAnalyzer.suggestions(from: records) == [])
+    }
+
     @Test("Suggestions sort by sample count desc, then id")
     func sorting() {
         var records = (0..<20).map { _ in answered(label: "aaa_item", pccBin: BinGuide.residual.id) }

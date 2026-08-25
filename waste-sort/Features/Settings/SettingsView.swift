@@ -727,7 +727,7 @@ struct SettingsView: View {
 
     private func refreshPCCCorrections() {
         let interval = DateInterval(start: .distantPast, end: Date())
-        let records = PCCRecordStore().records(in: interval)
+        let records = PCCRecordStore().records(in: interval).filter { !$0.isDiagnostic }
         pccSuggestions = PCCPolicyAnalyzer.suggestions(from: records)
         pccAppliedOverrides = AppliedBinOverrides.shared.all()
         pccAnalyzedRecords = records.count { $0.outcome == .answered && !$0.mappingFailed }

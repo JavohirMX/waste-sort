@@ -205,4 +205,63 @@ struct PCCArbiterServiceTests {
         if case .error = record.outcome { isError = true }
         #expect(isError, "expected error outcome, got \(record.outcome)")
     }
+
+    // MARK: - Smoke path (awaitable diagnostic judgment)
+
+    @Test("smokeJudge returns the answer and records it through the real pipeline")
+    func smokeJudgeAnswers() async throws {
+        let service = PCCArbiterService(
+            store: store,
+            transport: answeredTransport(label: "residual"),
+            availabilityOverride: .ready
+        )
+        let judgment = await service.smokeJudge(context(), crop: makeCrop())
+
+        #expect(judgment.answered)
+        let answer = try #require(judgment.answer)
+        #expect(answer.rawBinLabel == "residual")
+        #expect(judgment.record.outcome == .answered)
+        #expect(judgment.record.pccBinID == BinGuide.residual.id)
+        let settled = await waitUntil { self.allRecords().count == 1 }
+        #expect(settled, "smoke judgment was not recorded")
+    }
+
+    @Test("smokeJudge surfaces gate outcomes instead of answers")
+    func smokeJudgeGateOutcomes() async throws {
+        var calls = 0
+        let counting: ArbitrationTransport = { _, _ in
+            calls += 1
+            return .success(ArbiterAnswer(rawBinLabel: "organic", latencyMs: 1))
+        }
+        let service = PCCArbiterService(
+            store: store,
+            transport: counting,
+            availabilityOverride: .quotaLimited(reset: Date().addingTimeInterval(600))
+        )
+        let judgment = await service.smokeJudge(context(), crop: makeCrop())
+
+        #expect(!judgment.answered)
+        #expect(judgment.answer == nil)
+        #expect(judgment.record.outcome == .skippedQuota)
+        #expect(calls == 0, "quota gate must run before the transport")
+        let settled = await waitUntil { self.allRecords().count == 1 }
+        #expect(settled)
+    }
+
+    @Test("smokeJudge reports transport failures honestly")
+    func smokeJudgeFailure() async throws {
+        let exploding: ArbitrationTransport = { _, _ in .failure(.failed("detonated")) }
+        let service = PCCArbiterService(
+            store: store,
+            transport: exploding,
+            availabilityOverride: .ready
+        )
+        let judgment = await service.smokeJudge(context(), crop: makeCrop())
+
+        #expect(!judgment.answered)
+        #expect(judgment.answer == nil)
+        var isError = false
+        if case .error = judgment.record.outcome { isError = true }
+        #expect(isError, "expected error outcome, got \(judgment.record.outcome)")
+    }
 }

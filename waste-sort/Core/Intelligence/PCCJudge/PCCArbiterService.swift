@@ -108,6 +108,39 @@ nonisolated final class PCCArbiterService: VerdictArbitrating, @unchecked Sendab
         return currentStatusLocked()
     }
 
+    // MARK: - Smoke path (photo diagnostic)
+
+    /// The outcome of one awaitable judgment, for surfaces that display the
+    /// verdict directly (the photo smoke screen). The record is exactly what
+    /// landed in the store.
+    nonisolated struct SmokeJudgment: Sendable {
+        let record: PCCVerdictRecord
+        let answer: ArbiterAnswer?
+        let availabilitySummary: String
+
+        var answered: Bool {
+            record.outcome == .answered
+        }
+    }
+
+    /// Runs the full production pipeline — availability gates, timeout race,
+    /// breaker, store recording — but awaits and returns the result instead of
+    /// detaching. Diagnostic surfaces use this so the smoke test exercises the
+    /// same stack the kiosk depends on. Caller supplies a unique trackId.
+    func smokeJudge(_ context: ArbiterRequestContext, crop: CGImage?) async -> SmokeJudgment {
+        stateLock.lock()
+        requestedTrackIDs.insert(context.trackId)
+        let status = currentStatusLocked()
+        stateLock.unlock()
+
+        let record = await judge(context: context, crop: crop, statusAtTrigger: status)
+        return SmokeJudgment(
+            record: record.record,
+            answer: record.answer,
+            availabilitySummary: status.availability.summary
+        )
+    }
+
     // MARK: - Pipeline
 
     private func currentStatusLocked() -> JudgeStatusSnapshot {
@@ -135,30 +168,38 @@ nonisolated final class PCCArbiterService: VerdictArbitrating, @unchecked Sendab
         crop: CGImage?,
         statusAtTrigger: JudgeStatusSnapshot
     ) async {
+        _ = await judge(context: context, crop: crop, statusAtTrigger: statusAtTrigger)
+    }
+
+    /// The shared pipeline core. Gates, races the transport, notes breaker
+    /// state, records to the store, and returns exactly what was recorded.
+    private func judge(
+        context: ArbiterRequestContext,
+        crop: CGImage?,
+        statusAtTrigger: JudgeStatusSnapshot
+    ) async -> (record: PCCVerdictRecord, answer: ArbiterAnswer?) {
         // Crop failure is a record, not a silent drop (FR-4).
         guard let crop else {
-            store.append(failureRecord(for: context, outcome: .cropFailed), cropJPEG: nil)
-            return
+            let record = failureRecord(for: context, outcome: .cropFailed)
+            store.append(record, cropJPEG: nil)
+            return (record, nil)
         }
 
         switch statusAtTrigger.availability {
         case .ready:
             break
         case .quotaLimited(let reset):
-            store.append(failureRecord(for: context, outcome: .skippedQuota, reset: reset), cropJPEG: nil)
-            return
+            let record = failureRecord(for: context, outcome: .skippedQuota, reset: reset)
+            store.append(record, cropJPEG: nil)
+            return (record, nil)
         case .needsNewerOS, .buildMismatch:
-            store.append(
-                failureRecord(for: context, outcome: .skippedUnavailable("iOS too old for PCC")),
-                cropJPEG: nil
-            )
-            return
+            let record = failureRecord(for: context, outcome: .skippedUnavailable("iOS too old for PCC"))
+            store.append(record, cropJPEG: nil)
+            return (record, nil)
         case .modelUnavailable(let reason):
-            store.append(
-                failureRecord(for: context, outcome: .skippedUnavailable(reason)),
-                cropJPEG: nil
-            )
-            return
+            let record = failureRecord(for: context, outcome: .skippedUnavailable(reason))
+            store.append(record, cropJPEG: nil)
+            return (record, nil)
         }
 
         let startedAt = now()
@@ -169,7 +210,44 @@ nonisolated final class PCCArbiterService: VerdictArbitrating, @unchecked Sendab
             await transport(context, crop)
         }
         let jpeg = jpegData(crop)
-        finish(context: context, result: result, startedAt: startedAt, cropJPEG: jpeg)
+
+        stateLock.lock()
+        switch result {
+        case .success:
+            consecutiveFailures = 0
+        case .failure(let error):
+            noteFailureLocked(error)
+        }
+        let quotaState = quotaLabel(from: result)
+        stateLock.unlock()
+
+        let record: PCCVerdictRecord
+        let answer: ArbiterAnswer?
+        switch result {
+        case .success(let success):
+            answer = success
+            record = PCCVerdictRecord.answered(
+                from: context,
+                answer: success,
+                cropFile: jpeg != nil ? "" : nil,
+                quotaState: quotaState
+            )
+        case .failure(.timeout):
+            answer = nil
+            record = failureRecord(for: context, outcome: .timeout)
+        case .failure(.quotaLimitReached(let reset)):
+            answer = nil
+            record = failureRecord(for: context, outcome: .skippedQuota, reset: reset)
+        case .failure(.unavailable(let reason)):
+            answer = nil
+            record = failureRecord(for: context, outcome: .skippedUnavailable(reason))
+        case .failure(.failed(let message)):
+            answer = nil
+            record = failureRecord(for: context, outcome: .error(message))
+        }
+        store.append(record, cropJPEG: record.outcome == .answered ? jpeg : nil)
+        Self.log.info("PCC judge finished track \(context.trackId) → \(String(describing: record.outcome))")
+        return (record, answer)
     }
 
     /// Bounds the transport at exactly `timeout` seconds; the losing branch is
@@ -188,44 +266,6 @@ nonisolated final class PCCArbiterService: VerdictArbitrating, @unchecked Sendab
             group.cancelAll()
             return first
         }
-    }
-
-    private func finish(
-        context: ArbiterRequestContext,
-        result: Result<ArbiterAnswer, ArbiterError>,
-        startedAt: Date,
-        cropJPEG: Data?
-    ) {
-        stateLock.lock()
-        switch result {
-        case .success:
-            consecutiveFailures = 0
-        case .failure(let error):
-            noteFailureLocked(error)
-        }
-        let quotaState = quotaLabel(from: result)
-        stateLock.unlock()
-
-        let record: PCCVerdictRecord
-        switch result {
-        case .success(let answer):
-            record = PCCVerdictRecord.answered(
-                from: context,
-                answer: answer,
-                cropFile: cropJPEG != nil ? "" : nil,
-                quotaState: quotaState
-            )
-        case .failure(.timeout):
-            record = failureRecord(for: context, outcome: .timeout)
-        case .failure(.quotaLimitReached(let reset)):
-            record = failureRecord(for: context, outcome: .skippedQuota, reset: reset)
-        case .failure(.unavailable(let reason)):
-            record = failureRecord(for: context, outcome: .skippedUnavailable(reason))
-        case .failure(.failed(let message)):
-            record = failureRecord(for: context, outcome: .error(message))
-        }
-        store.append(record, cropJPEG: record.outcome == .answered ? cropJPEG : nil)
-        Self.log.info("PCC judge finished track \(context.trackId) → \(String(describing: record.outcome))")
     }
 
     private func noteFailureLocked(_ error: ArbiterError) {
@@ -317,7 +357,7 @@ nonisolated enum PCCTransportFactory {
                         maximumResponseTokens: 512
                     )
                 ) {
-                    "Item seen at deposit time. YOLO label was \(query.yoloLabel), but the kiosk engine was unsure."
+                    "Judge the item in the attached image. On-device label hint: \(query.yoloLabel) (may be unavailable)."
                     Attachment(crop).label("cropped item")
                 }
                 let verdict = response.content

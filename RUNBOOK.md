@@ -62,18 +62,25 @@ Status row:
 
 Toggle **Silent PCC judge** stays ON (default).
 
-### A5. Smoke test (5 min)
+### A5. Smoke test (5 min) — use the PCC photo screen
 
-1. Point the kiosk at something genuinely ambiguous — a foil-lined chip bag is
-   reliable. The item must be guided to RESIDUAL via the *unsure* path (watch
-   the CTA hesitate), because only uncertain→residual deposits trigger a
-   judgment.
-2. Wait ~15 s. Nothing on screen should change — that is by design.
-3. Settings → set export range to today → **Export judgments for range**.
-   Expected: "Exported 1 records." + a **Share exported bundle** button appears.
-4. AirDrop/save the bundle somewhere you can open it: inside you should find
-   `records.jsonl` with one `"outcome":{"tag":"answered"}` line and a JPEG in
-   `crops/`.
+The fastest, most direct check: **Sort photo → PCC smoke test** (the photo-sort
+screen is now a pure-PCC diagnostic — no on-device model runs).
+
+1. Pick ANY gallery image of a waste item.
+2. Expected: a colored verdict card with PCC's bin (raw label, material,
+   rationale, latency). The call goes through the exact production pipeline —
+   availability gates, quota, breaker, store recording.
+3. If you get the orange card instead, the failure text tells you which gate
+   failed (quota / unavailable / timeout) and what to fix — that is the honest
+   answer to "is PCC working on this device".
+4. Cross-check: Settings → export today → the bundle should contain a
+   `records.jsonl` line with `"pipeline":"photo-smoke"`.
+
+Live-path check (optional): point the kiosk at something genuinely ambiguous —
+a foil-lined chip bag. The item must be guided to RESIDUAL via the *unsure*
+path; only those deposits trigger a judgment. Wait ~15 s (nothing on screen
+changes by design), then export and look for a `"pipeline":"belief"` line.
 
 ### A6. Troubleshooting
 

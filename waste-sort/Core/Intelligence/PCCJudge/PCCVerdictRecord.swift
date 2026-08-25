@@ -39,6 +39,11 @@ nonisolated struct PCCVerdictRecord: Equatable, Sendable, Codable {
     var reasoningLevel: String
     var errorMessage: String?
 
+    /// Diagnostic pipelines (the photo smoke screen) prove connectivity and
+    /// land in exports as evidence, but they carry no routing signal: there is
+    /// no model verdict to correct. The policy analyzer skips them.
+    var isDiagnostic: Bool { pipeline.lowercased().contains("smoke") }
+
     nonisolated enum Outcome: Equatable, Sendable, Codable {
         case answered
         case timeout

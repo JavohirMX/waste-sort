@@ -66,6 +66,7 @@ nonisolated enum PCCPolicyAnalyzer {
         for record in records {
             guard record.outcome == .answered,
                   !record.mappingFailed,
+                  !record.isDiagnostic,
                   let pccBinID = record.pccBinID,
                   !record.yoloLabel.isEmpty
             else { continue }
