@@ -37,6 +37,28 @@ struct VideoRotationMathTests {
             VideoRotationMath.legacyOrientation(base: .landscapeLeft, rotation: .ninety) == .landscapeRight
         )
     }
+
+    @Test func composedWrapsAt360() {
+        #expect(VideoRotationMath.composed(.zero, .oneEighty) == .oneEighty)
+        #expect(VideoRotationMath.composed(.oneEighty, .oneEighty) == .zero)
+        #expect(VideoRotationMath.composed(.ninety, .twoSeventy) == .zero)
+        #expect(VideoRotationMath.composed(.ninety, .ninety) == .oneEighty)
+    }
+
+    @Test func presentationDeltaIsPreviewMinusBuffer() {
+        #expect(VideoRotationMath.presentationDelta(previewAngle: 180, bufferAngle: 0) == .oneEighty)
+        #expect(VideoRotationMath.presentationDelta(previewAngle: 0, bufferAngle: 0) == .zero)
+        #expect(VideoRotationMath.presentationDelta(previewAngle: 90, bufferAngle: 90) == .zero)
+        #expect(VideoRotationMath.presentationDelta(previewAngle: 0, bufferAngle: 180) == .oneEighty)
+        #expect(VideoRotationMath.presentationDelta(previewAngle: 270, bufferAngle: 90) == .oneEighty)
+    }
+
+    @Test func orientationAngleRoundTrips() {
+        #expect(VideoRotationMath.angle(from: .landscapeLeft) == 0)
+        #expect(VideoRotationMath.angle(from: .portrait) == 90)
+        #expect(VideoRotationMath.orientation(fromAngle: 180) == .landscapeRight)
+        #expect(VideoRotationMath.orientation(fromAngle: 270) == .portraitUpsideDown)
+    }
 }
 
 @Suite("RecordingPhaseMirror")

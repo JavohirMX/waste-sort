@@ -18,6 +18,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
     var aprilTagStaleTimeout: Double
     var aprilTagRangeProfile: AprilTagRangeProfile
     var foundationConfirmationEnabled: Bool
+    var onPresentationDelta: ((LivePreviewRotation) -> Void)?
     var onBarcodeHint: ((ScannedBarcode?) -> Void)?
     var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
 
@@ -36,6 +37,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagStaleTimeout: aprilTagStaleTimeout,
             aprilTagRangeProfile: aprilTagRangeProfile,
             foundationConfirmationEnabled: foundationConfirmationEnabled,
+            onPresentationDelta: onPresentationDelta,
             onDetection: onDetection
         )
     }
@@ -74,6 +76,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
     func updateUIView(_ uiView: YOLOView, context: Context) {
         context.coordinator.onDetection = onDetection
         context.coordinator.setConfirmationEnabled(foundationConfirmationEnabled)
+        context.coordinator.onPresentationDelta = onPresentationDelta
         context.coordinator.onBarcodeHint = onBarcodeHint
         context.coordinator.yoloView = uiView
         context.coordinator.replaceInputs(
@@ -152,6 +155,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
 
     final class Coordinator {
         var onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
+        var onPresentationDelta: ((LivePreviewRotation) -> Void)?
         var onBarcodeHint: ((ScannedBarcode?) -> Void)?
         /// Throttled Vision pass; runs beside the AprilTag luma tap.
         let barcodeScanner = BarcodeFrameScanner()
@@ -205,6 +209,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
         private var lastAppliedCaptureDeviceID: String?
         private var lastAppliedCaptureControls: CameraCaptureControls?
         private var frameColorProxy: VideoFrameColorProxy?
+        private var lastPresentationDelta: LivePreviewRotation?
 
         var aprilTagRangeProfile: AprilTagRangeProfile = .far {
             didSet {
@@ -229,6 +234,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
             aprilTagStaleTimeout: Double,
             aprilTagRangeProfile: AprilTagRangeProfile,
             foundationConfirmationEnabled: Bool,
+            onPresentationDelta: ((LivePreviewRotation) -> Void)?,
             onDetection: ((YOLOResult, [TrackedDetection], ZoneFrameResult, AprilTagStatusFrame, ConfirmationFrame, [FoundationVerdictRecord]) -> Void)?
         ) {
             self.preferredCameraID = preferredCameraID
@@ -247,6 +253,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
             )
             self.aprilTagRangeProfile = aprilTagRangeProfile
             self.onDetection = onDetection
+            self.onPresentationDelta = onPresentationDelta
             self.onBarcodeHint = nil
             setConfirmationEnabled(foundationConfirmationEnabled)
             barcodeScanner.onBarcode = { [weak self] barcode in
@@ -505,6 +512,16 @@ struct LiveYOLOCamera: UIViewRepresentable {
                     queue: .main
                 ) { [weak self] _ in
                     self?.applyPreferredCamera()
+                },
+                center.addObserver(
+                    forName: UIDevice.orientationDidChangeNotification,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] _ in
+                    // YOLOView writes both connections on its camera queue first.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        self?.syncInferenceOrientation()
+                    }
                 }
             ]
         }
@@ -549,6 +566,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
                 registerCaptureSessionIfNeeded()
                 applyCaptureControlsIfNeeded()
                 installFrameColorProxyIfNeeded()
+                syncInferenceOrientation()
                 return true
             }
 
@@ -559,8 +577,19 @@ struct LiveYOLOCamera: UIViewRepresentable {
                 registerCaptureSessionIfNeeded()
                 applyCaptureControlsIfNeeded()
                 installFrameColorProxyIfNeeded()
+                syncInferenceOrientation()
             }
             return ok
+        }
+
+        private func syncInferenceOrientation() {
+            guard let view = yoloView else { return }
+            let delta = YOLOViewCameraSwitcher.syncInferenceOrientation(in: view)
+            guard lastPresentationDelta != delta else { return }
+            lastPresentationDelta = delta
+            DispatchQueue.main.async { [weak self] in
+                self?.onPresentationDelta?(delta)
+            }
         }
 
         func updateFrameColorControls() {

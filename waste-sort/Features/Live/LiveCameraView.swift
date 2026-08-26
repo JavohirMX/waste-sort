@@ -38,6 +38,13 @@ struct LiveCameraView: View {
     @State private var barcodeClearTask: Task<Void, Never>?
     @State private var throwFeedbackGate = ThrowFeedbackGate()
     @State private var previewedFeedbackIDs: Set<UUID> = []
+    @State private var presentationDelta: LivePreviewRotation = .zero
+
+    /// Overlay mapping includes any leftover preview-vs-buffer rotation; the
+    /// camera view itself only uses the operator's `liveRotation`.
+    private var overlayRotation: LivePreviewRotation {
+        VideoRotationMath.composed(settings.liveRotation, presentationDelta)
+    }
 
     /// Non-nil while the AprilTag detector failed to initialize - lid gating is inert.
     private var tagFailureReason: String? {
@@ -75,7 +82,7 @@ struct LiveCameraView: View {
                         from: tracks,
                         imageSize: imageSize,
                         viewSize: geo.size,
-                        rotation: settings.liveRotation,
+                        rotation: overlayRotation,
                         mirror: settings.liveMirror
                     )
                     : []
@@ -99,6 +106,11 @@ struct LiveCameraView: View {
                         aprilTagStaleTimeout: aprilTagStore.staleTimeout,
                         aprilTagRangeProfile: aprilTagStore.rangeProfile,
                         foundationConfirmationEnabled: settings.foundationConfirmationEnabled,
+                        onPresentationDelta: { delta in
+                            if presentationDelta != delta {
+                                presentationDelta = delta
+                            }
+                        },
                         onBarcodeHint: { barcode in
                             barcodeClearTask?.cancel()
                             barcodeHint = barcode
@@ -108,8 +120,8 @@ struct LiveCameraView: View {
                                 guard !Task.isCancelled else { return }
                                 barcodeHint = nil
                             }
-                        }
-                    ) { result, tracked, zoneFrame, tagFrame, confirmed, verdicts in
+                        },
+                        onDetection: { result, tracked, zoneFrame, tagFrame, confirmed, verdicts in
                         if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                             fps = measured
                         }
@@ -161,6 +173,7 @@ struct LiveCameraView: View {
                             counts = nextCounts
                         }
                     }
+                    )
                     .scaleEffect(x: settings.liveMirror ? -1 : 1, y: 1)
                     .rotationEffect(.degrees(settings.liveRotation.degrees))
                     .scaleEffect(coverScale)
@@ -169,7 +182,7 @@ struct LiveCameraView: View {
                         zones: zoneStore.zones,
                         imageSize: imageSize,
                         viewSize: geo.size,
-                        rotation: settings.liveRotation,
+                        rotation: overlayRotation,
                         mirror: settings.liveMirror,
                         isEditing: zoneStore.isEditingZones,
                         showZones: settings.showZoneOverlay,
@@ -190,7 +203,7 @@ struct LiveCameraView: View {
                             zones: zoneStore.zones,
                             imageSize: imageSize,
                             viewSize: geo.size,
-                            rotation: settings.liveRotation,
+                            rotation: overlayRotation,
                             mirror: settings.liveMirror,
                             stats: tagStats
                         )
@@ -209,7 +222,7 @@ struct LiveCameraView: View {
                         imageSize: imageSize,
                         viewSize: geo.size,
                         useAspectFill: true,
-                        rotation: settings.liveRotation,
+                        rotation: overlayRotation,
                         mirror: settings.liveMirror,
                         style: settings.boxOverlayStyle,
                         confirmation: confirmationFrame
@@ -265,7 +278,7 @@ struct LiveCameraView: View {
                         selectedZoneID: $selectedZoneID,
                         onReset: {
                             zoneStore.resetToDefaults(
-                                rotation: settings.liveRotation,
+                                rotation: overlayRotation,
                                 mirror: settings.liveMirror
                             )
                         },
@@ -583,4 +596,3 @@ private final class FrameRateMonitor {
         return rounded
     }
 }
-
