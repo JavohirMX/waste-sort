@@ -15,7 +15,13 @@
 #let kind = sys.inputs.at("kind", default: "dashes")
 #let bent = kind == "chevrons"
 
-#set page(paper: "a4", flipped: true, margin: 12mm)
+// The dash sheet prints its strips to one fixed length — the widest an A4 sheet holds — so its
+// margin is narrower than the others'. Printing a marker at anything but 100% is printing a
+// different marker, so the page has to give the strip its full width rather than scale it.
+#let page-margin = if kind == "dashes" { 11mm } else { 12mm }
+#let content-width = 297mm - 2 * page-margin
+
+#set page(paper: "a4", flipped: true, margin: page-margin)
 #set text(font: ("Helvetica Neue", "Helvetica", "Arial"), size: 9pt, fill: rgb("#1a1a1a"))
 #set par(leading: 0.6em)
 
@@ -54,6 +60,39 @@
   dir: ltr,
   ..range(count).map(_ => mark(dash, height)).intersperse(h(dash)),
 ))
+
+// A strip cut to a fixed length, filled with as many dashes of a fixed pitch as go into it.
+//
+// The count falls out of the two measurements rather than being chosen: a row opens and closes
+// on a dash with a gap between each pair, and it needs a quiet zone of at least one dash at
+// either end, because what lies beyond the outermost dash is the only thing that tells the
+// scan where the row stops. Whatever the dashes do not use is spent widening those two quiet
+// zones, which is the one place the leftover can go without disturbing the pitch — and the
+// pitch has to be exact, since agreement between the runs is the entire signature.
+//
+// At 275 mm with an 8 mm dash: 16 dashes span 248 mm and each end gets 13.5 mm.
+#let filled-row(length, dash) = {
+  let count = calc.floor((length - dash) / (2 * dash))
+  let span = count * dash * 2 - dash
+  (count: count, span: span, quiet: (length - span) / 2)
+}
+
+/// A strip whose outer dimensions — the dashed line you cut along — are exactly what is asked
+/// for. The 3 mm above and below the dashes is inside that, so a 20 mm strip carries 14 mm of
+/// printed height.
+#let fixed-strip(length, height, dash) = {
+  let row = filled-row(length, dash)
+  box(
+    width: length,
+    fill: white,
+    stroke: (paint: luma(180), thickness: 0.3mm, dash: "dashed"),
+    inset: (x: row.quiet, y: 3mm),
+    stack(
+      dir: ltr,
+      ..range(row.count).map(_ => mark(dash, height - 6mm)).intersperse(h(dash)),
+    ),
+  )
+}
 
 // One bar rhythm, printed for every bin. It has to be one the app knows — the scanner still
 // refuses a rhythm it never printed, which is what keeps a striped carton out — but *which*
@@ -98,7 +137,7 @@
     (6mm, 8mm), (8mm, 10mm), (10mm, 12mm), (12mm, 16mm), (15mm, 20mm),
   ).enumerate() {
     let strip-width = bar-units * unit + unit * 2
-    let indent = if calc.even(index) { 0mm } else { 273mm - strip-width }
+    let indent = if calc.even(index) { 0mm } else { content-width - strip-width }
     pad(left: indent)[
       #caption(
         str(mm-of(unit)) + " mm unit · " + str(mm-of(strip-width)) + " × "
@@ -109,23 +148,47 @@
     ]
     v(block-gap)
   }
+} else if kind == "dashes" {
+  // Six strips to mount, not a range of sizes to choose between: two sets of three, one strip
+  // per bin, differing only in how tall they are. Both sets carry the same 8 mm dash, so the
+  // travel a drawer needs before it reads open is the same either way — the sets exist to
+  // settle how much height the rim can actually give up.
+  let dash = 8mm
+  let length = content-width
+  let row = filled-row(length, dash)
+  // A page per set, rather than six strips crowded onto one. Partly so the two heights cannot
+  // be mixed up once they are cut apart, and partly so the strips sit far enough apart to be
+  // read as three: the scan joins rows that cover the same stretch and lie within a few scan
+  // lines of each other, which is right for one row glimpsed through a gap and wrong for two
+  // stickers stacked flush. On a bin that never comes up — the bins are side by side — but on
+  // a sheet laid flat under the camera it decides whether you see three rows or one.
+  for (index, height) in (20mm, 24mm).enumerate() {
+    if index > 0 { pagebreak() }
+    header(
+      [Bin markers — dashes, #mm-of(length) × #mm-of(height) mm],
+      [Settings → Bin Openness → Marker strips → #emph[Dashes]. Set #(index + 1) of 2: three
+        strips, one per bin, #mm-of(length) mm long and #mm-of(height) mm tall, carrying
+        #row.count dashes of #mm-of(dash) mm with #mm-of(row.quiet) mm of quiet paper at either
+        end. #mm-of(height - 6mm) mm of that height is printed; the rest is for the scissors.
+        All three bins carry the same strip — a marker is credited to whichever bin it appears
+        nearest — so these three are interchangeable. Opens once 6 dashes are clear of the
+        counter edge on the default #emph[Thin] row height, which at this dash is
+        #mm-of(dash * 11) mm of drawer; #emph[Tall] opens on 5, or #mm-of(dash * 9) mm. Print
+        at 100%, no fit-to-page, matte stock, and cut on the dashed line.],
+    )
+    for _ in range(3) {
+      fixed-strip(length, height, dash)
+      v(30mm)
+    }
+  }
 } else {
-  let opens = if bent { 4 } else { 6 }
   header(
-    if bent [Bin markers — chevrons] else [Bin markers — dashes],
-    if bent [
-      Settings → Bin Openness → Marker strips → #emph[Chevrons]. Each dash bent into a V,
+    [Bin markers — chevrons],
+    [Settings → Bin Openness → Marker strips → #emph[Chevrons]. Each dash bent into a V,
       which no straight edge in the room can counterfeit — a counter lip or a wood seam seen in
       perspective ramps steadily, and none of them can reverse that ramp at a midline. Opens on
-      #opens dashes where a plain row of the same height needs 6, for about twice the time a
-      frame. Print at 100%, no fit-to-page, matte stock, and cut on the dashed line.
-    ] else [
-      Settings → Bin Openness → Marker strips → #emph[Dashes]. A row of equal dashes with
-      nothing encoded in it. Opens once #opens dashes are clear of the counter edge, on the
-      default #emph[Thin] row height; #emph[Tall] wants twice the printed height and opens on
-      5, #emph[Hairline] half of it and opens on 7. Print at 100%, no fit-to-page, matte stock,
-      and cut on the dashed line.
-    ],
+      4 dashes where a plain row of the same height needs 6, for about twice the time a frame.
+      Print at 100%, no fit-to-page, matte stock, and cut on the dashed line.],
   )
   for (dash, height, count) in (
     (3mm, 8mm, 20), (4mm, 10mm, 18), (6mm, 14mm, 14), (8mm, 18mm, 12), (12mm, 24mm, 9),
@@ -138,7 +201,7 @@
         + str(mm-of(dash * (2 * count + 1))) + " × "
         + str(mm-of(height + 6mm)) + " mm sticker · "
         + str(count) + " dashes · opens after "
-        + str(mm-of(dash * (2 * opens - 1))) + " mm of drawer"
+        + str(mm-of(dash * 7)) + " mm of drawer"
     )
     v(1.5mm, weak: true)
     dash-row(count, dash, height)

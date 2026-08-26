@@ -1,15 +1,33 @@
 # Bin marker sheets
 
-`markers.typ` is the source; the three PDFs beside it are what you print. **One sheet, one kind
-of marker, five sizes of it.** Print all three, cut everything out, and swap sizes under the
-camera — the right size depends on the lens, the mount height and the room, so it is chosen on
-site and not here.
+`markers.typ` is the source; the three PDFs beside it are what you print.
 
-| Sheet | App setting | Opens after | Notes |
-| --- | --- | --- | --- |
-| `BinMarkers_Dashes.pdf` | Marker strips → **Dashes** | 6 dashes | **Start here.** A row of equal dashes, nothing encoded |
-| `BinMarkers_Chevrons.pdf` | Marker strips → **Chevrons** | 4 dashes | Each dash bent into a V. A third less drawer travel, about twice the time a frame |
-| `BinMarkers_Bars.pdf` | Marker strips → **Bars** | — | Five black bars. Wants the largest print and fails first at distance |
+| Sheet | App setting | What is on it |
+| --- | --- | --- |
+| `BinMarkers_Dashes.pdf` | Marker strips → **Dashes** | **Start here.** Two pages, one per height: three 275 × 20 mm strips, then three 275 × 24 mm. Sixteen 8 mm dashes each |
+| `BinMarkers_Chevrons.pdf` | Marker strips → **Chevrons** | One page, five sizes to choose between. Each dash bent into a V — opens a third sooner, for twice the time a frame |
+| `BinMarkers_Bars.pdf` | Marker strips → **Bars** | One page, five sizes. Wants the largest print and fails first at distance |
+
+The dash sheet is the one to mount: it is six finished strips, three per bin per height, and
+the only thing left to decide is which of the two heights the rim can give up. The other two
+are a range of sizes to compare — cut them out and swap them under the camera, because the
+right size depends on the lens, the mount height and the room.
+
+### Which dash height
+
+Both sets carry the same 8 mm dash, so the travel is the same either way. What differs is how
+many scan lines cross the row, which is what the **Row height** setting trades against dashes.
+Rendered back through the scanner at four distances, three strips to a page:
+
+| | printed height | scan lines at 8 px/cm | Tall | Thin | Hairline |
+| --- | --- | --- | --- | --- | --- |
+| 275 × 20 mm | 14 mm | 11 | **2 of 3** | 3 of 3 | 3 of 3 |
+| 275 × 24 mm | 18 mm | 14 | 3 of 3 | 3 of 3 | 3 of 3 |
+
+So at this site's scale the 24 mm strip is the one that supports **Tall** — which opens on 5
+dashes rather than 6, or 72 mm of drawer instead of 88. The 20 mm strip is 11 scan lines tall
+against the 12 that Tall needs, and reads on Thin and Hairline only. Mount the tallest the rim
+takes.
 
 Print at **100%** — not fit-to-page — on matte stock, and cut on the dashed line. The white at
 the two ends is part of the marker; the few millimetres above and below are for the scissors.
@@ -46,9 +64,16 @@ overlay):
 
 Work down through the sizes until one of those gets close to its floor, then go back one.
 
-Rendered back through the scanner at three distances, every size on the dash and chevron sheets
-reads at all three; the bar sheet reads all five only once the strips are large enough, which
-is the trade that sheet exists to show.
+Rendered back through the scanner at three distances, every size on the chevron sheet reads at
+all three; the bar sheet reads all five only once the strips are large enough, which is the
+trade that sheet exists to show.
+
+One mounting caveat, and it is new: every bin carries the same marker now, so two of them that
+**overlap horizontally** in the frame have to be more than about sixteen scan lines apart
+vertically, or the scan reads them as one row glimpsed through a gap and only one bin opens.
+Bins side by side never overlap, so this does not arise on this site — but it is why the strips
+on the dash sheet sit 30 mm apart, and why laying that sheet flat under the camera reads as
+three rows rather than one.
 
 ## The threshold is dashes, not blur
 
@@ -57,8 +82,10 @@ blur. Six dashes clear of the counter edge opens the bin on the default **Thin**
 **Tall** wants twice the printed height and opens on 5, **Hairline** half of it and opens on 7.
 Chevrons open on 4 at Thin's height.
 
-To trigger sooner, print the dashes **smaller**, not fewer: six at a 4 mm pitch clear the edge
-in half the travel that six at 8 mm need, and the sheet prints the travel beside each size.
+At the dash sheet's 8 mm pitch that is **88 mm of drawer** on Thin, or 72 mm on Tall. To
+trigger sooner, print the dashes **smaller**, not fewer: six at a 4 mm pitch clear the edge in
+half the travel that six at 8 mm need, and `markers.typ` takes the dash size as a variable if
+that turns out to matter more than legibility does.
 Fewer is not a setting — below the threshold the room itself starts producing rows. Measured on
 fifteen frames of this room with nothing installed: 185 false rows at five alternating runs, 27
 at six, 5 at seven, none at eight. The chevron check takes that to none at seven, which is
