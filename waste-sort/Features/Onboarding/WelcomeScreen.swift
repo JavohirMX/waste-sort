@@ -14,7 +14,7 @@ struct WelcomeScreen: View {
         if m.usesSplitLayout {
             HStack(spacing: 0) {
                 illustration()
-                    .frame(width: m.s(731))
+                    .frame(width: m.s(860))
                 copyPanel
             }
         } else {
@@ -30,12 +30,14 @@ struct WelcomeScreen: View {
     /// The stacked layout gets a short, wide slot instead, so the artwork is fitted there —
     /// filling it would crop the figures' heads.
     private func illustration(fills: Bool = true) -> some View {
-        Image("ob-welcome")
+        Image("welcome-image")
             .resizable()
             .aspectRatio(contentMode: fills ? .fill : .fit)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .offset(x: -40)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .clipped()
             .background(Theme.onboardingPanelBackground)
+            .ignoresSafeArea()
             .accessibilityHidden(true)
     }
 
@@ -45,11 +47,11 @@ struct WelcomeScreen: View {
 
             VStack(alignment: .leading, spacing: m.s(16)) {
                 Text(page.title)
-                    .font(BrandFont.display(m.s(64)))
+                    .font(BrandFont.body(m.s(57), weight: .bold))
                     .foregroundStyle(.black)
 
                 Text(page.subtitle)
-                    .font(BrandFont.body(m.s(26)))
+                    .font(BrandFont.body(m.s(24)))
                     .foregroundStyle(.black.opacity(Theme.onboardingSubtitleOpacity))
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -68,7 +70,7 @@ struct WelcomeScreen: View {
                 if let secondary = page.secondaryTitle {
                     Button(action: onPrivacy) {
                         Text(secondary)
-                            .font(BrandFont.body(m.s(20), weight: .medium))
+                            .font(BrandFont.body(m.s(22), weight: .medium))
                             .foregroundStyle(.black.opacity(0.4))
                     }
                     .buttonStyle(.plain)
@@ -79,6 +81,7 @@ struct WelcomeScreen: View {
         .padding(.vertical, m.s(80))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.onboardingBackground)
+        .compositingGroup()
         .shadow(color: .black.opacity(0.25), radius: m.s(10.8), x: m.s(4))
     }
 }

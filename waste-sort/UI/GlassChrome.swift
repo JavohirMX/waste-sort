@@ -89,30 +89,6 @@ enum GlassChrome {
     }
 }
 
-/// Frosted backdrop that blurs whatever is behind it (the live camera when Stats is an overlay).
-struct CameraGlassBackdrop: View {
-    var body: some View {
-        ZStack {
-            CameraBlurView()
-            Theme.statsBackground.opacity(0.14)
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-    }
-}
-
-/// UIKit blur samples the window compositor, including `AVCaptureVideoPreviewLayer`.
-private struct CameraBlurView: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIVisualEffectView {
-        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialLight))
-        view.isUserInteractionEnabled = false
-        view.backgroundColor = .clear
-        return view
-    }
-
-    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {}
-}
-
 /// SwiftUI `NavigationStack` sits in an opaque `UINavigationController`. Clear it so glass can see the camera.
 struct ClearHostingBackground: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
@@ -165,10 +141,10 @@ struct StatsCardSurface<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(
-                RoundedRectangle(cornerRadius: GlassChrome.cardCornerRadius, style: .continuous)
-                    .fill(Color.white)
-                    .shadow(color: .black.opacity(0.08), radius: 14, y: 5)
+            .glassEffect(
+                .regular,
+                in: RoundedRectangle(cornerRadius: GlassChrome.cardCornerRadius, style: .continuous)
             )
+            .shadow(color: .black.opacity(0.04), radius: 7, y: 2)
     }
 }

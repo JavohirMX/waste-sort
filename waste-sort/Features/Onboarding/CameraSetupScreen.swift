@@ -11,16 +11,13 @@ struct CameraSetupMedia: View {
 
     var body: some View {
         HStack(spacing: m.s(20)) {
+            // The reference photo already has "Camera Placement" printed onto it, so no label
+            // overlay is added here — only the live feed needs one drawn in code.
             OnboardingMediaCard(
                 imageName: "ob-camera-placement",
                 width: m.s(466),
                 height: m.s(469)
             )
-            .overlay(alignment: .top) {
-                OnboardingLabelPill {
-                    Text("Camera Placement")
-                }
-            }
 
             liveCard
         }
@@ -104,12 +101,8 @@ struct CameraSetupMedia: View {
     }
 }
 
-/// The small caption pill sitting inside the top edge of a media card.
-///
-/// Deliberately a flat frost rather than a `glassEffect`: the design draws these printed onto the
-/// photo, while a full glass effect adds a bevel and a drop shadow that lift the pill off the card.
-/// The white veil keeps it light whatever is behind it, so the black label stays readable over a
-/// dark camera feed as well as over the pale wood in the reference photo.
+/// The small caption pill sitting inside the top edge of a media card — matches the warm cream
+/// tag printed onto the reference photo itself, so the live feed's label reads as the same tag.
 struct OnboardingLabelPill<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
@@ -123,10 +116,21 @@ struct OnboardingLabelPill<Content: View>: View {
             .frame(height: m.s(30))
             .background {
                 Capsule(style: .continuous)
-                    .fill(.ultraThinMaterial)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.95, green: 0.90, blue: 0.82),
+                                Color(red: 0.88, green: 0.80, blue: 0.65),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
                     .overlay {
-                        Capsule(style: .continuous).fill(.white.opacity(0.5))
+                        Capsule(style: .continuous)
+                            .strokeBorder(Color(red: 0.79, green: 0.66, blue: 0.47).opacity(0.6))
                     }
+                    .shadow(color: .black.opacity(0.15), radius: 3, y: 2)
             }
             .padding(.top, m.s(14))
     }

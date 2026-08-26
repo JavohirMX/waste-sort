@@ -377,7 +377,7 @@ struct DetectionBoxView: View {
 
     private var scale: CGFloat { style.badgeScale }
     private var badgeSize: CGFloat { Theme.badgeSize * scale }
-    private var capsuleFontSize: CGFloat { 11 * scale }
+    private var capsuleFontSize: CGFloat { 34 * scale }
     private var iconOnlyFontSize: CGFloat { 12 * scale }
 
     var body: some View {

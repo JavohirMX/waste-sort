@@ -7,6 +7,7 @@ import SwiftUI
 /// and the call to action around it stay put.
 struct OnboardingMedia: View {
     let page: OnboardingPage
+    @Environment(\.onboardingMetrics) private var m
 
     var body: some View {
         switch page {
@@ -14,14 +15,14 @@ struct OnboardingMedia: View {
             // The welcome screen has its own split layout and never uses this slot.
             EmptyView()
 
-        case .sortWaste, .allSet:
-            OnboardingBlobArtwork(imageName: "ob-happy-bins")
+        case .sortWaste:
+            artwork("ob-sorting")
 
         case .trackWaste:
-            Image("ob-track")
-                .resizable()
-                .scaledToFit()
-                .accessibilityHidden(true)
+            artwork("ob-tracking")
+
+        case .allSet:
+            artwork("ob-general")
 
         case .meetStation:
             photoCard("ob-station", designWidth: 474)
@@ -32,6 +33,15 @@ struct OnboardingMedia: View {
         case .setUpCamera:
             CameraSetupMedia()
         }
+    }
+
+    /// Fixed at the design's 810pt width, keeping the artwork's own aspect ratio.
+    private func artwork(_ name: String) -> some View {
+        Image(name)
+            .resizable()
+            .scaledToFit()
+            .frame(width: m.s(810))
+            .accessibilityHidden(true)
     }
 
     /// Sizes the card off the height the scaffold hands down, keeping the design's aspect ratio

@@ -12,6 +12,7 @@ struct LiveCameraView: View {
     @EnvironmentObject private var aprilTagStore: AprilTagBindingStore
     @EnvironmentObject private var markerStore: BinMarkerStore
     @EnvironmentObject private var binStyle: BinStyleStore
+    @EnvironmentObject private var binPreview: BinPreviewCoordinator
     @State private var counts: [String: Int] = [:]
     @State private var fps = 0
     @State private var tracks: [TrackedDetection] = []
@@ -259,6 +260,32 @@ struct LiveCameraView: View {
             .ignoresSafeArea()
             .allowsHitTesting(zoneStore.isEditingZones)
 
+            if !binPreview.isActive {
+                VStack {
+                    Spacer()
+                    ZStack(alignment: .bottom) {
+                        LinearGradient(
+                            stops: [
+                                .init(color: .black, location: 0),
+                                .init(color: .clear, location: 0.31),
+                            ],
+                            startPoint: .bottom,
+                            endPoint: .top
+                        )
+                        .opacity(0.31)
+                        Text("Separate waste items to help us identify them.")
+                            .font(.system(size: 22, weight: .light))
+                            .foregroundStyle(.white.opacity(0.8))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, Theme.hudInset)
+                            .padding(.bottom, Theme.hudInset)
+                    }
+                    .frame(height: 224)
+                }
+                .ignoresSafeArea(edges: .bottom)
+                .allowsHitTesting(false)
+            }
+
             VStack(spacing: 0) {
                 // The top stays clear while calibrating so nothing covers a zone.
                 if !zoneStore.isEditingZones {
@@ -276,6 +303,7 @@ struct LiveCameraView: View {
                         }
                     )
                     .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 10)
                     .padding(.top, Theme.categoryBarTopGap)
 
                 if let tagFailure = tagFailureReason {
@@ -308,6 +336,9 @@ struct LiveCameraView: View {
                     )
                     .padding(.horizontal, Theme.hudInset)
                     .padding(.bottom, Theme.hudInset)
+                } else if binPreview.isActive {
+                    binPreviewBar
+                        .padding(.bottom, Theme.hudInset)
                 } else {
                     HStack(alignment: .bottom) {
                         HStack(alignment: .bottom, spacing: 8) {
@@ -412,6 +443,7 @@ struct LiveCameraView: View {
                         showStats = false
                     }
                 })
+                .environmentObject(binPreview)
                 .background(.clear)
                 .transition(.move(edge: .trailing))
                 .zIndex(1)
@@ -419,6 +451,7 @@ struct LiveCameraView: View {
         }
         .animation(.easeInOut(duration: 0.35), value: showSettings)
         .animation(.easeInOut(duration: 0.35), value: showStats)
+        .animation(.easeInOut(duration: 0.35), value: binPreview.isActive)
     }
 
     /// Writes down the chroma the camera is actually reporting for each visible strip.
@@ -602,6 +635,70 @@ struct LiveCameraView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Waste stats")
         .accessibilityHint("Opens stats.")
+    }
+
+    /// Shown instead of the normal HUD row while previewing a Bin Settings change
+    /// against the real camera feed.
+    private var binPreviewBar: some View {
+        ZStack {
+            Text("This is a preview, save it to make it permanent.")
+                .font(.system(size: 16, weight: .medium, design: .default))
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(maxWidth: .infinity)
+
+            HStack {
+                previewSettingsButton
+                Spacer(minLength: 12)
+                previewSaveButton
+            }
+        }
+        .padding(.horizontal, Theme.hudInset)
+    }
+
+    private var previewSettingsButton: some View {
+        previewPillButton(tint: .white.opacity(0.9)) {
+            binPreview.isActive = false
+            withAnimation(.easeInOut(duration: 0.35)) {
+                showStats = true
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .semibold))
+                Text("Settings")
+                    .font(.system(size: 16, weight: .semibold, design: .default))
+            }
+            .foregroundStyle(Color.black)
+        }
+    }
+
+    private var previewSaveButton: some View {
+        previewPillButton(tint: Theme.onboardingAccent) {
+            binPreview.isActive = false
+            binPreview.returnsToBinSettings = false
+        } label: {
+            Text("Save")
+                .font(.system(size: 17, weight: .bold, design: .default))
+                .foregroundStyle(.white)
+        }
+    }
+
+    /// A capsule that hugs its label instead of `GlassCapsuleButton`'s full-bleed
+    /// `maxWidth: .infinity` sizing, for the compact Preview bar controls.
+    private func previewPillButton<Content: View>(
+        tint: Color,
+        action: @escaping () -> Void,
+        @ViewBuilder label: () -> Content
+    ) -> some View {
+        Button(action: action) {
+            label()
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(tint, in: Capsule(style: .continuous))
+                .glassEffect(.clear.interactive(), in: Capsule(style: .continuous))
+                .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 }
 

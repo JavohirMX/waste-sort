@@ -22,7 +22,6 @@ struct GlassCapsuleButton<Label: View>: View {
                 .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
-        .shadow(color: .black.opacity(0.02), radius: 15, y: 8)
     }
 }
 

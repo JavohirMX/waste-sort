@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum Theme {
     static let photoBackground = Color(red: 246 / 255, green: 247 / 255, blue: 242 / 255)
@@ -9,7 +10,7 @@ enum Theme {
     static let badgeSize: CGFloat = 28
     static let hudInset: CGFloat = 24
     /// Extra gap below the status bar so the category labels clear the clock.
-    static let categoryBarTopGap: CGFloat = 20
+    static let categoryBarTopGap: CGFloat = 0
     static let segmentDetectedOpacity: Double = 0.95
     static let segmentIdleOpacity: Double = 0.42
     static let animationDuration: Double = 0.2
@@ -53,7 +54,8 @@ enum Theme {
     static let dirtyRecyclableFillOpacity: Double = 0.28
 
     static let categoryLabelFont = Font.system(size: 14, weight: .semibold)
-    static let statsBackground = Color(red: 245 / 255, green: 239 / 255, blue: 228 / 255)
+    /// Background for the Stats and Settings screens.
+    static let statsSettingsBackground = Color(red: 0xDE / 255, green: 0xE7 / 255, blue: 0xE1 / 255)
 
     // MARK: - Onboarding
 
@@ -61,10 +63,9 @@ enum Theme {
     static let onboardingBackground = Color(red: 243 / 255, green: 247 / 255, blue: 244 / 255)
     /// The welcome screen's illustration panel sits on the grouped-background grey.
     static let onboardingPanelBackground = Color(red: 242 / 255, green: 242 / 255, blue: 247 / 255)
-    /// `Accents/Green` from the design — the same value as `Color(.systemGreen)`.
-    static let onboardingAccent = Color(red: 52 / 255, green: 199 / 255, blue: 89 / 255)
-    /// Fill behind the two character illustrations.
-    static let onboardingBlob = Color(red: 240 / 255, green: 238 / 255, blue: 210 / 255)
+    /// `Accents/Green` from the design: system green with its black-3%/white-25% overlay
+    /// pre-merged into one flat fill, rather than layering translucent shapes at render time.
+    static let onboardingAccent = Color(red: 102 / 255, green: 209 / 255, blue: 128 / 255)
     static let onboardingCardCornerRadius: CGFloat = 20
     static let onboardingSubtitleOpacity: Double = 0.6
 }

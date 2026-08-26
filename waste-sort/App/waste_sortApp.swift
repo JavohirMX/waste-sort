@@ -17,6 +17,7 @@ struct WasteSortApp: App {
     @StateObject private var markerStore = BinMarkerStore.shared
     @StateObject private var binStyle = BinStyleStore.shared
     @StateObject private var verdictLog = FoundationVerdictLog.shared
+    @StateObject private var binPreview = BinPreviewCoordinator.shared
 
     init() {
         BrandFont.register()
@@ -33,6 +34,8 @@ struct WasteSortApp: App {
                 .environmentObject(markerStore)
                 .environmentObject(binStyle)
                 .environmentObject(verdictLog)
+                .environmentObject(binPreview)
+                .preferredColorScheme(.light)
         }
     }
 }

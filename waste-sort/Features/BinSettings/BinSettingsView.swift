@@ -5,6 +5,7 @@ struct BinSettingsView: View {
     @EnvironmentObject private var binStyle: BinStyleStore
     @EnvironmentObject private var zoneStore: ZoneStore
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var binPreview: BinPreviewCoordinator
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -15,11 +16,10 @@ struct BinSettingsView: View {
 
     var body: some View {
         ZStack {
-            Theme.statsBackground.ignoresSafeArea()
+            Theme.statsSettingsBackground.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: isWide ? 24 : 16) {
                 header
-                    .padding(.leading, 56)
 
                 binCardsRow
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -30,7 +30,7 @@ struct BinSettingsView: View {
                     .padding(.bottom, isWide ? 8 : 4)
             }
             .padding(.horizontal, GlassChrome.pageInset)
-            .padding(.top, 20)
+            .padding(.top, 16 + GlassChrome.circleSize + 24)
         }
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .topLeading) {
@@ -102,27 +102,23 @@ struct BinSettingsView: View {
 
     private var saveFooter: some View {
         VStack(spacing: 8) {
+            GlassCapsuleButton(
+                "Save",
+                height: isWide ? 78 : 50,
+                fontSize: isWide ? 24 : 17,
+                action: { dismiss() }
+            )
+            .frame(maxWidth: isWide ? 517 : .infinity)
+
             Button {
-                dismiss()
+                binPreview.returnsToBinSettings = true
+                binPreview.isActive = true
             } label: {
-                Text("Save")
-                    .font(.system(size: isWide ? 24 : 17, weight: .bold, design: .default))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: isWide ? 517 : .infinity)
-                    .frame(height: isWide ? 78 : 50)
-                    .background(
-                        Color(red: 52 / 255, green: 199 / 255, blue: 89 / 255),
-                        in: Capsule(style: .continuous)
-                    )
-                    .glassEffect(.clear.interactive(), in: Capsule(style: .continuous))
-                    .contentShape(Capsule(style: .continuous))
+                Text("Preview")
+                    .font(.system(size: isWide ? 22 : 14, weight: .medium, design: .default))
+                    .foregroundStyle(Color.black.opacity(0.40))
             }
             .buttonStyle(.plain)
-            .shadow(color: .black.opacity(0.04), radius: 15, y: 8)
-
-            Text("Preview")
-                .font(.system(size: isWide ? 22 : 14, weight: .medium, design: .default))
-                .foregroundStyle(Color.black.opacity(0.40))
         }
         .frame(maxWidth: .infinity)
     }
@@ -211,8 +207,8 @@ struct BinSettingsView: View {
     }
 }
 
-/// A bin as the design draws it: flat accent, name and description settled into the
-/// bottom-left, and an explicit pencil rather than relying on the card itself being tapped.
+/// A bin as the design draws it: flat accent, name and description centered in the card,
+/// and an explicit pencil rather than relying on the card itself being tapped.
 private struct BinArrangementCard: View {
     let bin: BinInfo
     var isWide: Bool = true
@@ -221,9 +217,7 @@ private struct BinArrangementCard: View {
     private var cornerRadius: CGFloat { 20 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: isWide ? 8 : 4) {
-            Spacer(minLength: 0)
-
+        VStack(spacing: isWide ? 8 : 4) {
             HStack(spacing: isWide ? 10 : 7) {
                 Image(systemName: bin.symbolName)
                     .font(.system(size: isWide ? 34 : 21, weight: .bold))
@@ -234,27 +228,22 @@ private struct BinArrangementCard: View {
             }
             .foregroundStyle(.white)
 
-            Text(bin.instructions)
+            Text(Self.caption(for: bin.id))
                 .font(.system(size: isWide ? 22 : 14, weight: .regular, design: .default))
                 .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(isWide ? 24 : 16)
         .background(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [bin.color.opacity(0.80), bin.idleColor.opacity(0.80)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .fill(Self.gradient(for: bin.id))
         )
         .overlay(alignment: .topTrailing) {
             Button(action: onEdit) {
                 Image(systemName: "pencil")
-                    .font(.system(size: isWide ? 19 : 14, weight: .bold))
+                    .font(.system(size: isWide ? 24 : 24, weight: .bold))
                     .foregroundStyle(Color(white: 0.10))
                     .frame(width: isWide ? 50 : 36, height: isWide ? 50 : 36)
                     .background {
@@ -272,6 +261,44 @@ private struct BinArrangementCard: View {
         .accessibilityLabel(bin.displayName)
         .accessibilityHint("Double tap to edit. Drag to reorder.")
     }
+
+    /// A short example-items caption for the card — distinct from `BinInfo.instructions`,
+    /// which is detection-model guidance rather than user-facing copy.
+    private static func caption(for binID: String) -> String {
+        switch binID {
+        case BinGuide.organic.id: return "Food scraps, tea bags, napkins"
+        case BinGuide.residual.id: return "Food wrapper, tissue, sachets"
+        case BinGuide.cleanInorganic.id: return "Bottles, cans, clean plastic"
+        default: return ""
+        }
+    }
+
+    /// The design's per-card gradient — distinct from `BinInfo.color`/`idleColor`, which
+    /// drive the live detection UI rather than this settings card.
+    private static func gradient(for binID: String) -> LinearGradient {
+        let stops: (top: Color, bottom: Color) = {
+            switch binID {
+            case BinGuide.organic.id:
+                return (
+                    Color(red: 0x1F / 255, green: 0x7A / 255, blue: 0x36 / 255).opacity(0.80),
+                    Color(red: 0x35 / 255, green: 0xCA / 255, blue: 0x5A / 255).opacity(0.80)
+                )
+            case BinGuide.residual.id:
+                return (
+                    Color(red: 0x02 / 255, green: 0x0C / 255, blue: 0x04 / 255).opacity(0.80),
+                    Color(red: 0x0A / 255, green: 0x0F / 255, blue: 0x0B / 255).opacity(0.70)
+                )
+            case BinGuide.cleanInorganic.id:
+                return (
+                    Color(red: 0xDF / 255, green: 0xBB / 255, blue: 0x2F / 255),
+                    Color(red: 0xFC / 255, green: 0xD3 / 255, blue: 0x31 / 255)
+                )
+            default:
+                return (Color.gray, Color.gray)
+            }
+        }()
+        return LinearGradient(colors: [stops.top, stops.bottom], startPoint: .top, endPoint: .bottom)
+    }
 }
 
 /// Sheet editor: circle X, title, blue check, three inset rows.
@@ -281,110 +308,113 @@ private struct BinDetailsEditor: View {
     var onSave: () -> Void
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             HStack {
-                Button(action: onCancel) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Color(white: 0.25))
-                        .frame(width: 32, height: 32)
-                        .background {
-                            Circle()
-                                .fill(.clear)
-                                .glassEffect(.regular.interactive(), in: Circle())
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Cancel")
+                GlassChrome.glassCircleButton(
+                    systemName: "xmark",
+                    accessibilityLabel: "Cancel",
+                    action: onCancel
+                )
 
                 Spacer()
 
                 Text("Bin Details")
-                    .font(.system(size: 18, weight: .semibold, design: .default))
+                    .font(.system(size: 17, weight: .semibold, design: .default))
                     .foregroundStyle(Color(white: 0.12))
 
                 Spacer()
 
                 Button(action: onSave) {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.white)
-                        .frame(width: 32, height: 32)
-                        .background(Color(red: 0 / 255, green: 122 / 255, blue: 255 / 255), in: Circle())
-                        .glassEffect(.clear.interactive(), in: Circle())
+                        .frame(width: GlassChrome.circleSize, height: GlassChrome.circleSize)
+                        .background {
+                            Circle()
+                                .fill(.clear)
+                                .glassEffect(.regular.tint(.blue).interactive(), in: Circle())
+                        }
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Save")
             }
 
-            detailRow(title: "Label") {
-                TextField("Label", text: labelBinding)
-                    .multilineTextAlignment(.trailing)
-                    .font(.system(size: 16, weight: .regular, design: .default))
-                    .foregroundStyle(Color(white: 0.45))
-            }
+            VStack(spacing: 8) {
+                detailRow(title: "Label") {
+                    TextField("Label", text: labelBinding)
+                        .multilineTextAlignment(.trailing)
+                        .font(.system(size: 16, weight: .regular, design: .default))
+                        .foregroundStyle(Color(white: 0.45))
+                }
 
-            Menu {
-                ForEach(BinIconOption.allCases) { option in
-                    Button {
-                        draft.symbolName = option.symbolName
-                    } label: {
-                        Label(option.symbolName, systemImage: option.symbolName)
+                Menu {
+                    ForEach(BinIconOption.allCases) { option in
+                        Button {
+                            draft.symbolName = option.symbolName
+                        } label: {
+                            Label(option.symbolName, systemImage: option.symbolName)
+                        }
+                    }
+                } label: {
+                    detailRow(title: "Icon") {
+                        HStack(spacing: 6) {
+                            Image(systemName: draft.symbolName)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(Color(white: 0.2))
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
-            } label: {
-                detailRow(title: "Icon") {
-                    HStack(spacing: 6) {
-                        Image(systemName: draft.symbolName)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Color(white: 0.2))
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .buttonStyle(.plain)
+                .buttonStyle(.plain)
 
-            Menu {
-                ForEach(BinColorToken.allCases) { token in
-                    Button {
-                        draft.colorToken = token.rawValue
-                    } label: {
-                        Label(
-                            token.rawValue.capitalized,
-                            systemImage: draft.colorToken == token.rawValue
-                                ? "checkmark.circle.fill"
-                                : "circle.fill"
-                        )
+                Menu {
+                    ForEach(BinColorToken.allCases) { token in
+                        Button {
+                            draft.colorToken = token.rawValue
+                        } label: {
+                            Label(
+                                token.rawValue.capitalized,
+                                systemImage: draft.colorToken == token.rawValue
+                                    ? "checkmark.circle.fill"
+                                    : "circle.fill"
+                            )
+                        }
+                    }
+                } label: {
+                    detailRow(title: "Colour") {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(BinColorToken.from(draft.colorToken).color)
+                                .frame(width: 18, height: 18)
+                                .overlay(Circle().strokeBorder(.black.opacity(0.12), lineWidth: 1))
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
-            } label: {
-                detailRow(title: "Colour") {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(BinColorToken.from(draft.colorToken).color)
-                            .frame(width: 18, height: 18)
-                            .overlay(Circle().strokeBorder(.black.opacity(0.12), lineWidth: 1))
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-
-            Spacer(minLength: 0)
         }
-        .padding(20)
-        .frame(width: Self.cardSize.width, height: Self.cardSize.height, alignment: .top)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.horizontal, 20)
+        .padding(.bottom, 20)
+        .padding(.top, 12)
+        .frame(width: Self.cardWidth, alignment: .top)
+        .background {
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .fill(.clear)
+                .glassEffect(
+                    .regular.tint(.white.opacity(0.6)),
+                    in: RoundedRectangle(cornerRadius: 32, style: .continuous)
+                )
+        }
         .shadow(color: .black.opacity(0.30), radius: 50, y: 10)
     }
 
-    /// The panel is a fixed floating card in the design rather than a sheet that grows.
-    static let cardSize = CGSize(width: 382, height: 256)
+    /// The panel is a fixed-width floating card; height follows its content.
+    static let cardWidth: CGFloat = 382
 
     private var labelBinding: Binding<String> {
         Binding(
@@ -404,9 +434,9 @@ private struct BinDetailsEditor: View {
             Spacer(minLength: 8)
             trailing()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(Color(white: 0.93), in: Capsule())
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(Color(red: 0xE4 / 255, green: 0xE4 / 255, blue: 0xE4 / 255).opacity(0.8), in: Capsule())
     }
 }
 
@@ -437,5 +467,6 @@ private struct BinReorderDropDelegate: DropDelegate {
             .environmentObject(BinStyleStore.shared)
             .environmentObject(ZoneStore.shared)
             .environmentObject(AppSettings.shared)
+            .environmentObject(BinPreviewCoordinator.shared)
     }
 }

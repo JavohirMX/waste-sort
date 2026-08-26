@@ -26,7 +26,7 @@ struct SettingsView: View {
                 compactStack
             }
         }
-        .background(.background)
+        .background(Theme.statsSettingsBackground)
         .onAppear { refreshCameras() }
         .onReceive(
             NotificationCenter.default.publisher(for: AVCaptureDevice.wasConnectedNotification)
@@ -81,6 +81,8 @@ struct SettingsView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(Theme.statsSettingsBackground)
         .navigationTitle("Settings")
         .toolbar { doneButton }
     }

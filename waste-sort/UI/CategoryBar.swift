@@ -56,12 +56,13 @@ struct CategoryBar: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: Theme.barHeight)
+        .frame(height: 80) // fills the 120pt glass panel once the 10pt padding is added below.
+        .padding(10)
         .background {
             Color.clear
                 .glassEffect(
-                    .regular,
-                    in: RoundedRectangle(cornerRadius: Theme.barCornerRadius, style: .continuous)
+                    .clear,
+                    in: RoundedRectangle(cornerRadius: Theme.barCornerRadius + 10, style: .continuous)
                 )
         }
         .accessibilityElement(children: .ignore)
@@ -103,15 +104,17 @@ private struct CategorySegment: View {
     var throwFeedbackToken: UInt64 = 0
 
     var body: some View {
-        HStack(spacing: 8 * textScale) {
+        HStack(spacing: 10 * textScale) {
             Image(systemName: bin.symbolName)
-                .font(.system(size: 16 * textScale, weight: .semibold))
+                .font(.system(size: 34 * textScale, weight: .semibold))
             Text(bin.displayName)
-                .font(.system(size: 14 * textScale, weight: .semibold))
+                .font(.system(size: 34 * textScale, weight: .semibold))
                 .tracking(0.6)
                 .lineLimit(1)
         }
         .foregroundStyle(.white.opacity(isDetected ? 1.0 : 0.72))
+        .padding(.horizontal, 10 * textScale)
+        .padding(.vertical, 4 * textScale)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background((isDetected ? bin.color : bin.idleColor).opacity(
             isDetected ? Theme.segmentDetectedOpacity : Theme.segmentIdleOpacity

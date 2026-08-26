@@ -6,7 +6,7 @@ struct DirtyRecyclableSuggestionChip: View {
         HStack(spacing: 10) {
             splitIcon
             (Text("If cleaned, can be ") + Text("Recyclable").fontWeight(.bold))
-                .font(.system(.footnote, design: .default))
+                .font(.system(size: 34, design: .default))
                 .foregroundStyle(.white)
                 .fixedSize()
         }

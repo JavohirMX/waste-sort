@@ -7,6 +7,7 @@ struct StatsView: View {
     @EnvironmentObject private var history: ZoneEventHistoryStore
     @EnvironmentObject private var binStyle: BinStyleStore
     @EnvironmentObject private var zoneStore: ZoneStore
+    @EnvironmentObject private var binPreview: BinPreviewCoordinator
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var period: StatsPeriod = .daily
@@ -48,7 +49,7 @@ struct StatsView: View {
 
     var body: some View {
         ZStack {
-            CameraGlassBackdrop()
+            Theme.statsSettingsBackground.ignoresSafeArea()
 
             NavigationStack {
                 ZStack {
@@ -110,6 +111,7 @@ struct StatsView: View {
                         .environmentObject(binStyle)
                         .environmentObject(zoneStore)
                         .environmentObject(settings)
+                        .environmentObject(binPreview)
                 }
                 .sheet(isPresented: $showSiteNameEditor) {
                     SiteNameEditorSheet(
@@ -126,7 +128,16 @@ struct StatsView: View {
                     .presentationDetents([.height(260)])
                     .presentationDragIndicator(.visible)
                 }
-                .onAppear { configureSegmentedPickerAppearance() }
+                .onAppear {
+                    configureSegmentedPickerAppearance()
+                    if binPreview.returnsToBinSettings {
+                        binPreview.returnsToBinSettings = false
+                        showBinSettings = true
+                    }
+                }
+                .onChange(of: binPreview.isActive) { _, isActive in
+                    if isActive { closeStats() }
+                }
             }
             .toolbarBackground(.hidden, for: .navigationBar)
             .containerBackground(.clear, for: .navigation)
@@ -147,9 +158,9 @@ struct StatsView: View {
     }
 
     private func configureSegmentedPickerAppearance() {
+        // Leaving the tint/background alone lets the system render its native Liquid Glass
+        // material for the control instead of a flat custom fill.
         let control = UISegmentedControl.appearance()
-        control.selectedSegmentTintColor = .white
-        control.backgroundColor = UIColor(white: 0.88, alpha: 1)
         control.setTitleTextAttributes(
             [
                 .foregroundColor: UIColor(white: 0.28, alpha: 1),
@@ -303,7 +314,7 @@ struct StatsView: View {
 
                         ZStack(alignment: .bottom) {
                             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .fill(Color(white: 0.93))
+                                .fill(Color.white)
                                 .frame(width: barWidth, height: trackHeight)
 
                             RoundedRectangle(cornerRadius: 24, style: .continuous)
