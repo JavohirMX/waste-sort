@@ -965,3 +965,33 @@ struct ZoneDepositDetectorTests {
         #expect(cancelled.contains(shown.objectID))
     }
 }
+
+// Drop-reason reporting: seen-but-not-credited throws explain themselves.
+extension ZoneDepositDetectorTests {
+    private func waitOutDrops(_ c: Clock) -> [DepositDrop] {
+        (0..<Int((c.detector.reacquireGrace + 0.5) * 30)).flatMap { _ in c.tick([]).drops }
+    }
+
+    @Test("a throw at a shut bin is reported as a drop that names the bin")
+    func closedBinDropIsExplained() {
+        let c = clock(binState: StubBinState(open: []))
+        c.tick([track(centerX: 0.5)])
+        c.tick([track(centerX: 0.2)], times: 4)
+        let drops = waitOutDrops(c)
+        #expect(drops.count == 1)
+        #expect(drops.first?.reason == .binReadShut)
+        #expect(drops.first?.targetBinID == BinGuide.organic.id)
+    }
+
+    @Test("a vanish away from every zone is reported as an outside-zones drop")
+    func leavingVanishDropIsExplained() {
+        let c = mouthClock()
+        c.tick([track(at: CGPoint(x: 0.46, y: 0.49))])
+        c.tick([track(at: CGPoint(x: 0.53, y: 0.42))])
+        c.tick([track(at: CGPoint(x: 0.60, y: 0.35))])
+        c.tick([track(at: CGPoint(x: 0.67, y: 0.28))])
+        let drops = waitOutDrops(c)
+        #expect(drops.count == 1)
+        #expect(drops.first?.reason == .outsideZones)
+    }
+}

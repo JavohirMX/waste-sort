@@ -58,6 +58,26 @@ nonisolated struct ThrowFeedbackCue: Equatable, Sendable {
     let persistWhilePresent: Bool
 }
 
+/// Why an item that vanished never became a deposit. Surfaced on Live so a
+/// kiosk that swallows throws explains itself instead of staying silent.
+nonisolated enum DepositDropReason: Equatable, Sendable {
+    /// Vanished with no zone under or along its path — nothing to credit.
+    case outsideZones
+    /// Had a target zone, but no open reading during the settling window:
+    /// thrown at a bin whose lid (strip/tag) read shut.
+    case binReadShut
+}
+
+/// One vanished item that did not become a deposit. Emitted on the frame it
+/// was reaped; Live shows the latest one as a diagnostic chip.
+nonisolated struct DepositDrop: Equatable, Sendable {
+    let reason: DepositDropReason
+    let trackID: Int
+    /// The bin that would have been credited, when there was one.
+    let targetBinID: String?
+    let timestamp: CFAbsoluteTime
+}
+
 /// What one frame of zone evaluation produced.
 nonisolated struct ZoneFrameResult: Equatable, Sendable {
     /// Items confirmed released this frame. Confirmation lags the disappearance by the
@@ -75,6 +95,9 @@ nonisolated struct ZoneFrameResult: Equatable, Sendable {
     var throwFeedbackCues: [ThrowFeedbackCue] = []
     /// Objects whose preview should come down (left the wrong zone, or came back).
     var cancelledThrowFeedbackIDs: Set<UUID> = []
+    /// Vanished items that did NOT credit this frame, with why. Usually empty;
+    /// non-empty means a throw happened and was not counted.
+    var drops: [DepositDrop] = []
 }
 
 /// The frozen bin verdict for an object at the moment it vanishes.
@@ -515,15 +538,16 @@ nonisolated final class ZoneDepositDetector {
             }
         }
 
-        let (deposits, armedZoneIDs, settlingZoneIDs) = reapAndArm(at: timestamp)
+        let reaped = reapAndArm(at: timestamp)
 
         return ZoneFrameResult(
-            deposits: deposits,
+            deposits: reaped.deposits,
             occupiedZoneIDs: occupied,
-            armedZoneIDs: armedZoneIDs,
-            settlingZoneIDs: settlingZoneIDs,
+            armedZoneIDs: reaped.armedZoneIDs,
+            settlingZoneIDs: reaped.settlingZoneIDs,
             throwFeedbackCues: throwFeedbackCues,
-            cancelledThrowFeedbackIDs: cancelledThrowFeedbackIDs
+            cancelledThrowFeedbackIDs: cancelledThrowFeedbackIDs,
+            drops: reaped.drops
         )
     }
 
@@ -609,18 +633,28 @@ nonisolated final class ZoneDepositDetector {
         return object.id
     }
 
+    /// Everything one reaping pass produced.
+    private struct ReapResult {
+        var deposits: [ZoneDeposit] = []
+        var drops: [DepositDrop] = []
+        var armedZoneIDs: Set<UUID> = []
+        var settlingZoneIDs: Set<UUID> = []
+    }
+
     /// Scores everything whose reacquisition window ran out, drops it, and computes the
     /// per-zone armed/settling sets the HUD reacts to.
-    private func reapAndArm(
-        at timestamp: CFAbsoluteTime
-    ) -> (deposits: [ZoneDeposit], armed: Set<UUID>, settling: Set<UUID>) {
+    private func reapAndArm(at timestamp: CFAbsoluteTime) -> ReapResult {
+        var result = ReapResult()
         let settled = objects.filter { object in
             guard let missingSince = object.missingSince else { return false }
             return timestamp - missingSince >= reacquireGrace
         }
-        var deposits: [ZoneDeposit] = []
         for object in settled {
-            deposits.append(contentsOf: deposit(from: object))
+            let credited = deposit(from: object)
+            if credited.isEmpty, let drop = dropRecord(for: object) {
+                result.drops.append(drop)
+            }
+            result.deposits.append(contentsOf: credited)
         }
         if !settled.isEmpty {
             let dead = Set(settled.map(ObjectIdentifier.init))
@@ -628,11 +662,9 @@ nonisolated final class ZoneDepositDetector {
             byTrackID = byTrackID.filter { !dead.contains(ObjectIdentifier($0.value)) }
         }
 
-        var armedZoneIDs = Set<UUID>()
-        var settlingZoneIDs = Set<UUID>()
         for object in objects {
             if let target = object.pendingTarget {
-                settlingZoneIDs.insert(target.zoneID)
+                result.settlingZoneIDs.insert(target.zoneID)
                 continue
             }
             guard object.missingSince == nil,
@@ -640,9 +672,32 @@ nonisolated final class ZoneDepositDetector {
                   let zoneID = object.zoneID,
                   object.dwell >= requiredDwellFrames
             else { continue }
-            armedZoneIDs.insert(zoneID)
+            result.armedZoneIDs.insert(zoneID)
         }
-        return (deposits.sorted { $0.trackID < $1.trackID }, armedZoneIDs, settlingZoneIDs)
+        result.deposits.sort { $0.trackID < $1.trackID }
+        result.drops.sort { $0.trackID < $1.trackID }
+        return result
+    }
+
+    /// Names why a settled object earned nothing. Mirrors `deposit(from:)`'s
+    /// guard so the chip on Live always states the true gate.
+    private func dropRecord(for object: TrackedObject) -> DepositDrop? {
+        guard let missingSince = object.missingSince else { return nil }
+        if let target = object.pendingTarget {
+            guard !object.sawBinOpen else { return nil }
+            return DepositDrop(
+                reason: .binReadShut,
+                trackID: object.trackID,
+                targetBinID: target.binID,
+                timestamp: missingSince
+            )
+        }
+        return DepositDrop(
+            reason: .outsideZones,
+            trackID: object.trackID,
+            targetBinID: object.zoneBinID.isEmpty ? nil : object.zoneBinID,
+            timestamp: missingSince
+        )
     }
 
     /// Resolves a live track to the object it belongs to, stitching across a dropout when

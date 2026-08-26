@@ -38,6 +38,8 @@ struct LiveCameraView: View {
     @State private var detectedTagFailure: String?
     @State private var barcodeHint: ScannedBarcode?
     @State private var barcodeClearTask: Task<Void, Never>?
+    @State private var lastDropNotice: DepositDrop?
+    @State private var dropNoticeClearTask: Task<Void, Never>?
     @State private var throwFeedbackGate = ThrowFeedbackGate()
     @State private var previewedFeedbackIDs: Set<UUID> = []
     @State private var presentationDelta: LivePreviewRotation = .zero
@@ -172,6 +174,9 @@ struct LiveCameraView: View {
                             history.append(zoneFrame.deposits)
                             flash(zoneFrame.deposits)
                         }
+                        if let drop = zoneFrame.drops.last {
+                            showDropNotice(drop)
+                        }
 
                         var nextCounts: [String: Int] = [:]
                         for track in tracked where !track.isCoasting {
@@ -292,6 +297,13 @@ struct LiveCameraView: View {
 
                 if let barcode = barcodeHint {
                     BarcodeHintChip(barcode: barcode)
+                        .padding(.horizontal, Theme.hudInset)
+                        .padding(.top, 6)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                if let drop = lastDropNotice {
+                    DepositDropChip(drop: drop)
                         .padding(.horizontal, Theme.hudInset)
                         .padding(.top, 6)
                         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -549,6 +561,22 @@ struct LiveCameraView: View {
         guard let current = throwFeedbackGate.objectID, ids.contains(current) else { return }
         withAnimation(.easeOut(duration: Theme.animationDuration)) {
             throwFeedbackGate.dismiss(objectID: current)
+        }
+    }
+
+    /// Shows why the last throw was not counted, then lets it fade. A throw
+    /// that silently vanished used to look like a broken kiosk.
+    private func showDropNotice(_ drop: DepositDrop) {
+        dropNoticeClearTask?.cancel()
+        withAnimation(.easeOut(duration: Theme.animationDuration)) {
+            lastDropNotice = drop
+        }
+        dropNoticeClearTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeIn(duration: Theme.animationDuration)) {
+                lastDropNotice = nil
+            }
         }
     }
 
