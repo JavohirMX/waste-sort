@@ -101,7 +101,7 @@ nonisolated struct ZoneFrameResult: Equatable, Sendable {
 }
 
 /// The frozen bin verdict for an object at the moment it vanishes.
-private nonisolated struct DepositVerdict: Equatable, Sendable {
+nonisolated struct DepositVerdict: Equatable, Sendable {
     let classKey: String
     let className: String
     /// Belief probability behind `classKey`.
@@ -134,8 +134,9 @@ private nonisolated struct DepositVerdict: Equatable, Sendable {
 ///   object first seen inside a *closed* bin keeps it too, because a shut lid cannot have
 ///   produced it;
 /// - it either stayed inside one zone for `requiredDwellFrames` of frames the model actually
-///   saw — so a hand passing over does not count — or it vanished within `trajectoryReach` of
-///   a zone while still moving into it;
+///   saw — so a hand passing over does not count — or the evidence names a bin anyway: its
+///   motion swept across a zone, a launch projection reaches one, or exactly one lid stood
+///   open under the vanish point (drawer bins occlude the drop itself);
 /// - it stayed gone for `reacquireGrace` after vanishing. A dropout that comes back is the
 ///   same object continuing, not a throw;
 /// - and the target bin was **open** while it was gone. Nothing goes into a closed bin.
@@ -166,9 +167,10 @@ nonisolated final class ZoneDepositDetector {
     var binOpenState: BinOpenStateProviding = AlwaysOpenBins()
 
     /// How far the last motion is projected forward when an object vanishes outside every
-    /// zone, in normalized image widths. Roughly a hand's width: the model routinely loses an
-    /// item in the last few centimetres — behind the hand releasing it, or under the lid — and
-    /// the calibrated quad is the bin mouth, not the whole catchment around it.
+    /// zone, in normalized image widths. Baseline: roughly a hand's width — the model
+    /// routinely loses an item in the last few centimetres. A fast launch stretches the
+    /// projection by `trajectorySpeedReachGain` per unit of speed, capped at
+    /// `trajectoryMaxReach`, because a blur-lost flight covers far more than a hand.
     /// Which decision math resolves the frozen verdict at vanish. Mirrored from
     /// settings on the inference queue, same as the tracker's copy.
     var pipeline: DecisionPipeline = .belief
@@ -181,216 +183,61 @@ nonisolated final class ZoneDepositDetector {
     var trajectoryMinFrames: Int = 3
     /// Weight of the newest sample in the smoothed velocity.
     var velocitySmoothing: CGFloat = 0.4
+    /// Ceiling for the speed-scaled trajectory projection, so a flung box cannot be
+    /// marched across the whole frame.
+    var trajectoryMaxReach: CGFloat = 0.45
+    /// Seconds of travel speed added to the projection reach per unit of speed.
+    var trajectorySpeedReachGain: CGFloat = 0.25
+    /// How long a launch (peak instantaneous speed) stays creditable evidence of where a
+    /// vanished object was headed. The smoothed velocity lags a release; the peak is the
+    /// trace a throw leaves when its flight is never tracked at all.
+    var peakVelocityWindow: CFAbsoluteTime = 0.35
+    /// How long a swept zone crossing stays creditable: a fast item's center can jump
+    /// clean over a bin mouth between two tracked frames, never inside on either.
+    var crossingFreshWindow: CFAbsoluteTime = 0.35
+    /// How close a vanished item must sit to the one open bin for the open lid itself to
+    /// count as evidence of where it went. Drawer bins are the reason this rule exists:
+    /// the drop happens behind the drawer's front edge, in frames the model never sees.
+    var intentMaxDistance: CGFloat = 0.55
+    /// How long before the item appeared a lid may have been pulled open and still count
+    /// as evidence — the drawer pulled just before the item came into view.
+    var intentOpenRecency: CFAbsoluteTime = 2.5
 
-    private struct Sighting {
-        var center: CGPoint
-        var box: CGRect
-        var classKey: String
-        var className: String
-        var conf: Float
-        /// Set once the on-device model has named this item.
-        var confirmedBinID: String?
-    }
 
-    /// The bin an object would be credited to if it never comes back.
-    private struct Target {
-        let zoneID: UUID
-        let zoneName: String
-        let binID: String
-        let viaTrajectory: Bool
-    }
-
-    private final class TrackedObject {
-        let id = UUID()
-        var trackID: Int
-        var trackSegments = 1
-        /// Fused class belief across the object's whole life. Recency decay is long
-        /// (deposit preset) so a flicker to the wrong label cannot outvote a steady
-        /// reading, while a genuinely different item later in life still can.
-        let belief = BeliefEngine(config: .deposit)
-        /// Lifetime window-vote math for the legacy pipeline. Idle under `.belief`.
-        var legacy = LegacyDecisionEngine()
-        /// A Foundation-model confirmation, once one has been attached to this object.
-        ///
-        /// Not a vote. The verdicts below sum confidence over every frame, so an item seen for
-        /// a second before the model answers has already banked far more weight for the
-        /// detector's guess than the confirmation could ever outvote — and the model is
-        /// asked precisely because that guess is the thing in doubt. A confirmation
-        /// therefore replaces the verdict outright, whichever pipeline is active.
-        var confirmed: (key: String, name: String, conf: Float)?
-        /// Distinct classes the model reported, for the `classesSeen` diagnostics.
-        private(set) var classesSeen = 0
-        private var seenClasses: Set<String> = []
-        /// Evidence the object is not simply waste already lying in a bin: it was seen
-        /// outside every zone at some point, or it was first seen inside a *closed* one.
-        var arrivedFromOutside = false
-        var zoneID: UUID?
-        var zoneName = ""
-        var zoneBinID = ""
-        var dwell = 0
-        /// When the object entered its current zone. Nil when it is outside every zone.
-        var zoneEnteredAt: CFAbsoluteTime?
-        /// A vanish-preview cue has already been sent for this disappearance.
-        var didEmitThrowFeedback = false
-        /// An in-zone "Not here!" cue is currently live.
-        var didEmitInZoneIncorrect = false
-        /// The wrong bin the in-zone cue was for — used to ignore short blinks and edge jitter.
-        var lastWrongZoneBinID: String?
-        /// When the object first left `lastWrongZoneBinID`. Nil while it is still there
-        /// (including a vanish whose pending target is that same bin).
-        var leftWrongZoneAt: CFAbsoluteTime?
-        /// Frames the model actually saw this object, across every id it wore.
-        var detectedFrames = 0
-        var last: Sighting
-        var lastSeenAt: CFAbsoluteTime
-        /// Smoothed motion in normalized widths per second — the direction a vanish is
-        /// judged against.
-        var velocity: CGPoint = .zero
-        /// Last sighting that was inside a zone, which is what an ordinary deposit reports.
-        var lastInZone: Sighting?
-        var missingSince: CFAbsoluteTime?
-        /// Resolved once, on the frame the object vanishes. Nil means it can never be
-        /// credited, so it is neither settling now nor a deposit later.
-        var pendingTarget: Target?
-        /// Whether the target bin has been seen open at any point since the object vanished.
-        var sawBinOpen = false
-
-        init(trackID: Int, sighting: Sighting, at time: CFAbsoluteTime) {
-            self.trackID = trackID
-            self.last = sighting
-            self.lastSeenAt = time
-        }
-
-        func note(
-            _ sighting: Sighting,
-            at time: CFAbsoluteTime,
-            smoothing: CGFloat,
-            pipeline: DecisionPipeline
-        ) {
-            if pipeline == .legacy {
-                legacy.observe(
-                    classKey: sighting.classKey,
-                    className: sighting.className,
-                    conf: sighting.conf,
-                    at: time
-                )
-                return
-            }
-            if detectedFrames > 0 {
-                let dt = CGFloat(max(time - lastSeenAt, 1e-3))
-                let instant = CGPoint(
-                    x: (sighting.center.x - last.center.x) / dt,
-                    y: (sighting.center.y - last.center.y) / dt
-                )
-                velocity = CGPoint(
-                    x: smoothing * instant.x + (1 - smoothing) * velocity.x,
-                    y: smoothing * instant.y + (1 - smoothing) * velocity.y
-                )
-            }
-            detectedFrames += 1
-            lastSeenAt = time
-            last = sighting
-            if sighting.confirmedBinID != nil {
-                confirmed = (sighting.classKey, sighting.className, sighting.conf)
-            }
-            if seenClasses.insert(sighting.classKey).inserted {
-                classesSeen += 1
-            }
-            if pipeline == .legacy {
-                legacy.observe(
-                    classKey: sighting.classKey,
-                    className: sighting.className,
-                    conf: sighting.conf,
-                    at: time
-                )
-                return
-            }
-            belief.observe(
-                classKey: sighting.classKey,
-                className: sighting.className,
-                conf: sighting.conf,
-                at: time
-            )
-        }
-
-        /// The object's bin verdict, frozen once when it vanishes so decay does not
-        /// keep running during the reacquisition window.
-        ///
-        /// A Foundation-model confirmation replaces the verdict outright. Decisive
-        /// beliefs report the winning class; anything else falls back to the safe
-        /// stream rather than parroting a coin flip as a confident answer.
-        func resolvedVerdict(at time: CFAbsoluteTime, pipeline: DecisionPipeline) -> DepositVerdict {
-            if let confirmed {
-                return DepositVerdict(
-                    classKey: confirmed.key,
-                    className: confirmed.name,
-                    conf: confirmed.conf,
-                    modelTopClassKey: confirmed.key,
-                    wasUncertain: false,
-                    margin: 1
-                )
-            }
-            if pipeline == .legacy {
-                // Main's verdict: lifetime confidence argmax, always confident.
-                let verdict = legacy.verdict()
-                return DepositVerdict(
-                    classKey: verdict.classKey,
-                    className: verdict.className,
-                    conf: max(verdict.weight, 0.001),
-                    modelTopClassKey: verdict.classKey,
-                    wasUncertain: false,
-                    margin: 1
-                )
-            }
-            let state = belief.currentState(at: time)
-            guard state.isDecided, !state.topKey.isEmpty else {
-                let fallback = BinGuide.bin(id: BinGuide.fallbackBinID)
-                return DepositVerdict(
-                    classKey: fallback.id,
-                    className: fallback.title,
-                    conf: Float(state.probabilities[state.topKey] ?? 0),
-                    modelTopClassKey: state.topKey,
-                    wasUncertain: true,
-                    margin: Float(state.margin)
-                )
-            }
-            return DepositVerdict(
-                classKey: state.topKey,
-                className: state.classNameByKey[state.topKey] ?? state.topKey,
-                conf: Float(state.probabilities[state.topKey] ?? 0),
-                modelTopClassKey: state.topKey,
-                wasUncertain: false,
-                margin: Float(state.margin)
-            )
-        }
-
-        /// Live category attribution for HUD cues (not scoring): the confirmation when
-        /// present, otherwise the active pipeline's current leader with no fallback.
-        func verdictClass(at time: CFAbsoluteTime, pipeline: DecisionPipeline) -> (key: String, name: String, conf: Float) {
-            if let confirmed { return confirmed }
-            if pipeline == .legacy {
-                let verdict = legacy.verdict()
-                return (verdict.classKey, verdict.className, max(verdict.weight, 0.001))
-            }
-            let state = belief.currentState(at: time)
-            guard !state.topKey.isEmpty else {
-                return (BinGuide.unknown.id, BinGuide.unknown.title, 0)
-            }
-            return (
-                state.topKey,
-                state.classNameByKey[state.topKey] ?? state.topKey,
-                Float(state.probabilities[state.topKey] ?? 0)
-            )
-        }
-    }
-
-    private var objects: [TrackedObject] = []
+    private var objects: [ZoneTrackedObject] = []
     /// Tracker id → object, for the common case where the id simply continues.
-    private var byTrackID: [Int: TrackedObject] = [:]
+    private var byTrackID: [Int: ZoneTrackedObject] = [:]
+    /// Lid state as of the previous frame, and when each bin was last seen flipping from
+    /// shut to open. The open-lid witness rule only counts *transitions*: a lid that has
+    /// simply been standing open says nothing about the item now vanishing beside it.
+    private var binOpenNow: Set<String> = []
+    private var binOpenedAt: [String: CFAbsoluteTime] = [:]
+    /// The first frame only learns the starting lid state; it is not a transition.
+    private var binLidsBaselined = false
+
+    /// Records shut→open flips per bin, for the open-lid witness rule. The first frame
+    /// only baselines; it is not a transition.
+    private func noteLidTransitions(zones: [DropZone], at timestamp: CFAbsoluteTime) {
+        for zone in zones {
+            let isOpen = binOpenState.isOpen(binID: zone.binID)
+            if binLidsBaselined, isOpen, !binOpenNow.contains(zone.binID) {
+                binOpenedAt[zone.binID] = timestamp
+            }
+            if isOpen {
+                binOpenNow.insert(zone.binID)
+            } else {
+                binOpenNow.remove(zone.binID)
+            }
+        }
+        binLidsBaselined = true
+    }
 
     func reset() {
         objects.removeAll(keepingCapacity: true)
         byTrackID.removeAll(keepingCapacity: true)
+        binOpenNow.removeAll()
+        binOpenedAt.removeAll()
+        binLidsBaselined = false
     }
 
     func update(
@@ -402,6 +249,8 @@ nonisolated final class ZoneDepositDetector {
             reset()
             return ZoneFrameResult()
         }
+
+        noteLidTransitions(zones: zones, at: timestamp)
 
         var seenThisFrame = Set<ObjectIdentifier>()
         var occupied = Set<UUID>()
@@ -448,6 +297,7 @@ nonisolated final class ZoneDepositDetector {
             seenThisFrame.insert(ObjectIdentifier(object))
             let isFirstSighting = object.detectedFrames == 0
             let wasMissing = object.missingSince != nil
+            let previousCenter = object.last.center
             // Back on camera: whatever it was about to be judged as no longer applies.
             object.missingSince = nil
             object.pendingTarget = nil
@@ -465,6 +315,7 @@ nonisolated final class ZoneDepositDetector {
                 object.zoneID = nil
                 object.dwell = 0
                 object.lastInZone = nil
+                recordSweptCrossing(for: object, from: previousCenter, to: sighting.center, zones: zones, at: timestamp)
                 noteWrongZoneOccupancy(object, currentBinID: nil, binIsOpen: false, at: timestamp)
                 if let id = expireInZoneIncorrectIfNeeded(object, at: timestamp) {
                     cancelledThrowFeedbackIDs.insert(id)
@@ -474,6 +325,11 @@ nonisolated final class ZoneDepositDetector {
 
             occupied.insert(zone.id)
             object.lastInZone = sighting
+            // The dwell rule owns every zone the object was actually tracked inside. A
+            // recorded entry crossing for this zone must not outlive that judgment —
+            // otherwise an item that dwelt too briefly, left, and vanished could be
+            // credited by its own rejected entry.
+            object.crossedZone = nil
 
             // Materialising inside a zone only disqualifies an object while the bin is open,
             // because only an open bin can be where it came from. Appearing on a shut lid
@@ -513,9 +369,17 @@ nonisolated final class ZoneDepositDetector {
         for object in objects where !seenThisFrame.contains(ObjectIdentifier(object)) {
             if object.missingSince == nil {
                 object.missingSince = timestamp
-                // The last sighting is all the evidence there will ever be, so the bin this
-                // object would be credited to is settled here, once.
+                // The last sighting is all the kinematic evidence there will ever be, so
+                // the bin this object would be credited to is settled here, once.
                 object.pendingTarget = target(for: object, zones: zones)
+            }
+            // An open lid may claim what kinematics could not: a drawer-bin drop happens
+            // behind the drawer's front edge, in frames the model never sees, so the one
+            // standing-open bin under the vanish point is the only witness a throw had.
+            // Evidence arriving during the window, and never a downgrade — the settle-once
+            // rule only ever binds kinematic targets.
+            if object.pendingTarget == nil {
+                object.pendingTarget = intentTarget(for: object, zones: zones)
             }
             // An open reading anywhere in the settling window counts. The lid signal is noisy
             // in its own right and can lag the throw by a few frames; demanding that two noisy
@@ -552,7 +416,7 @@ nonisolated final class ZoneDepositDetector {
     }
 
     private func throwPreviewCue(
-        for object: TrackedObject,
+        for object: ZoneTrackedObject,
         at timestamp: CFAbsoluteTime,
         pipeline: DecisionPipeline
     ) -> ThrowFeedbackCue? {
@@ -578,7 +442,7 @@ nonisolated final class ZoneDepositDetector {
     }
 
     private func inZoneIncorrectCue(
-        for object: TrackedObject,
+        for object: ZoneTrackedObject,
         at timestamp: CFAbsoluteTime,
         pipeline: DecisionPipeline
     ) -> ThrowFeedbackCue? {
@@ -606,7 +470,7 @@ nonisolated final class ZoneDepositDetector {
     /// Treat a vanish into the same wrong bin as still "there" so a blink does not cancel.
     /// A shut lid is leaving: the overlay must not persist over a bin that cannot accept a throw.
     private func noteWrongZoneOccupancy(
-        _ object: TrackedObject,
+        _ object: ZoneTrackedObject,
         currentBinID: String?,
         binIsOpen: Bool,
         at timestamp: CFAbsoluteTime
@@ -620,7 +484,7 @@ nonisolated final class ZoneDepositDetector {
     }
 
     private func expireInZoneIncorrectIfNeeded(
-        _ object: TrackedObject,
+        _ object: ZoneTrackedObject,
         at timestamp: CFAbsoluteTime
     ) -> UUID? {
         guard object.didEmitInZoneIncorrect,
@@ -681,7 +545,7 @@ nonisolated final class ZoneDepositDetector {
 
     /// Names why a settled object earned nothing. Mirrors `deposit(from:)`'s
     /// guard so the chip on Live always states the true gate.
-    private func dropRecord(for object: TrackedObject) -> DepositDrop? {
+    private func dropRecord(for object: ZoneTrackedObject) -> DepositDrop? {
         guard let missingSince = object.missingSince else { return nil }
         if let target = object.pendingTarget {
             guard !object.sawBinOpen else { return nil }
@@ -707,12 +571,12 @@ nonisolated final class ZoneDepositDetector {
         sighting: Sighting,
         now: CFAbsoluteTime,
         claimed: Set<ObjectIdentifier>
-    ) -> TrackedObject {
+    ) -> ZoneTrackedObject {
         if let known = byTrackID[track.id] {
             return known
         }
 
-        var best: TrackedObject?
+        var best: ZoneTrackedObject?
         var bestDistance = CGFloat.greatestFiniteMagnitude
         for candidate in objects {
             // Two objects visible at once are two objects, however similar they look — so
@@ -745,14 +609,14 @@ nonisolated final class ZoneDepositDetector {
             return best
         }
 
-        let created = TrackedObject(trackID: track.id, sighting: sighting, at: now)
+        let created = ZoneTrackedObject(trackID: track.id, sighting: sighting, at: now)
         objects.append(created)
         byTrackID[track.id] = created
         return created
     }
 
     /// The bin a vanished object would be credited to, or nil if it can never be credited.
-    private func target(for object: TrackedObject, zones: [DropZone]) -> Target? {
+    private func target(for object: ZoneTrackedObject, zones: [DropZone]) -> ZoneDepositTarget? {
         // Waste the model only ever saw inside an open bin stays bin contents, whatever it
         // does next.
         guard object.arrivedFromOutside else { return nil }
@@ -760,29 +624,116 @@ nonisolated final class ZoneDepositDetector {
         if let zoneID = object.zoneID {
             // Lost inside a zone: the dwell rule decides, exactly as before.
             guard object.dwell >= requiredDwellFrames else { return nil }
-            return Target(
+            return ZoneDepositTarget(
                 zoneID: zoneID,
                 zoneName: object.zoneName,
                 binID: object.zoneBinID,
                 viaTrajectory: false
             )
         }
+        // A swept crossing is observed motion over a bin mouth; the trajectory march is
+        // inference from velocity. Direct evidence wins.
+        if let crossed = object.crossedZone,
+           object.lastSeenAt - object.crossedAt <= crossingFreshWindow {
+            return crossed
+        }
         return trajectoryTarget(for: object, zones: zones)
+    }
+
+    /// The bin to credit when kinematics name none: exactly one lid stands open and the
+    /// item vanished within reach of it.
+    ///
+    /// Drawer bins make this the load-bearing rule in practice. The item is dropped
+    /// downward behind the drawer's front edge, so the flight is occluded in the very
+    /// frames where it would enter the zone — the model sees it held, then never again.
+    /// You cannot put anything into a closed drawer, so a tracked item vanishing next to
+    /// the one open bin is a deposit by elimination. Ambiguity is refused: two open lids
+    /// name no bin at all.
+    private func intentTarget(for object: ZoneTrackedObject, zones: [DropZone]) -> ZoneDepositTarget? {
+        guard object.arrivedFromOutside,
+              object.zoneID == nil,
+              object.detectedFrames >= trajectoryMinFrames
+        else { return nil }
+        let open = zones.filter { binOpenState.isOpen(binID: $0.binID) }
+        guard open.count == 1, let zone = open.first else { return nil }
+        let dx = zone.centroid.x - object.last.center.x
+        let dy = zone.centroid.y - object.last.center.y
+        guard (dx * dx + dy * dy).squareRoot() <= intentMaxDistance else { return nil }
+        // The lid must have been opened for this item — pulled while the item was in
+        // sight, or shortly before it appeared. A lid that has been open for ages is
+        // furniture, not a witness: that is how an item set down beside a bin stays
+        // uncredited even when the lid happens to stand open.
+        guard let openedAt = binOpenedAt[zone.binID],
+              openedAt >= object.bornAt - intentOpenRecency
+        else { return nil }
+        return ZoneDepositTarget(zoneID: zone.id, zoneName: zone.name, binID: zone.binID, viaTrajectory: true)
+    }
+
+    /// Records the last zone an object's motion swept across between two tracked frames.
+    /// Only meaningful movement counts: a segment long enough to have jumped a polygon
+    /// that `contains` would have caught on one of its endpoints.
+    private func recordSweptCrossing(
+        for object: ZoneTrackedObject,
+        from previous: CGPoint,
+        to current: CGPoint,
+        zones: [DropZone],
+        at timestamp: CFAbsoluteTime
+    ) {
+        let dx = current.x - previous.x
+        let dy = current.y - previous.y
+        let length = (dx * dx + dy * dy).squareRoot()
+        guard length > 0.02 else { return }
+        let steps = Int(length / 0.02)
+        var hit: ZoneDepositTarget?
+        for i in 1...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            let probe = CGPoint(x: previous.x + dx * t, y: previous.y + dy * t)
+            if let zone = zones.first(where: { $0.contains(probe) }) {
+                // Only an entry from outside counts. A segment that starts inside the zone
+                // is that zone's exit — the dwell rule already judged the time spent in it,
+                // and recording the way out would resurrect what the dwell rule refused.
+                if hit == nil, !zone.contains(previous) {
+                    hit = ZoneDepositTarget(zoneID: zone.id, zoneName: zone.name, binID: zone.binID, viaTrajectory: true)
+                }
+            }
+        }
+        if let hit {
+            object.crossedZone = hit
+            object.crossedAt = timestamp
+        }
     }
 
     /// Where an object that vanished *outside* every zone was headed.
     ///
-    /// The last box is marched forward along the smoothed direction of travel, and the first
-    /// zone it reaches within `trajectoryReach` wins. This only ever runs for an object lost
-    /// outside every zone — one lost inside a zone goes through the dwell rule instead — so
-    /// the projection can never trivially credit a zone the item is already sitting in.
-    private func trajectoryTarget(for object: TrackedObject, zones: [DropZone]) -> Target? {
+    /// The last box is marched forward along the direction of travel, and the first zone
+    /// it reaches within the (speed-scaled) reach wins. The projection rides the tracked
+    /// motion; only when that motion is silence — a held item whose release was never
+    /// tracked — may a fresh launch peak speak for it, and never contrary to motion the
+    /// model actually saw. This only ever runs for an object lost outside every zone —
+    /// one lost inside a zone goes through the dwell rule instead — so the projection can
+    /// never trivially credit a zone the item is already sitting in.
+    private func trajectoryTarget(for object: ZoneTrackedObject, zones: [DropZone]) -> ZoneDepositTarget? {
         guard object.detectedFrames >= trajectoryMinFrames else { return nil }
-        let velocity = object.velocity
-        let speed = (velocity.x * velocity.x + velocity.y * velocity.y).squareRoot()
+        var direction = object.velocity
+        var speed = (direction.x * direction.x + direction.y * direction.y).squareRoot()
+        if speed < trajectoryMinSpeed {
+            let peakAge = object.lastSeenAt - object.peakAt
+            if peakAge >= 0, peakAge <= peakVelocityWindow {
+                let peakSpeed = (object.peakVelocity.x * object.peakVelocity.x
+                    + object.peakVelocity.y * object.peakVelocity.y).squareRoot()
+                if peakSpeed > speed {
+                    direction = object.peakVelocity
+                    speed = peakSpeed
+                }
+            }
+        }
         guard speed >= trajectoryMinSpeed else { return nil }
-        let dx = velocity.x / speed
-        let dy = velocity.y / speed
+        let dx = direction.x / speed
+        let dy = direction.y / speed
+        let reach = min(
+            trajectoryMaxReach,
+            trajectoryReach + speed * trajectorySpeedReachGain
+        )
 
         // Only bins the object was actually closing on. Without this a box already
         // overlapping a zone edge would be credited even as it is carried away from it.
@@ -795,7 +746,7 @@ nonisolated final class ZoneDepositDetector {
 
         let step: CGFloat = 0.01
         var travelled: CGFloat = 0
-        while travelled <= trajectoryReach {
+        while travelled <= reach {
             let probe = object.last.box.offsetBy(dx: dx * travelled, dy: dy * travelled)
             // The whole box, not just its center: an item whose leading edge is already over
             // the bin mouth has arrived, even though its center has not.
@@ -808,7 +759,7 @@ nonisolated final class ZoneDepositDetector {
             ]
             let hit = approaching.first { zone in samples.contains(where: zone.contains) }
             if let hit {
-                return Target(
+                return ZoneDepositTarget(
                     zoneID: hit.id,
                     zoneName: hit.name,
                     binID: hit.binID,
@@ -820,7 +771,7 @@ nonisolated final class ZoneDepositDetector {
         return nil
     }
 
-    private func deposit(from object: TrackedObject) -> [ZoneDeposit] {
+    private func deposit(from object: ZoneTrackedObject) -> [ZoneDeposit] {
         // Nothing goes into a closed bin.
         guard let target = object.pendingTarget, object.sawBinOpen else { return [] }
 
