@@ -62,9 +62,12 @@ final class ZoneStore: ObservableObject {
     ) {
         self.defaults = defaults
 
+        var rewrittenZones = false
         if let data = defaults.data(forKey: Keys.zones),
            let decoded = try? JSONDecoder().decode([DropZone].self, from: data) {
-            zones = decoded
+            let migrated = Self.migratingLegacyInorganicName(decoded)
+            zones = migrated
+            rewrittenZones = migrated != decoded
         } else {
             zones = DropZone.defaults(
                 rotation: rotation ?? AppSettings.shared.liveRotation,
@@ -88,6 +91,11 @@ final class ZoneStore: ObservableObject {
             throwFeedbackGrace = defaults.double(forKey: Keys.throwFeedbackGrace)
         } else {
             throwFeedbackGrace = ZoneConfig.defaultThrowFeedbackGrace
+        }
+
+        // `didSet` does not fire during init; write through if the old default was rewritten.
+        if rewrittenZones {
+            persistZones()
         }
     }
 
@@ -133,5 +141,18 @@ final class ZoneStore: ObservableObject {
     private func persistZones() {
         guard let data = try? JSONEncoder().encode(zones) else { return }
         defaults.set(data, forKey: Keys.zones)
+    }
+
+    /// Rewrites the old shipped default "Inorganic" so existing kiosks pick up Recyclable.
+    /// Any other custom name is left alone.
+    static func migratingLegacyInorganicName(_ zones: [DropZone]) -> [DropZone] {
+        zones.map { zone in
+            guard zone.binID == BinGuide.cleanInorganic.id,
+                  zone.name.lowercased() == "inorganic"
+            else { return zone }
+            var next = zone
+            next.name = "Recyclable"
+            return next
+        }
     }
 }

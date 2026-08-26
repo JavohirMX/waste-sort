@@ -1,11 +1,11 @@
 import SwiftUI
 
 struct DetectionRow: View {
-    let className: String
+    let classKey: String
     let confidence: Float
     @EnvironmentObject private var binStyle: BinStyleStore
 
-    private var bin: BinInfo { binStyle.resolved(BinGuide.info(for: className)) }
+    private var bin: BinInfo { binStyle.resolved(BinGuide.info(for: classKey)) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

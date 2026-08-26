@@ -77,4 +77,52 @@ struct BinStyleStoreTests {
         }
         #expect(byScreen.map(\.binID) == reversed)
     }
+
+    @Test("default recyclable label is Recyclable")
+    func defaultRecyclableLabel() {
+        let store = BinStyleStore(defaults: freshDefaults())
+        let recyclable = store.customization(for: BinGuide.cleanInorganic.id)
+        #expect(recyclable.label == "Recyclable")
+        #expect(
+            store.orderedBins.first { $0.id == BinGuide.cleanInorganic.id }?.displayName
+                == "RECYCLABLE"
+        )
+    }
+
+    @Test("loads persisted Inorganic as Recyclable and leaves a custom label alone")
+    func migratesLegacyInorganicLabel() throws {
+        let inorganicDefaults = freshDefaults()
+        var inorganicItems = BinStyleStore.defaultCustomizations()
+        let recyclableIndex = try #require(
+            inorganicItems.firstIndex { $0.binID == BinGuide.cleanInorganic.id }
+        )
+        inorganicItems[recyclableIndex].label = "Inorganic"
+        inorganicDefaults.set(
+            try JSONEncoder().encode(inorganicItems),
+            forKey: "binStyle.customizations.v1"
+        )
+        let migrated = BinStyleStore(defaults: inorganicDefaults)
+        #expect(migrated.customization(for: BinGuide.cleanInorganic.id).label == "Recyclable")
+        #expect(
+            migrated.orderedBins.first { $0.id == BinGuide.cleanInorganic.id }?.displayName
+                == "RECYCLABLE"
+        )
+
+        let customDefaults = freshDefaults()
+        var customItems = BinStyleStore.defaultCustomizations()
+        let customIndex = try #require(
+            customItems.firstIndex { $0.binID == BinGuide.cleanInorganic.id }
+        )
+        customItems[customIndex].label = "Plastic"
+        customDefaults.set(
+            try JSONEncoder().encode(customItems),
+            forKey: "binStyle.customizations.v1"
+        )
+        let custom = BinStyleStore(defaults: customDefaults)
+        #expect(custom.customization(for: BinGuide.cleanInorganic.id).label == "Plastic")
+        #expect(
+            custom.orderedBins.first { $0.id == BinGuide.cleanInorganic.id }?.displayName
+                == "PLASTIC"
+        )
+    }
 }
