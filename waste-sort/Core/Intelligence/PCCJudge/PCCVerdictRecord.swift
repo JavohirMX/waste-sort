@@ -54,6 +54,10 @@ nonisolated struct PCCVerdictRecord: Equatable, Sendable, Codable {
         case skippedDisabled
         case cropFailed
 
+        /// True only when the model actually replied. Every other case is a
+        /// failure mode the export's skips.csv makes auditable.
+        var isAnswered: Bool { self == .answered }
+
         private enum CodingKeys: String, CodingKey {
             case tag = "outcome", message
         }

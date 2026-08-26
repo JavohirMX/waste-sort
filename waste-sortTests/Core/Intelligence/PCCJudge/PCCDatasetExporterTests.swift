@@ -33,6 +33,25 @@ struct PCCDatasetExporterTests {
         return stored
     }
 
+    /// A judgment that never became an answer — quota, offline, timeout…
+    private func seedSkip(trackId: Int, timestamp: Date) throws {
+        let record = PCCVerdictRecord(
+            sessionId: "s",
+            trackId: trackId,
+            cropFile: nil,
+            yoloLabel: "chip bag",
+            yoloConfidence: 0.4,
+            beliefUncertain: false,
+            beliefMargin: 0.5,
+            engineBinID: BinGuide.residual.id,
+            pipeline: "belief",
+            outcome: .skippedQuota
+        )
+        var stored = record
+        stored.timestamp = timestamp
+        store.append(stored, cropJPEG: nil)
+    }
+
     private let allTime = DateInterval(start: .distantPast, duration: .greatestFiniteMagnitude)
 
     @Test("Empty range exports nothing and says so honestly")
@@ -104,5 +123,39 @@ struct PCCDatasetExporterTests {
         _ = try PCCDatasetExporter.export(records: allTime, from: store)
         store.pruneOldRecords()
         #expect(store.allRecordCount() == 1)
+    }
+
+    @Test("Unanswered judgments land in skips.csv with their reasons")
+    func skipsAreExportedAsReadableRows() throws {
+        let now = Date()
+        try seed(trackId: 1, timestamp: now.addingTimeInterval(-60))
+        try seedSkip(trackId: 2, timestamp: now.addingTimeInterval(-40))
+        try seedSkip(trackId: 3, timestamp: now.addingTimeInterval(-20))
+
+        let bundle = try PCCDatasetExporter.export(records: allTime, from: store)
+        #expect(bundle.recordCount == 3)
+
+        let csv = try String(
+            contentsOf: bundle.directoryURL.appendingPathComponent("skips.csv"),
+            encoding: .utf8
+        )
+        let lines = csv.split(separator: "\n").map(String.init)
+        #expect(lines.count == 3, "header + one row per skipped judgment")
+        #expect(lines[0].hasPrefix("timestamp,track_id,outcome"))
+        #expect(lines[1].contains("2"))
+        #expect(lines[1].contains("skippedQuota"))
+        // Oldest first.
+        #expect(lines[1].contains(",2,") && lines[2].contains(",3,"))
+    }
+
+    @Test("A bundle with only answered judgments ships no skips.csv")
+    func allAnsweredShipsNoSkipsFile() throws {
+        try seed(trackId: 1, timestamp: Date())
+        let bundle = try PCCDatasetExporter.export(records: allTime, from: store)
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: bundle.directoryURL.appendingPathComponent("skips.csv").path
+            )
+        )
     }
 }

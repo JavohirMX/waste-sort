@@ -52,6 +52,18 @@ nonisolated enum PCCDatasetExporter {
                 }
             }
             try lines.write(to: bundleURL.appendingPathComponent("records.jsonl"), options: .atomic)
+
+            // The failure ledger: every judgment that did not become an answer,
+            // as one readable row. This is how "the judge never fired" is told
+            // apart from "it fired and failed" after the fact.
+            let skips = records.filter { !$0.outcome.isAnswered }
+            if !skips.isEmpty {
+                try Data(skipsCSV(skips).utf8).write(
+                    to: bundleURL.appendingPathComponent("skips.csv"),
+                    options: .atomic
+                )
+            }
+
             let ids = records.map(\.id)
             let manifest = store.makeExportManifest(exportedAt: now, range: range, recordIds: ids)
             let manifestData = try encoder.encode(manifest)
@@ -64,13 +76,39 @@ nonisolated enum PCCDatasetExporter {
                 atomically: true,
                 encoding: .utf8
             )
-            log.info("PCC judge exported \(ids.count) records to \(bundleURL.lastPathComponent)")
+            log.info("PCC judge exported \(ids.count) records (\(skips.count) skipped) to \(bundleURL.lastPathComponent)")
             return ExportBundle(directoryURL: bundleURL, recordCount: ids.count, manifest: manifest)
         } catch {
             log.error("PCC judge export failed: \(error.localizedDescription)")
             throw ExportError.encodingFailed
         }
     }
+
+    /// One CSV row per unanswered judgment, oldest first.
+    private static func skipsCSV(_ skips: [PCCVerdictRecord]) throws -> String {
+        var rows = ["timestamp,track_id,outcome,detail,yolo_label,engine_bin,uncertain,pipeline"]
+        let formatter = ISO8601DateFormatter.basicFormat
+        for record in skips.sorted(by: { $0.timestamp < $1.timestamp }) {
+            let fields = [
+                formatter.string(from: record.timestamp),
+                String(record.trackId),
+                String(describing: record.outcome),
+                record.errorMessage ?? "",
+                record.yoloLabel,
+                record.engineBinID,
+                record.beliefUncertain ? "yes" : "no",
+                record.pipeline
+            ]
+            rows.append(fields.map(Self.csvEscaped).joined(separator: ","))
+        }
+        return rows.joined(separator: "\n") + "\n"
+    }
+
+    private static func csvEscaped(_ field: String) -> String {
+        guard field.contains(",") || field.contains("\"") || field.contains("\n") else { return field }
+        return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
     private static let fineTuneReadme = """
         PCC judge export — teaching dataset for YOLO fine-tuning
         ========================================================
@@ -81,6 +119,9 @@ nonisolated enum PCCDatasetExporter {
                        sessionId  groups crops of the same physical item
                        agreesWithEngine  did PCC disagree with the kiosk
         crops/         the exact images the model judged (production 448 px)
+        skips.csv      judgments that did NOT become answers (quota, offline,
+                       unavailable, timeouts) — how "never fired" is told
+                       apart from "fired and failed" after the fact
         manifest.json  export metadata; exported records are never pruned
 
         Build a train/val classification dataset (session-aware split so
