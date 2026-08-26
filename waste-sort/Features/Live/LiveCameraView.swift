@@ -1,6 +1,5 @@
 import AVFoundation
 import SwiftUI
-import TipKit
 import UIKit
 import UltralyticsYOLO
 
@@ -263,7 +262,9 @@ struct LiveCameraView: View {
                         throwFeedbackToken: throwFeedbackGate.token,
                         onTripleTap: {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            showSettings = true
+                            withAnimation(.easeInOut(duration: 0.35)) {
+                                showSettings = true
+                            }
                         }
                     )
                     .frame(maxWidth: .infinity)
@@ -391,10 +392,16 @@ struct LiveCameraView: View {
             VerdictHistoryView()
                 .environmentObject(verdictLog)
         }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+        .overlay {
+            if showSettings {
+                SettingsView(onClose: {
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        showSettings = false
+                    }
+                })
+                .transition(.move(edge: .trailing))
+                .zIndex(2)
+            }
         }
         .overlay {
             if showStats {
@@ -408,6 +415,7 @@ struct LiveCameraView: View {
                 .zIndex(1)
             }
         }
+        .animation(.easeInOut(duration: 0.35), value: showSettings)
         .animation(.easeInOut(duration: 0.35), value: showStats)
     }
 
@@ -591,22 +599,7 @@ struct LiveCameraView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Waste stats")
-        .accessibilityHint("Opens stats. Long press opens developer settings.")
-        .accessibilityAction(named: "Open developer settings") {
-            openSettings()
-        }
-        .onLongPressGesture {
-            HapticsService.shared.fire(.lightTap)
-            openSettings()
-        }
-        .popoverTip(SettingsAccessTip(), arrowEdge: .bottom) { _ in
-            openSettings()
-        }
-    }
-
-    private func openSettings() {
-        showSettings = true
-        Task { try? await SettingsAccessTip.Events.settingsOpenedViaLongPress.donate() }
+        .accessibilityHint("Opens stats.")
     }
 }
 

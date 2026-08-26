@@ -114,8 +114,6 @@ Don't re-implement these, extend them:
   `settings.voiceGuidanceEnabled`. Interrupts rather than queues utterances.
 - **Haptics**: `HapticsService` — CoreHaptics patterns per bin, warning buzz
   for wrong-bin deposits, UIFeedbackGenerator fallback.
-- **TipKit**: `SettingsAccessTip` reveals the long-press gesture; retires via
-  donated event. Configure happens once in `WasteSortApp.init`.
 - **App Intents**: `SortlaShortcuts` (toggle recording, voice guidance, cycle
   model). All hop to MainActor singletons.
 - **Vision barcodes**: `BarcodeFrameScanner` (own serial queue, 0.5 s throttle,
