@@ -52,15 +52,17 @@ struct LiveYOLOCamera: UIViewRepresentable {
         )
         Self.applyThresholds(view, settings: settings)
         context.coordinator.replaceInputs(
-            settings: settings,
-            zones: zones,
-            dwellFrames: dwellFrames,
-            reacquireGrace: reacquireGrace,
-            throwFeedbackGrace: throwFeedbackGrace,
-            aprilTagEnabled: aprilTagEnabled,
-            aprilTagBindings: aprilTagBindings,
-            aprilTagStaleTimeout: aprilTagStaleTimeout,
-            openness: openness
+            PipelineInputs(
+                settings: settings,
+                zones: zones,
+                dwellFrames: dwellFrames,
+                reacquireGrace: reacquireGrace,
+                throwFeedbackGrace: throwFeedbackGrace,
+                aprilTagEnabled: aprilTagEnabled,
+                aprilTagBindings: aprilTagBindings,
+                aprilTagStaleTimeout: aprilTagStaleTimeout,
+                openness: openness
+            )
         )
         view.showOverlays = false
         hideDeveloperChrome(view)
@@ -83,15 +85,17 @@ struct LiveYOLOCamera: UIViewRepresentable {
         context.coordinator.onBarcodeHint = onBarcodeHint
         context.coordinator.yoloView = uiView
         context.coordinator.replaceInputs(
-            settings: settings,
-            zones: zones,
-            dwellFrames: dwellFrames,
-            reacquireGrace: reacquireGrace,
-            throwFeedbackGrace: throwFeedbackGrace,
-            aprilTagEnabled: aprilTagEnabled,
-            aprilTagBindings: aprilTagBindings,
-            aprilTagStaleTimeout: aprilTagStaleTimeout,
-            openness: openness
+            PipelineInputs(
+                settings: settings,
+                zones: zones,
+                dwellFrames: dwellFrames,
+                reacquireGrace: reacquireGrace,
+                throwFeedbackGrace: throwFeedbackGrace,
+                aprilTagEnabled: aprilTagEnabled,
+                aprilTagBindings: aprilTagBindings,
+                aprilTagStaleTimeout: aprilTagStaleTimeout,
+                openness: openness
+            )
         )
         Self.applyThresholds(uiView, settings: settings)
         let coordinator = context.coordinator
@@ -286,30 +290,9 @@ struct LiveYOLOCamera: UIViewRepresentable {
         }
 
         /// Atomically swaps everything `handle` reads. Main thread only.
-        func replaceInputs(
-            settings: RuntimeSettings,
-            zones: [DropZone],
-            dwellFrames: Int,
-            reacquireGrace: Double,
-            throwFeedbackGrace: Double,
-            aprilTagEnabled: Bool,
-            aprilTagBindings: [UUID: [Int]],
-            aprilTagStaleTimeout: Double,
-            openness: BinOpennessInputs
-        ) {
-            let snapshot = PipelineInputs(
-                settings: settings,
-                zones: zones,
-                dwellFrames: dwellFrames,
-                reacquireGrace: reacquireGrace,
-            throwFeedbackGrace: throwFeedbackGrace,
-                aprilTagEnabled: aprilTagEnabled,
-                aprilTagBindings: aprilTagBindings,
-                aprilTagStaleTimeout: aprilTagStaleTimeout,
-                openness: openness
-            )
+        fileprivate func replaceInputs(_ newInputs: PipelineInputs) {
             inputsLock.lock()
-            _inputs = snapshot
+            _inputs = newInputs
             inputsLock.unlock()
         }
 
@@ -323,6 +306,46 @@ struct LiveYOLOCamera: UIViewRepresentable {
             if !wanted {
                 confirmation.reset()
             }
+        }
+
+        /// Applies the detector knobs and refreshes both lid signals for this frame,
+        /// returning the merged openness snapshot. Inference-queue only.
+        private func applyDepositInputs(
+            _ inputs: PipelineInputs,
+            zones: [DropZone]
+        ) -> BinOpennessSnapshot {
+            depositDetector.requiredDwellFrames = inputs.dwellFrames
+            depositDetector.reacquireGrace = inputs.reacquireGrace
+            depositDetector.throwFeedbackGrace = inputs.throwFeedbackGrace
+            let usesTags = inputs.aprilTagEnabled && !inputs.openness.usesMarkers
+            var tagFrame = usesTags
+                ? aprilTagBinDetector.update(
+                    zones: zones,
+                    tagBindings: inputs.aprilTagBindings,
+                    config: AprilTagConfig(staleTimeout: inputs.aprilTagStaleTimeout)
+                )
+                : AprilTagStatusFrame()
+            if usesTags {
+                tagFrame.detectorStats = aprilTagPipeline.detector.lastFrameStats
+                tagFrame.detectorFailureReason = aprilTagPipeline.detector.configurationFailureReason
+            }
+            var markerFrame = BinMarkerStatusFrame()
+            if inputs.openness.usesMarkers {
+                markerFrame = markerBinDetector.update(
+                    zones: zones,
+                    config: BinMarkerStateConfig(staleTimeout: inputs.openness.markerStaleTimeout)
+                )
+                markerFrame.stats = inputs.openness.markerKind.style.usesDashRows
+                    ? markerPipeline.dashScanner.lastFrameStats
+                    : markerPipeline.scanner.lastFrameStats
+            }
+            let openness = BinOpennessSnapshot(
+                source: inputs.openness.source,
+                tag: tagFrame,
+                marker: markerFrame
+            )
+            depositDetector.binOpenState = openness.openState(zones: zones)
+            return openness
         }
 
         func handle(_ result: YOLOResult) {
@@ -400,37 +423,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
                 )
             }
             let currentZones = inputs.zones
-            depositDetector.requiredDwellFrames = inputs.dwellFrames
-            depositDetector.reacquireGrace = inputs.reacquireGrace
-            depositDetector.throwFeedbackGrace = inputs.throwFeedbackGrace
-            let usesTags = inputs.aprilTagEnabled && !inputs.openness.usesMarkers
-            var tagFrame = usesTags
-                ? aprilTagBinDetector.update(
-                    zones: currentZones,
-                    tagBindings: inputs.aprilTagBindings,
-                    config: AprilTagConfig(staleTimeout: inputs.aprilTagStaleTimeout)
-                )
-                : AprilTagStatusFrame()
-            if usesTags {
-                tagFrame.detectorStats = aprilTagPipeline.detector.lastFrameStats
-                tagFrame.detectorFailureReason = aprilTagPipeline.detector.configurationFailureReason
-            }
-            var markerFrame = BinMarkerStatusFrame()
-            if inputs.openness.usesMarkers {
-                markerFrame = markerBinDetector.update(
-                    zones: currentZones,
-                    config: BinMarkerStateConfig(staleTimeout: inputs.openness.markerStaleTimeout)
-                )
-                markerFrame.stats = inputs.openness.markerKind.style.usesDashRows
-                    ? markerPipeline.dashScanner.lastFrameStats
-                    : markerPipeline.scanner.lastFrameStats
-            }
-            let openness = BinOpennessSnapshot(
-                source: inputs.openness.source,
-                tag: tagFrame,
-                marker: markerFrame
-            )
-            depositDetector.binOpenState = openness.openState(zones: currentZones)
+            let openness = applyDepositInputs(inputs, zones: currentZones)
             let zoneFrame = depositDetector.update(tracks: tracked, zones: currentZones)
             runPCCPasses(
                 zoneFrame: zoneFrame,

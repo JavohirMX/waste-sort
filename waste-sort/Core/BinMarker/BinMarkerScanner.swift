@@ -163,11 +163,13 @@ nonisolated final class BinMarkerScanner {
 
         encodeRuns(count: count)
         readWindows(
-            image: image,
-            lineStart: lineStart,
-            step: step,
-            line: line,
-            orientation: orientation,
+            scan: LineScan(
+                image: image,
+                start: lineStart,
+                step: step,
+                row: line,
+                orientation: orientation
+            ),
             stats: &stats
         )
     }
@@ -222,11 +224,7 @@ nonisolated final class BinMarkerScanner {
     /// Walks the run list, pulling out every maximal ink/gap/ink alternation and keeping the
     /// ones shaped like a strip we printed.
     private func readWindows(
-        image: BinMarkerImage,
-        lineStart: Int,
-        step: Int,
-        line: Int,
-        orientation: BinMarkerOrientation,
+        scan: LineScan,
         stats: inout BinMarkerFrameStats
     ) {
         var index = 0
@@ -264,11 +262,7 @@ nonisolated final class BinMarkerScanner {
             let barCount = (last - index) / 2 + 1
             stats.candidateCount += 1
             if let segment = makeSegment(
-                image: image,
-                lineStart: lineStart,
-                step: step,
-                line: line,
-                orientation: orientation,
+                scan: scan,
                 firstRun: index,
                 lastRun: last,
                 barCount: barCount,
@@ -280,12 +274,17 @@ nonisolated final class BinMarkerScanner {
         }
     }
 
+    /// Where a candidate strip lives: which scan line, which direction, which pixels.
+    private struct LineScan {
+        let image: BinMarkerImage
+        let start: Int
+        let step: Int
+        let row: Int
+        let orientation: BinMarkerOrientation
+    }
+
     private func makeSegment(
-        image: BinMarkerImage,
-        lineStart: Int,
-        step: Int,
-        line: Int,
-        orientation: BinMarkerOrientation,
+        scan: LineScan,
         firstRun: Int,
         lastRun: Int,
         barCount: Int,
@@ -349,12 +348,12 @@ nonisolated final class BinMarkerScanner {
         var cbSum = 0.0
         var crSum = 0.0
         var samples = 0
-        if let chroma = image.chroma {
+        if let chroma = scan.image.chroma {
             // Only the bars that survived trimming: averaging in a shadow that was just
             // rejected would drag the reading the calibration depends on toward neutral.
             for barRun in barRuns {
                 for offset in 0..<runs[barRun].length {
-                    let pixel = lineStart + (runs[barRun].start + offset) * step
+                    let pixel = scan.start + (runs[barRun].start + offset) * scan.step
                     cbSum += Double(chroma[pixel * 2])
                     crSum += Double(chroma[pixel * 2 + 1])
                     samples += 1
@@ -363,8 +362,8 @@ nonisolated final class BinMarkerScanner {
         }
 
         return Segment(
-            orientation: orientation,
-            line: line,
+            orientation: scan.orientation,
+            line: scan.row,
             start: start,
             end: end,
             inkIndex: config.style == .mono ? -1 : Int(inkCode),
