@@ -25,6 +25,12 @@ struct SettingsSearchTests {
         #expect(hits.contains(where: { $0.title == "Dwell frames" && $0.pane == .zones }))
     }
 
+    @Test("Demo mode is searchable on Detection")
+    func demoModeIsInDetectionCatalog() {
+        let hits = SettingsSearch.matches("demo mode")
+        #expect(hits.contains(where: { $0.title == "Demo mode" && $0.pane == .detection }))
+    }
+
     @Test("The same title can appear on more than one pane")
     func duplicateTitlesStayDistinct() {
         let hits = SettingsSearch.matches("confidence")

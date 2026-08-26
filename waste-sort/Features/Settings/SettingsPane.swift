@@ -79,7 +79,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable, Sendable {
             ]
         case .detection:
             [
-                "Detection", "Model", "Confidence", "Overlap", "Max items",
+                "Detection", "Demo mode", "Model", "Confidence", "Overlap", "Max items",
                 "Category confirmation", "Confirm with on-device model", "Status",
                 "Show last verdict on Live"
             ]

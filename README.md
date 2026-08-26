@@ -143,6 +143,7 @@ Bundled Core ML packages live in [`waste-sort/Resources/Models/`](waste-sort/Res
 | best v3.4 | `bestv3.4.mlpackage` |
 | best v3.5 | `bestv3.5.mlpackage` |
 | best v3.6 | `bestv3.6.mlpackage` |
+| Demo | `demo.mlpackage` (printed-photo props; Settings → Demo mode) |
 
 Live inference uses [UltralyticsYOLO](https://github.com/ultralytics/yolo-ios-app) `>= 8.9.13` with `task: .segment`.
 

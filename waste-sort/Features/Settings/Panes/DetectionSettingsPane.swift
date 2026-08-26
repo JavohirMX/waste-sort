@@ -7,6 +7,7 @@ struct DetectionSettingsPane: View {
 
     var body: some View {
         Form {
+            demoSection
             modelSection
             detectionSection
             confirmationSection
@@ -16,18 +17,40 @@ struct DetectionSettingsPane: View {
     }
 
     @ViewBuilder
+    private var demoSection: some View {
+        Section {
+            Toggle("Demo mode", isOn: $settings.demoMode)
+        } header: {
+            Text("Demo")
+                .foregroundStyle(BinGuide.organic.color)
+        } footer: {
+            Text(
+                "Uses the printed-photo weights so tabletop cards light the bins. Turns off on-device confirmation. Not for real waste."
+            )
+        }
+    }
+
+    @ViewBuilder
     private var modelSection: some View {
         Section {
             Picker("Model", selection: $settings.selectedModelName) {
-                ForEach(WasteSortModel.allCases) { model in
+                if settings.demoMode {
+                    Text(WasteSortModel.demo.displayName).tag(WasteSortModel.demo.resourceName)
+                }
+                ForEach(WasteSortModel.productionCases) { model in
                     Text(model.displayName).tag(model.resourceName)
                 }
             }
+            .disabled(settings.demoMode)
         } header: {
             Text("Model")
                 .foregroundStyle(BinGuide.organic.color)
         } footer: {
-            Text("Changes reload Live and Photo sorting with the selected CoreML weights.")
+            Text(
+                settings.demoMode
+                    ? "Demo mode is using the printed-photo weights. Turn it off to pick a production model."
+                    : "Changes reload Live and Photo sorting with the selected CoreML weights."
+            )
         }
     }
 
@@ -86,6 +109,7 @@ struct DetectionSettingsPane: View {
     private var confirmationSection: some View {
         Section {
             Toggle("Confirm with on-device model", isOn: $settings.foundationConfirmationEnabled)
+                .disabled(settings.demoMode)
 
             LabeledContent("Status") {
                 Text(confirmationAvailability.isReady ? "Ready" : "Off")

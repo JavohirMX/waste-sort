@@ -85,7 +85,10 @@ struct SwitchModelIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let settings = AppSettings.shared
-        let all = WasteSortModel.allCases
+        if settings.demoMode {
+            return .result(dialog: "Demo mode is on. Turn it off in Settings to switch models.")
+        }
+        let all = WasteSortModel.productionCases
         let current = all.first { $0.resourceName == settings.selectedModelName } ?? all[0]
         let next = all[(all.firstIndex(of: current)?.advanced(by: 1) ?? 0) % all.count]
         settings.selectedModelName = next.resourceName

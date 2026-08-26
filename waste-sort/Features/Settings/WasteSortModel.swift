@@ -7,11 +7,17 @@ enum WasteSortModel: String, CaseIterable, Identifiable {
     case bestv34 = "bestv3.4"
     case bestv35 = "bestv3.5"
     case bestv36 = "bestv3.6"
+    case demo = "demo"
 
     var id: String { rawValue }
 
-    /// Bundle resource name passed to Ultralytics (`best`, `bestv3.2`–`bestv3.6`).
+    /// Bundle resource name passed to Ultralytics (`best`, `bestv3.2`–`bestv3.6`, `demo`).
     var resourceName: String { rawValue }
+
+    /// Production checkpoints only. Demo weights are a Settings preset, not a picker row.
+    static var productionCases: [WasteSortModel] {
+        allCases.filter { $0 != .demo }
+    }
 
     var displayName: String {
         switch self {
@@ -21,6 +27,7 @@ enum WasteSortModel: String, CaseIterable, Identifiable {
         case .bestv34: return "best v3.4"
         case .bestv35: return "best v3.5"
         case .bestv36: return "best v3.6"
+        case .demo: return "Demo"
         }
     }
 
