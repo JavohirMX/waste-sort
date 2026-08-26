@@ -19,17 +19,27 @@ Both sets carry the same 8 mm dash, so the drawer travel is the same either way.
 is how many scan lines cross the row, which is what the **Row height** setting trades against
 dashes. Rendered back through the scanner at four distances:
 
-| | printed height | scan lines at 8 px/cm | Tall | Thin |
-| --- | --- | --- | --- | --- |
-| 275 × 20 mm | 14 mm | 11 | **misses** | reads |
-| 275 × 24 mm | 18 mm | 14 | reads | reads |
+| | printed height | scan lines at 8 px/cm | Tall | Thin | Very thin |
+| --- | --- | --- | --- | --- | --- |
+| 275 × 20 mm | 14 mm | 11 | **misses** | reads | reads |
+| 275 × 24 mm | 18 mm | 14 | reads | reads | reads |
 
 So at this site's scale the 24 mm strip is the one that supports **Tall**, which opens on 5
 dashes rather than 6 — 72 mm of drawer instead of 88 — and costs 10 ms a frame against 17.
-The 20 mm strip is 11 scan lines against the 12 Tall needs, so it reads on **Thin** only.
+The 20 mm strip is 11 scan lines against the 12 Tall needs, so it reads on **Thin** or shorter.
 
-**Mount the taller one if the rim allows.** Tall is better on every axis a bin cares about;
-the only reason to choose Thin is a rim that cannot give up 24 mm.
+**Mount the taller one if the rim allows.** The three settings differ only in how finely the
+frame is scanned, and finer is worse at everything except the height it can cope with:
+
+| setting | wants | opens on | costs |
+| --- | --- | --- | --- |
+| Tall | 15 mm of printed height | 5 dashes · 72 mm of drawer | 10 ms a frame |
+| Thin | 7.5 mm | 6 dashes · 88 mm | 17 ms |
+| Very thin | 3.8 mm | 7 dashes · 104 mm | 31 ms |
+
+None of the three reads anything false in this room. **Very thin** is below anything the sheets
+print, so against these strips it only costs — it is there to be measured on the device, where
+whether 31 ms a frame survives beside the model is a question a render cannot answer.
 
 Print at **100%** — not fit-to-page — on matte stock, and cut on the dashed line. The white at
 the two ends is part of the marker; the few millimetres above and below are for the scissors.
@@ -91,7 +101,8 @@ strips themselves, mounted a bin apart, do not overlap at all.
 
 A drawer reveals the row a dash at a time, so the rule is a count and not a threshold on a
 blur. Six dashes clear of the counter edge opens the bin on **Thin**; **Tall** wants twice the
-printed height and opens on 5. Chevrons open on 4 at Thin's height.
+printed height and opens on 5, **Very thin** half of it and opens on 7. Chevrons open on 4 at
+Thin's height.
 
 At the dash sheet's 8 mm pitch that is **88 mm of drawer** on Thin, or 72 mm on Tall. To
 trigger sooner, print the dashes **smaller**, not fewer: six at a 4 mm pitch clear the edge in

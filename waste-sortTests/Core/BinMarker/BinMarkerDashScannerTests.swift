@@ -78,24 +78,25 @@ struct BinMarkerDashScannerTests {
     }
 
     /// A shorter sticker is paid for with one more dash, so the two always move together —
-    /// which is why they are one setting rather than two knobs, and why there are only two of
-    /// them: a third, still shorter one was both slower and less sensitive than this pair.
+    /// which is why height and run count are one setting rather than two knobs.
     @Test("A thinner profile costs a dash and a finer row stride")
     func thinnerCostsADash() {
-        #expect(BinMarkerDashProfile.allCases.count == 2)
         #expect(BinMarkerDashProfile.tall.dashesNeeded == 5)
         #expect(BinMarkerDashProfile.thin.dashesNeeded == 6)
+        #expect(BinMarkerDashProfile.veryThin.dashesNeeded == 7)
         #expect(BinMarkerDashProfile.tall.rowStride > BinMarkerDashProfile.thin.rowStride)
+        #expect(BinMarkerDashProfile.thin.rowStride > BinMarkerDashProfile.veryThin.rowStride)
     }
 
-    /// A device set up before the third setting was dropped must not lose its footing over it.
+    /// The shortest setting was called hairline before it was called very thin, and a device
+    /// left on it must come back on it rather than quietly stepping up to thin.
     @MainActor
-    @Test("A stored hairline profile falls back to thin")
-    func retiredProfileFallsBack() {
-        #expect(BinMarkerDashProfile(rawValue: "hairline") == nil)
+    @Test("A device already on the shortest profile stays on it")
+    func storedProfileSurvivesTheRename() {
+        #expect(BinMarkerDashProfile(rawValue: "hairline") == .veryThin)
         let defaults = UserDefaults(suiteName: "test.binmarker.profile.\(UUID())")!
         defaults.set("hairline", forKey: "binMarker.dashProfile")
-        #expect(BinMarkerStore(defaults: defaults).dashProfile == .thin)
+        #expect(BinMarkerStore(defaults: defaults).dashProfile == .veryThin)
     }
 
     /// Nothing here divides one width by another, which is why dashes survive at a size the

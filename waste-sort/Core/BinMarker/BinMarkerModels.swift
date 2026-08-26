@@ -285,22 +285,27 @@ nonisolated enum BinMarkerDashShape: String, Codable, CaseIterable, Identifiable
 ///
 /// Measured on fifteen frames of the site with nothing installed, at 8 px per cm:
 ///
-///     setting  height  stride  dashes  travel at 8 mm   cost   false rows
-///     tall     15.0mm       4       5           72 mm   10 ms           0
-///     thin      7.5mm       2       6           88 mm   17 ms           0
+///     setting     height  stride  dashes  travel at 8 mm   cost   false rows
+///     tall        15.0mm       4       5           72 mm   10 ms           0
+///     thin         7.5mm       2       6           88 mm   17 ms           0
+///     very thin    3.8mm       1       7          104 mm   31 ms           0
 ///
-/// **Tall is better on every axis a bin cares about** — it opens a dash sooner and costs
-/// two-fifths of the frame time — so the only reason to choose thin is a rim that cannot give
-/// up 15 mm. Prefer tall wherever the sticker fits.
+/// Every row of that table is clean, so the choice is not about false readings. It is that
+/// **taller is better on every axis a bin cares about** — it opens sooner and costs less of
+/// the frame — and the only reason to go shorter is a rim that cannot give up the height.
+/// Prefer the tallest that fits.
 ///
-/// A third setting, hairline, is gone. It scanned every line for a 3.8 mm sticker and was
-/// therefore both the slowest (31 ms) and the least sensitive (7 dashes): strictly worse than
-/// thin for any print over about 7.5 mm, which is every print on the sheet. It was answering a
-/// question the printed sheets stopped asking. A device left on it comes back on thin, which
-/// is what the raw value failing to decode already does.
+/// Very thin is on the list for the printed sheets it does not have: at 3.8 mm it is asking to
+/// read a sticker shorter than anything currently printable, and against the 14 mm and 18 mm
+/// strips on the dash sheet it is simply the slowest and least sensitive way to read them. It
+/// is kept because the numbers above come from rendered frames, and whether 31 ms a pass is
+/// survivable next to the model on the actual iPad is not something a render can answer.
 nonisolated enum BinMarkerDashProfile: String, Codable, CaseIterable, Identifiable, Sendable {
     case tall
     case thin
+    /// Raw value kept from when this was called hairline, so a device already set to it stays
+    /// set to it. What it is called on screen is `displayName`'s business.
+    case veryThin = "hairline"
 
     var id: String { rawValue }
 
@@ -308,6 +313,7 @@ nonisolated enum BinMarkerDashProfile: String, Codable, CaseIterable, Identifiab
         switch self {
         case .tall: return 4
         case .thin: return 2
+        case .veryThin: return 1
         }
     }
 
@@ -316,6 +322,7 @@ nonisolated enum BinMarkerDashProfile: String, Codable, CaseIterable, Identifiab
         switch self {
         case .tall: return 8
         case .thin: return 10
+        case .veryThin: return 12
         }
     }
 
@@ -327,17 +334,22 @@ nonisolated enum BinMarkerDashProfile: String, Codable, CaseIterable, Identifiab
         switch self {
         case .tall: return "Tall"
         case .thin: return "Thin"
+        case .veryThin: return "Very thin"
         }
     }
 
     var detail: String {
         switch self {
         case .tall:
-            return "Wants about 15 mm of printed height. Opens on 5 dashes and is the lighter "
-                + "of the two on frame rate — use it wherever the rim allows."
+            return "Wants about 15 mm of printed height. Opens on 5 dashes and is the lightest "
+                + "of the three on frame rate — use it wherever the rim allows."
         case .thin:
             return "About 7.5 mm, for a rim that cannot give up more. Costs a dash to open, "
                 + "and about half again the time a frame."
+        case .veryThin:
+            return "About 3.8 mm. Nothing printed is this short, so against the current strips "
+                + "it only costs — 7 dashes to open and 31 ms a frame. Here to be measured on "
+                + "the device rather than argued about."
         }
     }
 }
