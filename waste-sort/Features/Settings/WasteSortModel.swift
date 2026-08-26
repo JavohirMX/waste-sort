@@ -6,10 +6,11 @@ enum WasteSortModel: String, CaseIterable, Identifiable {
     case bestv33 = "bestv3.3"
     case bestv34 = "bestv3.4"
     case bestv35 = "bestv3.5"
+    case bestv36 = "bestv3.6"
 
     var id: String { rawValue }
 
-    /// Bundle resource name passed to Ultralytics (`best`, `bestv3.2`–`bestv3.5`).
+    /// Bundle resource name passed to Ultralytics (`best`, `bestv3.2`–`bestv3.6`).
     var resourceName: String { rawValue }
 
     var displayName: String {
@@ -19,6 +20,7 @@ enum WasteSortModel: String, CaseIterable, Identifiable {
         case .bestv33: return "best v3.3"
         case .bestv34: return "best v3.4"
         case .bestv35: return "best v3.5"
+        case .bestv36: return "best v3.6"
         }
     }
 

@@ -20,15 +20,15 @@ struct FrameBinOpenStateTests {
 
     private var zones: [DropZone] { [organicZone, residualZone] }
 
-    @Test("empty AprilTag frame reads every bin as not open (fail-closed)")
-    func emptyFrameIsNotOpen() {
+    @Test("empty AprilTag frame reads every bin as open")
+    func emptyFrameIsOpen() {
         let state = FrameBinOpenState(tagFrame: AprilTagStatusFrame(), zones: zones)
-        #expect(!state.isOpen(binID: BinGuide.organic.id))
-        #expect(!state.isOpen(binID: BinGuide.residual.id))
+        #expect(state.isOpen(binID: BinGuide.organic.id))
+        #expect(state.isOpen(binID: BinGuide.residual.id))
     }
 
-    @Test("only a positively open zone maps onto an open bin id")
-    func openZoneOpensBin() {
+    @Test("a closed zone maps onto its bin id")
+    func closedZoneClosesBin() {
         let frame = AprilTagStatusFrame(statuses: [
             organicZone.id: BinOpenness(state: .closed, confidence: 0.98),
             residualZone.id: BinOpenness(state: .open, confidence: 0.98)
@@ -38,12 +38,12 @@ struct FrameBinOpenStateTests {
         #expect(state.isOpen(binID: BinGuide.residual.id))
     }
 
-    @Test("unknown lid state is not open")
-    func unknownIsNotOpen() {
+    @Test("unknown status is treated as open")
+    func unknownIsOpen() {
         let frame = AprilTagStatusFrame(statuses: [
             organicZone.id: BinOpenness(state: .unknown)
         ])
         let state = FrameBinOpenState(tagFrame: frame, zones: zones)
-        #expect(!state.isOpen(binID: BinGuide.organic.id))
+        #expect(state.isOpen(binID: BinGuide.organic.id))
     }
 }

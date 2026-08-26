@@ -25,7 +25,7 @@ Inference runs entirely on device. Nothing is uploaded.
 ## Features
 
 - **Live sorting** — YOLOv8 instance segmentation with tracked boxes, a three-segment category bar, and an FPS badge
-- **Kiosk-ready** — screen stays awake; live preview defaults to 180° for an overhead mount
+- **Kiosk-ready** — screen stays awake; Rotation in Settings is extra on top of the camera's native orientation (overhead USB mounts often need 180°)
 - **External camera** — Auto prefers a connected USB-C webcam, otherwise the back camera
 - **Photo sort** — pick a still from the library and sort without the live camera
 - **Recording** — raw clip to Photos; overlay clip (boxes, labels, timestamps) to Photos and Files; CSV log to Files
@@ -115,8 +115,8 @@ File Sharing is on. Recorded overlay clips and CSV logs show up in the Files app
 
 **Settings.** Triple-tap any top category (Organic, Residual, or Recyclable) on the live HUD.
 
-- **Model** — bundled weights (`best` v3.1, `bestv3.2`–`bestv3.5`); changing it reloads Live and Photo
-- **Camera** — Auto (prefer USB) or a specific device; rotation and mirror apply to preview and to recordings started after the change. Software brightness, contrast, and saturation preprocess the image the model sees. Hardware exposure, focus, and white balance can be locked (USB cameras may ignore those).
+- **Model** — bundled weights (`best` v3.1, `bestv3.2`–`bestv3.6`); changing it reloads Live and Photo
+- **Camera** — Auto (prefer USB) or a specific device; rotation is extra on top of the camera's native orientation (overhead USB mounts often need 180°) and applies to preview and to recordings started after the change. Software brightness, contrast, and saturation preprocess the image the model sees. Hardware exposure, focus, and white balance can be locked (USB cameras may ignore those).
 - **Photo** — sort a still from the library
 - **Recording** — start/stop; the live camera must be running first
 - **Detection / Live tracking** — confidence, overlap, max items, confirm frames, class-change overlap, label stickiness, and box smoothing
@@ -142,6 +142,7 @@ Bundled Core ML packages live in [`waste-sort/Resources/Models/`](waste-sort/Res
 | best v3.3 | `bestv3.3.mlpackage` |
 | best v3.4 | `bestv3.4.mlpackage` |
 | best v3.5 | `bestv3.5.mlpackage` |
+| best v3.6 | `bestv3.6.mlpackage` |
 
 Live inference uses [UltralyticsYOLO](https://github.com/ultralytics/yolo-ios-app) `>= 8.9.13` with `task: .segment`.
 

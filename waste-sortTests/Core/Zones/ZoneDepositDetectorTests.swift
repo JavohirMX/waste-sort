@@ -859,60 +859,109 @@ struct ZoneDepositDetectorTests {
         #expect(deposits.count == 1)
     }
 
-    // MARK: Fail-closed lid gating for feedback (no tags in view ⇒ silence)
-
-    @Test("a vanish toward a bin nobody saw open produces no cue and no deposit")
-    func throwCueRequiresOpenTarget() {
-        let lids = StubBinState(open: [])
-        let c = clock(throwFeedbackGrace: 0.4, binState: lids)
+    @Test("a vanished item over a closed bin does not cue")
+    func closedBinDoesNotCue() {
+        let c = clock(throwFeedbackGrace: 0.4, binState: StubBinState(open: []))
         c.tick([track(centerX: 0.5)])
-        c.tick([track(centerX: 0.2)], times: 3)
+        c.tick([track(centerX: 0.2)], times: 4)
 
         var cues: [ThrowFeedbackCue] = []
         var deposits: [ZoneDeposit] = []
-        for _ in 0..<15 {
-            let frame = c.tick([])
-            cues.append(contentsOf: frame.throwFeedbackCues)
-            deposits.append(contentsOf: frame.deposits)
-        }
-        for _ in 0..<30 {
+        for _ in 0..<Int((c.detector.reacquireGrace + 0.5) * 30) {
             let frame = c.tick([])
             cues.append(contentsOf: frame.throwFeedbackCues)
             deposits.append(contentsOf: frame.deposits)
         }
         #expect(cues.isEmpty)
         #expect(deposits.isEmpty)
-
-        // The same vanish with the bin positively open narrates and credits.
-        let openLids = StubBinState(open: [BinGuide.organic.id])
-        let openClock = clock(throwFeedbackGrace: 0.4, binState: openLids)
-        openClock.tick([track(centerX: 0.5)])
-        openClock.tick([track(centerX: 0.2)], times: 3)
-        var openCues: [ThrowFeedbackCue] = []
-        for _ in 0..<15 {
-            openCues.append(contentsOf: openClock.tick([]).throwFeedbackCues)
-        }
-        #expect(openCues.count == 1)
-        #expect(openClock.waitOutGrace().count == 1)
     }
 
-    @Test("wrong-zone hold stays silent until the hovered bin reads open")
-    func inZoneIncorrectRequiresOpenZone() {
+    @Test("a late-open lid after throwFeedbackGrace still cues, then deposits")
+    func lidLagStillCues() {
+        let lids = StubBinState(open: [])
+        let c = clock(grace: 1.0, throwFeedbackGrace: 0.4, binState: lids)
+        c.tick([track(centerX: 0.5)])
+        c.tick([track(centerX: 0.2)], times: 4)
+
+        var cues: [ThrowFeedbackCue] = []
+        for _ in 0..<15 {
+            cues.append(contentsOf: c.tick([]).throwFeedbackCues)
+        }
+        #expect(cues.isEmpty)
+
+        lids.openBins = [BinGuide.organic.id]
+        let opened = c.tick([])
+        #expect(opened.throwFeedbackCues.count == 1)
+        #expect(opened.throwFeedbackCues[0].isCorrect)
+        #expect(opened.throwFeedbackCues[0].zoneBinID == BinGuide.organic.id)
+        #expect(opened.deposits.isEmpty)
+
+        let confirmed = c.waitOutGrace()
+        #expect(confirmed.count == 1)
+        #expect(confirmed[0].id == opened.throwFeedbackCues[0].objectID)
+    }
+
+    @Test("another bin being open does not cue a throw into a closed one")
+    func anotherBinOpenDoesNotCue() {
+        let c = clock(
+            throwFeedbackGrace: 0.4,
+            binState: StubBinState(open: [BinGuide.residual.id])
+        )
+        c.tick([track(centerX: 0.5)])
+        c.tick([track(centerX: 0.2)], times: 4)
+
+        var cues: [ThrowFeedbackCue] = []
+        var deposits: [ZoneDeposit] = []
+        for _ in 0..<Int((c.detector.reacquireGrace + 0.5) * 30) {
+            let frame = c.tick([])
+            cues.append(contentsOf: frame.throwFeedbackCues)
+            deposits.append(contentsOf: frame.deposits)
+        }
+        #expect(cues.isEmpty)
+        #expect(deposits.isEmpty)
+    }
+
+    @Test("holding the wrong item over a closed bin does not cue")
+    func inZoneIncorrectWaitsForOpenLid() {
         let lids = StubBinState(open: [])
         let c = clock(throwFeedbackGrace: 0.4, binState: lids)
         c.tick([track(centerX: 0.5)])
-        for _ in 0..<15 {
-            #expect(c.tick([track(centerX: 0.8)]).throwFeedbackCues.isEmpty)
-        }
 
-        // The lid opens while the item is still held in the wrong zone.
-        lids.openBins = [BinGuide.residual.id]
         var cues: [ThrowFeedbackCue] = []
+        for _ in 0..<15 {
+            cues.append(contentsOf: c.tick([track(centerX: 0.8)]).throwFeedbackCues)
+        }
+        #expect(cues.isEmpty)
+
+        lids.openBins = [BinGuide.residual.id]
         for _ in 0..<15 {
             cues.append(contentsOf: c.tick([track(centerX: 0.8)]).throwFeedbackCues)
         }
         #expect(cues.count == 1)
         #expect(cues[0].isCorrect == false)
         #expect(cues[0].zoneBinID == BinGuide.residual.id)
+        #expect(cues[0].persistWhilePresent)
+    }
+
+    @Test("an in-zone incorrect cue is cancelled when the lid closes")
+    func inZoneIncorrectCancelsWhenLidCloses() throws {
+        let lids = StubBinState(open: [BinGuide.residual.id])
+        let c = clock(throwFeedbackGrace: 0.4, binState: lids)
+        c.tick([track(centerX: 0.5)])
+
+        var cue: ThrowFeedbackCue?
+        for _ in 0..<15 {
+            if let next = c.tick([track(centerX: 0.8)]).throwFeedbackCues.first { cue = next }
+        }
+        let shown = try #require(cue)
+
+        lids.openBins = []
+        #expect(c.tick([track(centerX: 0.8)]).cancelledThrowFeedbackIDs.isEmpty)
+
+        var cancelled = Set<UUID>()
+        for _ in 0..<15 {
+            cancelled.formUnion(c.tick([track(centerX: 0.8)]).cancelledThrowFeedbackIDs)
+        }
+        #expect(cancelled.contains(shown.objectID))
     }
 }

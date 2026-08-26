@@ -4,8 +4,9 @@ import Foundation
 /// A calibrated quad drawn over a physical bin, in normalized image space.
 ///
 /// Corners live in the same space as `TrackedDetection.displayXywhn`: 0…1,
-/// origin top-left, *unflipped*. Rendering applies `DetectionGeometry.flipNormalized180`
-/// on the way out, so hit-testing here needs no view geometry at all.
+/// origin top-left. Rendering maps them through `DetectionGeometry` with the
+/// live rotation (plus any leftover preview-vs-buffer delta), so hit-testing
+/// here stays in image space.
 nonisolated struct DropZone: Codable, Identifiable, Equatable, Sendable {
     var id: UUID
     var name: String
@@ -67,11 +68,11 @@ nonisolated struct DropZone: Codable, Identifiable, Equatable, Sendable {
     /// One zone per waste category, tiled left-to-right across the lower half of the
     /// preview *as the operator sees it*.
     ///
-    /// Corners are stored in image space, but the preview is rotated (180° by default),
-    /// so laying the row out directly in image space puts the categories on screen in
-    /// reverse — out of step with the category bar, which is plain HUD and never rotates.
-    /// The row is therefore built in screen space and mapped back through the inverse of
-    /// the preview transform.
+    /// Corners are stored in image space. The preview may be rotated (the operator's
+    /// `liveRotation`, plus any capture presentation delta), so laying the row out
+    /// directly in image space can put categories on screen in reverse — out of step
+    /// with the category bar, which is plain HUD and never rotates. The row is therefore
+    /// built in screen space and mapped back through the inverse of the preview transform.
     static func defaults(
         rotation: LivePreviewRotation = .zero,
         mirror: Bool = false

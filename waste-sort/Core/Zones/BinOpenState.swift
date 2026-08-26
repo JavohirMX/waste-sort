@@ -2,11 +2,12 @@ import Foundation
 
 /// Whether the lid of a physical bin is open right now.
 ///
-/// Two rules in `ZoneDepositDetector` hang off this signal, and they pull in opposite
-/// directions on purpose:
+/// Three rules in `ZoneDepositDetector` hang off this signal:
 ///
 /// - an item can only be *thrown into* a bin that is open, so a deposit is credited only
 ///   when the target bin was open around the moment the item vanished;
+/// - throw-feedback cues (vanish preview and in-zone "Not here!") wait for the same open
+///   reading, so the HUD does not flash over a shut lid;
 /// - an item the model first finds already sitting inside an **open** bin is most likely
 ///   waste that is already in there, so it is disqualified. Inside a **closed** bin it
 ///   cannot be bin contents — it is something resting on the shut lid, and it stays
@@ -16,29 +17,35 @@ nonisolated protocol BinOpenStateProviding {
     func isOpen(binID: String) -> Bool
 }
 
-/// Default when no lid source is installed (tests that do not care about lids):
-/// every bin reads open. Production always installs `FrameBinOpenState`, which
-/// is evidence-based, so this type never ships behavior — it only preserves the
-/// pre-lid semantics where nothing gates the detector.
+/// Default when AprilTag is off, and the lid signal for tests that do not care about it:
+/// every bin reads open, which is the behaviour that shipped before the lid existed.
 nonisolated struct AlwaysOpenBins: BinOpenStateProviding {
     func isOpen(binID: String) -> Bool { true }
 }
 
-/// One-frame snapshot of AprilTag lid state, keyed the way `ZoneDepositDetector`
-/// asks: by `BinGuide` id. Evidence-based and fail-closed: a bin reads open only
-/// when its zone's tag is currently detected with an `.open` lid. `.closed`,
-/// `.unknown`, and an empty frame (AprilTag off, or no tags in view) all read as
-/// **not** open — without lid evidence there are no credited deposits and no
-/// throw feedback, which is what keeps a kiosk pointed at a wall from narrating
-/// wrong-bin throws.
+/// One-frame snapshot of AprilTag lid state, keyed the way `ZoneDepositDetector` asks:
+/// by `BinGuide` id. Only `.closed` zones count as shut; `.open` and `.unknown` (and an
+/// empty frame when tags are disabled) all read as open.
 nonisolated struct FrameBinOpenState: BinOpenStateProviding {
-    let openBinIDs: Set<String>
+    let closedBinIDs: Set<String>
 
     init(tagFrame: AprilTagStatusFrame, zones: [DropZone]) {
-        openBinIDs = Set(
-            zones.filter { tagFrame.openZoneIDs.contains($0.id) }.map(\.binID)
+        self.init(closedZoneIDs: tagFrame.closedZoneIDs, zones: zones)
+    }
+
+    /// The same snapshot taken from printed marker strips instead of AprilTags.
+    ///
+    /// Two sources, one gate: `ZoneDepositDetector` is not told which detector is running,
+    /// and must not be — swapping the lid signal is a settings choice, not a code path.
+    init(markerFrame: BinMarkerStatusFrame, zones: [DropZone]) {
+        self.init(closedZoneIDs: markerFrame.closedZoneIDs, zones: zones)
+    }
+
+    private init(closedZoneIDs: Set<UUID>, zones: [DropZone]) {
+        closedBinIDs = Set(
+            zones.filter { closedZoneIDs.contains($0.id) }.map(\.binID)
         )
     }
 
-    func isOpen(binID: String) -> Bool { openBinIDs.contains(binID) }
+    func isOpen(binID: String) -> Bool { !closedBinIDs.contains(binID) }
 }

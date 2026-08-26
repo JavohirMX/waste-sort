@@ -1,6 +1,5 @@
 import AVFoundation
 import SwiftUI
-import TipKit
 import UIKit
 import UltralyticsYOLO
 
@@ -11,6 +10,7 @@ struct LiveCameraView: View {
     @EnvironmentObject private var history: ZoneEventHistoryStore
     @EnvironmentObject private var verdictLog: FoundationVerdictLog
     @EnvironmentObject private var aprilTagStore: AprilTagBindingStore
+    @EnvironmentObject private var markerStore: BinMarkerStore
     @EnvironmentObject private var binStyle: BinStyleStore
     @State private var counts: [String: Int] = [:]
     @State private var fps = 0
@@ -18,6 +18,7 @@ struct LiveCameraView: View {
     @State private var detectedTags: [TrackedAprilTag] = []
     @State private var tagStatuses: [UUID: BinOpenness] = [:]
     @State private var tagStats: AprilTagFrameStats?
+    @State private var markerFrame = BinMarkerStatusFrame()
     @State private var imageSize: CGSize = .zero
     @State private var fpsMonitor = FrameRateMonitor()
     @State private var showSettings = false
@@ -39,6 +40,13 @@ struct LiveCameraView: View {
     @State private var barcodeClearTask: Task<Void, Never>?
     @State private var throwFeedbackGate = ThrowFeedbackGate()
     @State private var previewedFeedbackIDs: Set<UUID> = []
+    @State private var presentationDelta: LivePreviewRotation = .zero
+
+    /// Overlay mapping includes any leftover preview-vs-buffer rotation; the
+    /// camera view itself only uses the operator's `liveRotation`.
+    private var overlayRotation: LivePreviewRotation {
+        VideoRotationMath.composed(settings.liveRotation, presentationDelta)
+    }
 
     /// Non-nil while the AprilTag detector failed to initialize - lid gating is inert.
     private var tagFailureReason: String? {
@@ -76,7 +84,7 @@ struct LiveCameraView: View {
                         from: tracks,
                         imageSize: imageSize,
                         viewSize: geo.size,
-                        rotation: settings.liveRotation,
+                        rotation: overlayRotation,
                         mirror: settings.liveMirror
                     )
                     : []
@@ -99,7 +107,21 @@ struct LiveCameraView: View {
                         aprilTagBindings: aprilTagStore.bindings,
                         aprilTagStaleTimeout: aprilTagStore.staleTimeout,
                         aprilTagRangeProfile: aprilTagStore.rangeProfile,
+                        openness: BinOpennessInputs(
+                            source: markerStore.source,
+                            markerKind: markerStore.kind,
+                            markerDashProfile: markerStore.dashProfile,
+                            markerDashesToOpen: markerStore.dashesToOpen,
+                            markerStaleTimeout: markerStore.staleTimeout,
+                            markerInks: markerStore.inks,
+                            markerDebugOverlay: markerStore.showDebugOverlay
+                        ),
                         foundationConfirmationEnabled: settings.foundationConfirmationEnabled,
+                        onPresentationDelta: { delta in
+                            if presentationDelta != delta {
+                                presentationDelta = delta
+                            }
+                        },
                         onBarcodeHint: { barcode in
                             barcodeClearTask?.cancel()
                             barcodeHint = barcode
@@ -109,8 +131,9 @@ struct LiveCameraView: View {
                                 guard !Task.isCancelled else { return }
                                 barcodeHint = nil
                             }
-                        }
-                    ) { result, tracked, zoneFrame, tagFrame, confirmed, verdicts in
+                        },
+                        onDetection: { result, tracked, zoneFrame, openness, confirmed, verdicts in
+                        let tagFrame = openness.tag
                         if let measured = fpsMonitor.tick(reportedFPS: result.fps) {
                             fps = measured
                         }
@@ -127,6 +150,9 @@ struct LiveCameraView: View {
                         tagStatuses = tagFrame.statuses
                         tagStats = tagFrame.detectorStats
                         detectedTagFailure = tagFrame.detectorFailureReason
+                        if markerFrame != openness.marker {
+                            markerFrame = openness.marker
+                        }
                         if occupiedZoneIDs != zoneFrame.occupiedZoneIDs {
                             occupiedZoneIDs = zoneFrame.occupiedZoneIDs
                         }
@@ -162,6 +188,7 @@ struct LiveCameraView: View {
                             counts = nextCounts
                         }
                     }
+                    )
                     .scaleEffect(x: settings.liveMirror ? -1 : 1, y: 1)
                     .rotationEffect(.degrees(settings.liveRotation.degrees))
                     .scaleEffect(coverScale)
@@ -170,7 +197,7 @@ struct LiveCameraView: View {
                         zones: zoneStore.zones,
                         imageSize: imageSize,
                         viewSize: geo.size,
-                        rotation: settings.liveRotation,
+                        rotation: overlayRotation,
                         mirror: settings.liveMirror,
                         isEditing: zoneStore.isEditingZones,
                         showZones: settings.showZoneOverlay,
@@ -184,14 +211,27 @@ struct LiveCameraView: View {
                         onSelectZone: { selectedZoneID = $0 }
                     )
 
-                    if aprilTagStore.isEnabled, aprilTagStore.showDebugOverlay {
+                    if markerStore.source == .marker, markerStore.showDebugOverlay {
+                        BinMarkerDebugOverlay(
+                            frame: markerFrame,
+                            zones: zoneStore.zones,
+                            style: markerStore.style,
+                            imageSize: imageSize,
+                            viewSize: geo.size,
+                            rotation: settings.liveRotation,
+                            mirror: settings.liveMirror,
+                            onCalibrate: calibrateMarkers
+                        )
+                    }
+
+                    if markerStore.source == .aprilTag, aprilTagStore.isEnabled, aprilTagStore.showDebugOverlay {
                         AprilTagDebugOverlay(
                             detectedTags: detectedTags,
                             statuses: tagStatuses,
                             zones: zoneStore.zones,
                             imageSize: imageSize,
                             viewSize: geo.size,
-                            rotation: settings.liveRotation,
+                            rotation: overlayRotation,
                             mirror: settings.liveMirror,
                             stats: tagStats
                         )
@@ -210,7 +250,7 @@ struct LiveCameraView: View {
                         imageSize: imageSize,
                         viewSize: geo.size,
                         useAspectFill: true,
-                        rotation: settings.liveRotation,
+                        rotation: overlayRotation,
                         mirror: settings.liveMirror,
                         style: settings.boxOverlayStyle,
                         confirmation: confirmationFrame
@@ -236,7 +276,9 @@ struct LiveCameraView: View {
                         throwFeedbackToken: throwFeedbackGate.token,
                         onTripleTap: {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            showSettings = true
+                            withAnimation(.easeInOut(duration: 0.35)) {
+                                showSettings = true
+                            }
                         }
                     )
                     .frame(maxWidth: .infinity)
@@ -264,7 +306,7 @@ struct LiveCameraView: View {
                         selectedZoneID: $selectedZoneID,
                         onReset: {
                             zoneStore.resetToDefaults(
-                                rotation: settings.liveRotation,
+                                rotation: overlayRotation,
                                 mirror: settings.liveMirror
                             )
                         },
@@ -364,10 +406,16 @@ struct LiveCameraView: View {
             VerdictHistoryView()
                 .environmentObject(verdictLog)
         }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+        .overlay {
+            if showSettings {
+                SettingsView(onClose: {
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        showSettings = false
+                    }
+                })
+                .transition(.move(edge: .trailing))
+                .zIndex(2)
+            }
         }
         .overlay {
             if showStats {
@@ -381,7 +429,31 @@ struct LiveCameraView: View {
                 .zIndex(1)
             }
         }
+        .animation(.easeInOut(duration: 0.35), value: showSettings)
         .animation(.easeInOut(duration: 0.35), value: showStats)
+    }
+
+    /// Writes down the chroma the camera is actually reporting for each visible strip.
+    ///
+    /// The palette ships with the chroma of ideal ink, which is not what comes back from a
+    /// particular printer, under a particular lamp, through a particular camera's white
+    /// balance. Widening the match tolerance to cover that gap would start admitting colored
+    /// rubbish; measuring the real thing once does not.
+    ///
+    /// Only strips whose rhythm was fully read are learned from. A degraded reading was named
+    /// by the very colour we would be storing, so learning from it would let the palette drift
+    /// wherever the first mistake pointed.
+    private func calibrateMarkers() {
+        var learned = 0
+        for detection in markerFrame.detections {
+            guard !detection.isDegraded,
+                  let slot = detection.slot(style: markerStore.style)
+            else { continue }
+            markerStore.calibrate(slot: slot.index, chroma: detection.chroma)
+            learned += 1
+        }
+        guard learned > 0 else { return }
+        HapticsService.shared.fire(.mediumImpact)
     }
 
     private func moveCorner(zoneID: UUID, index: Int, point: CGPoint) {
@@ -541,22 +613,7 @@ struct LiveCameraView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Waste stats")
-        .accessibilityHint("Opens stats. Long press opens developer settings.")
-        .accessibilityAction(named: "Open developer settings") {
-            openSettings()
-        }
-        .onLongPressGesture {
-            HapticsService.shared.fire(.lightTap)
-            openSettings()
-        }
-        .popoverTip(SettingsAccessTip(), arrowEdge: .bottom) { _ in
-            openSettings()
-        }
-    }
-
-    private func openSettings() {
-        showSettings = true
-        Task { try? await SettingsAccessTip.Events.settingsOpenedViaLongPress.donate() }
+        .accessibilityHint("Opens stats.")
     }
 }
 
@@ -590,4 +647,3 @@ private final class FrameRateMonitor {
         return rounded
     }
 }
-

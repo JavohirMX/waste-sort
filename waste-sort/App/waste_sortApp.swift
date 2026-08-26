@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import TipKit
 
 @main
 struct WasteSortApp: App {
@@ -15,6 +14,7 @@ struct WasteSortApp: App {
     @StateObject private var zoneStore = ZoneStore.shared
     @StateObject private var history = ZoneEventHistoryStore.shared
     @StateObject private var aprilTagStore = AprilTagBindingStore.shared
+    @StateObject private var markerStore = BinMarkerStore.shared
     @StateObject private var binStyle = BinStyleStore.shared
     @StateObject private var verdictLog = FoundationVerdictLog.shared
 
@@ -25,7 +25,6 @@ struct WasteSortApp: App {
 
     init() {
         BrandFont.register()
-        try? Tips.configure()
         // Learned bin-routing corrections (specs/002): set-once provider; the
         // store itself is lock-guarded so inference-queue reads are safe.
         BinGuide.overrideProvider = { AppliedBinOverrides.shared.binID(forClass: $0) }
@@ -39,6 +38,7 @@ struct WasteSortApp: App {
                 .environmentObject(zoneStore)
                 .environmentObject(history)
                 .environmentObject(aprilTagStore)
+                .environmentObject(markerStore)
                 .environmentObject(binStyle)
                 .environmentObject(verdictLog)
                 .onChange(of: scenePhase) { _, phase in

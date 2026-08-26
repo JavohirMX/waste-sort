@@ -71,7 +71,7 @@ enum WasteSortConfig {
     static let defaultEmaAlpha = 0.4
     static let defaultBoxInflate = 0.08
     static let defaultMaxSpeed = 0.8
-    static let defaultModelName = WasteSortModel.bestv35.resourceName
+    static let defaultModelName = WasteSortModel.bestv36.resourceName
     static let defaultLiveRotation = LivePreviewRotation.zero
     static let defaultLiveMirror = false
     static let defaultShowConfidence = false
@@ -195,7 +195,7 @@ final class AppSettings: ObservableObject {
     @Published var preferredCameraID: String {
         didSet { persist(preferredCameraID, key: Keys.preferredCameraID) }
     }
-    /// Bundle resource name: `best`, `bestv3.2`, `bestv3.3`, `bestv3.4`, or `bestv3.5`.
+    /// Bundle resource name: `best`, `bestv3.2`, `bestv3.3`, `bestv3.4`, `bestv3.5`, or `bestv3.6`.
     @Published var selectedModelName: String {
         didSet { persist(selectedModelName, key: Keys.selectedModelName) }
     }
@@ -380,7 +380,8 @@ final class AppSettings: ObservableObject {
         /// v2 picks up lower association speed without requiring a manual reset.
         static let maxSpeed = "settings.maxSpeed.v2"
         static let preferredCameraID = "settings.preferredCameraID"
-        static let selectedModelName = "settings.selectedModelName"
+        /// v2 picks up bestv3.6 without requiring a manual reset.
+        static let selectedModelName = "settings.selectedModelName.v2"
         static let liveRotation = "settings.liveRotation"
         static let liveMirror = "settings.liveMirror"
         static let showConfidence = "settings.showConfidence"
