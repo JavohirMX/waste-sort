@@ -2,11 +2,12 @@ import Foundation
 
 /// Whether the lid of a physical bin is open right now.
 ///
-/// Two rules in `ZoneDepositDetector` hang off this signal, and they pull in opposite
-/// directions on purpose:
+/// Three rules in `ZoneDepositDetector` hang off this signal:
 ///
 /// - an item can only be *thrown into* a bin that is open, so a deposit is credited only
 ///   when the target bin was open around the moment the item vanished;
+/// - throw-feedback cues (vanish preview and in-zone "Not here!") wait for the same open
+///   reading, so the HUD does not flash over a shut lid;
 /// - an item the model first finds already sitting inside an **open** bin is most likely
 ///   waste that is already in there, so it is disqualified. Inside a **closed** bin it
 ///   cannot be bin contents — it is something resting on the shut lid, and it stays
