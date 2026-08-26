@@ -113,16 +113,35 @@ nonisolated enum PCCDatasetExporter {
         PCC judge export — teaching dataset for YOLO fine-tuning
         ========================================================
 
-        records.jsonl  one judgment per line (JSON). The fields that matter:
-                       pccBinID   the bin PCC assigned (the label)
-                       cropFile   which image in crops/ it refers to
-                       sessionId  groups crops of the same physical item
-                       agreesWithEngine  did PCC disagree with the kiosk
-        crops/         the exact images the model judged (production 448 px)
-        skips.csv      judgments that did NOT become answers (quota, offline,
-                       unavailable, timeouts) — how "never fired" is told
-                       apart from "fired and failed" after the fact
-        manifest.json  export metadata; exported records are never pruned
+        What this is
+        ------------
+        Every time the kiosk's camera saw an item, the Private Cloud Compute
+        (PCC) judge looked at the same image and gave its own bin answer. This
+        folder is everything that happened: what YOLO claimed, what the kiosk
+        used, what PCC said, whether they agreed, and the exact crop PCC saw.
+
+        records.jsonl — one judgment per line (JSON). The fields that matter:
+          yoloLabel         the bin YOLO predicted for this item
+          engineBinID       the bin the kiosk actually used in its verdict
+          pccBinID          the bin PCC assigned — this is your training label
+          agreesWithEngine  true when pccBinID == engineBinID; false rows are
+                            exactly the cases worth reviewing first
+          cropFile          which image in crops/ this judgment refers to
+          sessionId         groups crops of the same physical item, so a train/
+                            val split can never leak one item across both sides
+          outcome           answered  PCC replied — the record is usable
+                            cropFailed / timeout / skippedQuota /
+                            skippedOffline / error  why it did not become an
+                            answer (details in skips.csv)
+          reasoningSummary  PCC's own explanation, in plain words
+
+        crops/     the exact images the model judged (production 448 px).
+                   Filenames match the record id / cropFile field.
+        skips.csv  every judgment that did NOT become an answer, one row each:
+                   how "never fired" is told apart from "fired and failed"
+                   after the fact.
+        manifest.json  export metadata (time range + record ids); exported
+                   records are never pruned from the device store.
 
         Build a train/val classification dataset (session-aware split so
         near-duplicate crops of one item cannot leak across splits):

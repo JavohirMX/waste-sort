@@ -121,8 +121,11 @@ Don't re-implement these, extend them:
   quota/breaker discipline built in; uncertain deposits are always served
   before audits so quota starvation only ever hits audits. Qualifying deposits
   enter `PCCJudgeQueue` (serial drain, capacity 200, uncertain-first): quota
-  exhaustion holds entries until reset instead of skipping them. Setup + export
-  workflow: `specs/001-pcc-uncertainty-judge/quickstart.md`.
+  exhaustion holds entries until reset instead of skipping them. A verdict
+  audit (`PCCVerdictAuditPolicy` + `auditYOLOVerdicts`) additionally judges
+  every item tracked ≥3 consecutive frames — confident or not, thrown or not —
+  one judgment per track id; the deposit path's `hasRequested` guard prevents
+  double-judging. Setup + export workflow: `specs/001-pcc-uncertainty-judge/quickstart.md`.
 - **Learned corrections** (specs/002, same folder): pure analyzer mines judge
   records for dominant PCC-vs-BinGuide disagreements (asymmetric thresholds:
   into-residual 12@75%, out-of-residual 30@85%); operator applies via Settings.
