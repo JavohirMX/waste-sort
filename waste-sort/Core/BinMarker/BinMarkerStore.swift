@@ -33,12 +33,31 @@ final class BinMarkerStore: ObservableObject {
     }
     /// What is printed on the strip. One choice, one sheet to print it from.
     @Published var kind: BinMarkerKind {
-        didSet { defaults.set(kind.rawValue, forKey: Keys.kind) }
+        didSet {
+            defaults.set(kind.rawValue, forKey: Keys.kind)
+            dashesToOpen = measuredDashesToOpen
+        }
     }
     /// How short the printed dash row may be, and what that costs in dashes and time. Only
     /// `BinMarkerKind.dashes` leaves this open; the other two fix their own scan geometry.
     @Published var dashProfile: BinMarkerDashProfile {
-        didSet { defaults.set(dashProfile.rawValue, forKey: Keys.dashProfile) }
+        didSet {
+            defaults.set(dashProfile.rawValue, forKey: Keys.dashProfile)
+            dashesToOpen = measuredDashesToOpen
+        }
+    }
+    /// How many printed dashes must clear the counter edge before the bin reads open.
+    ///
+    /// The number an operator actually feels, because it is what sets how far the drawer has
+    /// to be pulled: at an 8 mm dash, each one is another 16 mm of travel.
+    ///
+    /// It follows the height and the shape whenever either changes, rather than being carried
+    /// across to a setting it was never measured against — each combination has its own floor,
+    /// below which the room starts producing rows on its own. Moving it by hand is allowed and
+    /// is the point of having it; `measuredDashesToOpen` is what the measurement said, so the
+    /// screen can show how far from it you are.
+    @Published var dashesToOpen: Int {
+        didSet { defaults.set(dashesToOpen, forKey: Keys.dashesToOpen) }
     }
     @Published var staleTimeout: Double {
         didSet { defaults.set(staleTimeout, forKey: Keys.staleTimeout) }
@@ -67,6 +86,7 @@ final class BinMarkerStore: ObservableObject {
         static let source = "binMarker.source"
         static let kind = "binMarker.kind"
         static let dashProfile = "binMarker.dashProfile"
+        static let dashesToOpen = "binMarker.dashesToOpen"
         static let staleTimeout = "binMarker.staleTimeout"
         static let debug = "binMarker.debug"
         static let calibration = "binMarker.calibration"
@@ -86,9 +106,22 @@ final class BinMarkerStore: ObservableObject {
         self.staleTimeout = defaults.object(forKey: Keys.staleTimeout) != nil
             ? defaults.double(forKey: Keys.staleTimeout)
             : BinMarkerStateConfig.standard.staleTimeout
-        self.dashProfile = defaults.string(forKey: Keys.dashProfile)
+        let profile = defaults.string(forKey: Keys.dashProfile)
             .flatMap(BinMarkerDashProfile.init(rawValue:)) ?? .thin
+        self.dashProfile = profile
         self.showDebugOverlay = defaults.bool(forKey: Keys.debug)
+        // Property observers do not run during init, so the follow-the-profile rule in
+        // `dashProfile.didSet` cannot seed this; the measured default is worked out here
+        // instead, from the two settings that were just restored.
+        let measured = Self.measuredDashesToOpen(
+            profile: profile,
+            shape: (defaults.string(forKey: Keys.kind)
+                .flatMap(BinMarkerKind.init(rawValue:))
+                ?? Self.migratedKind(from: defaults)).shape
+        )
+        self.dashesToOpen = defaults.object(forKey: Keys.dashesToOpen) != nil
+            ? defaults.integer(forKey: Keys.dashesToOpen)
+            : measured
 
         if let data = defaults.data(forKey: Keys.calibration),
            let decoded = try? JSONDecoder().decode([Int: [Double]].self, from: data) {
@@ -156,7 +189,25 @@ final class BinMarkerStore: ObservableObject {
         var config = BinMarkerDashConfig.standard
         config.profile = dashProfile
         config.shape = kind.shape
+        // Last, because setting either of the two above recomputes `minRuns` from what they
+        // were measured to need. The slider is the operator overruling that, so it goes on top.
+        config.minRuns = BinMarkerDashConfig.runs(forDashes: dashesToOpen)
         return config
+    }
+
+    /// What the current height and shape were measured to need, whatever the slider is set to.
+    var measuredDashesToOpen: Int {
+        Self.measuredDashesToOpen(profile: dashProfile, shape: kind.shape)
+    }
+
+    private static func measuredDashesToOpen(
+        profile: BinMarkerDashProfile,
+        shape: BinMarkerDashShape
+    ) -> Int {
+        var config = BinMarkerDashConfig.standard
+        config.profile = profile
+        config.shape = shape
+        return config.dashesNeeded
     }
 
     var stateConfig: BinMarkerStateConfig {

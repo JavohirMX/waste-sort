@@ -295,6 +295,20 @@ nonisolated enum BinMarkerDashShape: String, Codable, CaseIterable, Identifiable
 /// the frame — and the only reason to go shorter is a rim that cannot give up the height.
 /// Prefer the tallest that fits.
 ///
+/// Each dash count above is the *first* one that reads nothing false, which is what makes it a
+/// floor rather than a preference. Sweeping the threshold across the same fifteen frames:
+///
+///     dashes to open │  tall   thin   very thin
+///                  3 │   442   1070        1553
+///                  4 │     6     43         164
+///                  5 │     0      3          10
+///                  6 │     0      0           1
+///                  7 │     0      0           0
+///
+/// The cliff is one dash wide. That is why `BinMarkerStore.dashesToOpen` follows the height
+/// whenever the height changes rather than being carried across — a threshold measured against
+/// one row stride means nothing against another.
+///
 /// Very thin is on the list for the printed sheets it does not have: at 3.8 mm it is asking to
 /// read a sticker shorter than anything currently printable, and against the 14 mm and 18 mm
 /// strips on the dash sheet it is simply the slowest and least sensitive way to read them. It
@@ -417,6 +431,18 @@ nonisolated struct BinMarkerDashConfig: Equatable, Sendable {
 
     /// Printed dashes that must clear the counter edge for this configuration.
     var dashesNeeded: Int { (minRuns + 2) / 2 }
+
+    /// The inverse: runs to demand so that `dashes` printed dashes are enough.
+    ///
+    /// A clean row of N dashes reads as 2N−1 runs, and this asks for one less than that on
+    /// purpose. The row the counter edge catches mid-gap shows N dashes and the partial gap
+    /// beside them — 2N−2 runs — and that is exactly the moment the drawer is meant to read
+    /// open, so the threshold is written for it rather than against it.
+    static func runs(forDashes dashes: Int) -> Int { max(2, dashes * 2 - 2) }
+
+    /// How far the dash threshold may be moved by hand. Three is where a "row" stops being a
+    /// rhythm at all; ten is a longer row than any sheet prints.
+    static let dashesToOpenRange = 3...10
 
     /// Every Nth row, and separately every Nth column — because the two passes are not doing
     /// the same job and should not pay the same price.

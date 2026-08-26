@@ -649,6 +649,9 @@ struct LiveYOLOCamera: UIViewRepresentable {
                     var dashConfig = BinMarkerDashConfig.standard
                     dashConfig.profile = inputs.openness.markerDashProfile
                     dashConfig.shape = inputs.openness.markerKind.shape
+                    // After both, which recompute it from what they were measured to need.
+                    dashConfig.minRuns = BinMarkerDashConfig
+                        .runs(forDashes: inputs.openness.markerDashesToOpen)
                     self.markerPipeline.apply(config: config, dashConfig: dashConfig,
                                               inks: inputs.openness.markerInks)
                     self.markerPipeline.submit(pixelBuffer)
@@ -777,6 +780,8 @@ struct BinOpennessInputs: Equatable, Sendable {
     /// because on site they are not two decisions.
     var markerKind: BinMarkerKind = .dashes
     var markerDashProfile: BinMarkerDashProfile = .thin
+    /// Printed dashes that must clear the counter edge before the bin reads open.
+    var markerDashesToOpen: Int = BinMarkerDashProfile.thin.dashesNeeded
     var markerStaleTimeout: Double = BinMarkerStateConfig.standard.staleTimeout
     /// Palette with any on-site calibration already folded in.
     var markerInks: [BinMarkerInk] = BinMarkerInk.all

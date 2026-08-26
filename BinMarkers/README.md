@@ -104,14 +104,25 @@ blur. Six dashes clear of the counter edge opens the bin on **Thin**; **Tall** w
 printed height and opens on 5, **Very thin** half of it and opens on 7. Chevrons open on 4 at
 Thin's height.
 
-At the dash sheet's 8 mm pitch that is **88 mm of drawer** on Thin, or 72 mm on Tall. To
-trigger sooner, print the dashes **smaller**, not fewer: six at a 4 mm pitch clear the edge in
-half the travel that six at 8 mm need, and `markers.typ` takes the dash size as a variable if
-that turns out to matter more than legibility does.
-Fewer is not a setting — below the threshold the room itself starts producing rows. Measured on
-fifteen frames of this room with nothing installed: 185 false rows at five alternating runs, 27
-at six, 5 at seven, none at eight. The chevron check takes that to none at seven, which is
-where its extra dash of sensitivity comes from.
+At the dash sheet's 8 mm pitch that is **88 mm of drawer** on Thin, or 72 mm on Tall. The count
+is a setting — Settings → Marker strips → **Dashes to open** — and it resets to the measured
+floor whenever the row height changes, because a threshold measured against one row stride
+means nothing against another. Sweeping it over the same fifteen frames shows why the floor is
+where it is; the cliff is one dash wide:
+
+| dashes to open | Tall | Thin | Very thin |
+| --- | --- | --- | --- |
+| 3 | 442 | 1070 | 1553 |
+| 4 | 6 | 43 | 164 |
+| 5 | **0** | 3 | 10 |
+| 6 | 0 | **0** | 1 |
+| 7 | 0 | 0 | **0** |
+
+To trigger sooner without paying that, print the dashes **smaller**, not fewer: six at a 4 mm
+pitch clear the edge in half the travel that six at 8 mm need, and `markers.typ` takes the dash
+size as a variable if that turns out to matter more than legibility does.
+The chevron check moves the floor down by a dash — it reads nothing false where a plain row of
+the same height still reads a few — and that is where its extra sensitivity comes from.
 
 Repetition is the design, so an arm across the middle of a row costs nothing: it leaves two
 shorter rows and the longer one still answers. Print more dashes than the threshold needs.

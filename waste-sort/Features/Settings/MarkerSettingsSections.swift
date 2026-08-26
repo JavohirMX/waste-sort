@@ -73,6 +73,21 @@ struct MarkerSettingsSections: View {
                     .foregroundStyle(.secondary)
             }
 
+            if markerStore.kind.style.usesDashRows {
+                SettingsIntSliderRow(
+                    title: "Dashes to open",
+                    help: "How much of the printed row has to clear the counter edge before "
+                        + "the bin reads open. This is the drawer travel: at an 8 mm dash, "
+                        + "each one is another 16 mm of pull.",
+                    value: $markerStore.dashesToOpen,
+                    range: BinMarkerDashConfig.dashesToOpenRange
+                )
+
+                Text(dashesDetail)
+                    .font(.caption)
+                    .foregroundStyle(dashesBelowFloor ? .orange : .secondary)
+            }
+
             Toggle("Show debug overlay", isOn: $markerStore.showDebugOverlay)
 
             Picker("Capture resolution", selection: $aprilTagStore.rangeProfile) {
@@ -108,6 +123,31 @@ struct MarkerSettingsSections: View {
         } footer: {
             Text(markerFooter)
         }
+    }
+
+    /// Below the floor this height and shape were measured at, the room starts producing rows
+    /// on its own, and it climbs steeply: over fifteen site frames, a handful at one dash
+    /// under and hundreds not far below that.
+    private var dashesBelowFloor: Bool {
+        markerStore.dashesToOpen < markerStore.measuredDashesToOpen
+    }
+
+    /// Says what the measurement said, and where the current setting stands against it, rather
+    /// than clamping the slider. Below the floor is a thing worth trying on the actual bins;
+    /// it is just not a thing to walk into without being told.
+    private var dashesDetail: String {
+        let floor = markerStore.measuredDashesToOpen
+        if markerStore.dashesToOpen < floor {
+            return "Below the \(floor) this height was measured clean at, and it climbs "
+                + "steeply: a handful of stray rows over fifteen site frames at one dash "
+                + "under, hundreds not far below that. Watch the debug overlay before "
+                + "leaving it here."
+        }
+        if markerStore.dashesToOpen == floor {
+            return "The floor this height was measured clean at on this site's own frames."
+        }
+        return "\(markerStore.dashesToOpen - floor) more than this height needs. Slower to "
+            + "open, and further from anything the room can counterfeit."
     }
 
     /// The dash kinds read the full luma frame; bars meet chroma at half the capture width.

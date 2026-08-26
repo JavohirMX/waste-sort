@@ -111,6 +111,7 @@ struct LiveCameraView: View {
                             source: markerStore.source,
                             markerKind: markerStore.kind,
                             markerDashProfile: markerStore.dashProfile,
+                            markerDashesToOpen: markerStore.dashesToOpen,
                             markerStaleTimeout: markerStore.staleTimeout,
                             markerInks: markerStore.inks,
                             markerDebugOverlay: markerStore.showDebugOverlay
