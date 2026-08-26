@@ -442,7 +442,7 @@ nonisolated final class ZoneDepositDetector {
                 object.zoneID = nil
                 object.dwell = 0
                 object.lastInZone = nil
-                noteWrongZoneOccupancy(object, currentBinID: nil, at: timestamp)
+                noteWrongZoneOccupancy(object, currentBinID: nil, binIsOpen: false, at: timestamp)
                 if let id = expireInZoneIncorrectIfNeeded(object, at: timestamp) {
                     cancelledThrowFeedbackIDs.insert(id)
                 }
@@ -472,7 +472,12 @@ nonisolated final class ZoneDepositDetector {
             // ever counts real evidence.
             object.dwell += 1
 
-            noteWrongZoneOccupancy(object, currentBinID: zone.binID, at: timestamp)
+            noteWrongZoneOccupancy(
+                object,
+                currentBinID: zone.binID,
+                binIsOpen: binOpenState.isOpen(binID: zone.binID),
+                at: timestamp
+            )
             if let id = expireInZoneIncorrectIfNeeded(object, at: timestamp) {
                 cancelledThrowFeedbackIDs.insert(id)
             }
@@ -492,10 +497,16 @@ nonisolated final class ZoneDepositDetector {
             // An open reading anywhere in the settling window counts. The lid signal is noisy
             // in its own right and can lag the throw by a few frames; demanding that two noisy
             // signals coincide on one exact frame would drop real deposits.
-            if let target = object.pendingTarget, binOpenState.isOpen(binID: target.binID) {
+            let pendingOpen = object.pendingTarget.map { binOpenState.isOpen(binID: $0.binID) } ?? false
+            if pendingOpen {
                 object.sawBinOpen = true
             }
-            noteWrongZoneOccupancy(object, currentBinID: object.pendingTarget?.binID, at: timestamp)
+            noteWrongZoneOccupancy(
+                object,
+                currentBinID: object.pendingTarget?.binID,
+                binIsOpen: pendingOpen,
+                at: timestamp
+            )
             if let id = expireInZoneIncorrectIfNeeded(object, at: timestamp) {
                 cancelledThrowFeedbackIDs.insert(id)
             }
@@ -521,9 +532,8 @@ nonisolated final class ZoneDepositDetector {
         at timestamp: CFAbsoluteTime,
         pipeline: DecisionPipeline
     ) -> ThrowFeedbackCue? {
-        let dbgElapsed = timestamp - (object.missingSince ?? 0)
-        print("DBG-ELAPSED \(dbgElapsed) grace=\(effectiveThrowFeedbackGrace) pendingBin=\(object.pendingTarget?.binID ?? "nil")")
         guard !object.didEmitThrowFeedback,
+              object.sawBinOpen,
               let missingSince = object.missingSince,
               let target = object.pendingTarget,
               timestamp - missingSince >= effectiveThrowFeedbackGrace
@@ -552,6 +562,7 @@ nonisolated final class ZoneDepositDetector {
               !object.didEmitInZoneIncorrect,
               object.missingSince == nil,
               !object.zoneBinID.isEmpty,
+              binOpenState.isOpen(binID: object.zoneBinID),
               let entered = object.zoneEnteredAt,
               timestamp - entered >= throwFeedbackGrace
         else { return nil }
@@ -569,13 +580,15 @@ nonisolated final class ZoneDepositDetector {
     }
 
     /// Treat a vanish into the same wrong bin as still "there" so a blink does not cancel.
+    /// A shut lid is leaving: the overlay must not persist over a bin that cannot accept a throw.
     private func noteWrongZoneOccupancy(
         _ object: TrackedObject,
         currentBinID: String?,
+        binIsOpen: Bool,
         at timestamp: CFAbsoluteTime
     ) {
         guard object.didEmitInZoneIncorrect, let last = object.lastWrongZoneBinID else { return }
-        if currentBinID == last {
+        if currentBinID == last, binIsOpen {
             object.leftWrongZoneAt = nil
         } else if object.leftWrongZoneAt == nil {
             object.leftWrongZoneAt = timestamp
