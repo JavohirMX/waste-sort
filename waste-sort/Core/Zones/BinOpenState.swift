@@ -29,8 +29,20 @@ nonisolated struct FrameBinOpenState: BinOpenStateProviding {
     let closedBinIDs: Set<String>
 
     init(tagFrame: AprilTagStatusFrame, zones: [DropZone]) {
+        self.init(closedZoneIDs: tagFrame.closedZoneIDs, zones: zones)
+    }
+
+    /// The same snapshot taken from printed marker strips instead of AprilTags.
+    ///
+    /// Two sources, one gate: `ZoneDepositDetector` is not told which detector is running,
+    /// and must not be — swapping the lid signal is a settings choice, not a code path.
+    init(markerFrame: BinMarkerStatusFrame, zones: [DropZone]) {
+        self.init(closedZoneIDs: markerFrame.closedZoneIDs, zones: zones)
+    }
+
+    private init(closedZoneIDs: Set<UUID>, zones: [DropZone]) {
         closedBinIDs = Set(
-            zones.filter { tagFrame.closedZoneIDs.contains($0.id) }.map(\.binID)
+            zones.filter { closedZoneIDs.contains($0.id) }.map(\.binID)
         )
     }
 

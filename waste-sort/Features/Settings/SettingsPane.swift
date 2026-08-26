@@ -67,7 +67,9 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable, Sendable {
             [
                 "Zones", "Show zones", "Dwell frames", "Reacquire window", "Throw feedback delay",
                 "Edit zones on camera", "Reset zones", "AprilTag", "Enable AprilTag detection",
-                "Show debug overlay", "Detection range", "Closed delay", "Tags"
+                "Show debug overlay", "Detection range", "Closed delay", "Tags",
+                "Bin openness", "Detected by", "Marker strips", "Printed on the strip",
+                "Dashes", "Chevrons", "Bars", "Row height", "Capture resolution"
             ]
         case .overlay:
             [

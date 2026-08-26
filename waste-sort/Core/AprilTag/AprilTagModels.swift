@@ -1,22 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// Binary bin openness state.
-enum BinOpennessState: String, Codable, Sendable {
-    case open
-    case closed
-    case unknown
-
-    var acceptsItems: Bool { self == .open }
-
-    var displayName: String {
-        switch self {
-        case .open: return "Open"
-        case .closed: return "Closed"
-        case .unknown: return "Unknown"
-        }
-    }
-}
+// `BinOpennessState` moved to `Core/Zones/BinOpennessState.swift` when a second detector
+// started producing it. It is shared vocabulary now, not an AprilTag detail.
 
 /// Status for a single zone.
 struct BinOpenness: Equatable, Sendable {
