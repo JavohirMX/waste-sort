@@ -32,7 +32,10 @@ nonisolated final class PCCArbiterService: VerdictArbitrating, @unchecked Sendab
     /// trusted forever — quota state especially changes during a session.
     private var availabilityCache: (value: PCCJudgeAvailability, fetchedAt: Date)?
     private var cachedStatus: JudgeStatusSnapshot?
-    private static let availabilityTTL: Double = 30
+    private let availabilityTTL: Double
+    /// Test-scripted probe; when set it replaces the system probe entirely and
+    /// is never cached, so scripted state changes take effect immediately.
+    private let dynamicAvailability: (@Sendable () -> PCCJudgeAvailability)?
 
     private static let log = AppLog.vision
 
@@ -42,14 +45,23 @@ nonisolated final class PCCArbiterService: VerdictArbitrating, @unchecked Sendab
     ///   - now: injectable clock for breaker cooldown tests.
     ///   - availabilityOverride: pins the availability probe. Tests use this to
     ///     exercise gates without touching system APIs; production passes nil.
+    ///   - dynamicAvailability: a live-scripted probe that bypasses all caching.
+    ///     Tests that need availability to CHANGE mid-flight (quota resetting)
+    ///     use this; production passes nil.
+    ///   - availabilityTTL: how long probed availability and status snapshots
+    ///     stay trusted. Tests shorten it so time-based gates resolve fast.
     init(
         store: PCCRecordStore,
         transport: ArbitrationTransport? = nil,
         now: @escaping () -> Date = Date.init,
-        availabilityOverride: PCCJudgeAvailability? = nil
+        availabilityOverride: PCCJudgeAvailability? = nil,
+        dynamicAvailability: (@Sendable () -> PCCJudgeAvailability)? = nil,
+        availabilityTTL: Double = 30
     ) {
         self.store = store
         self.now = now
+        self.availabilityTTL = availabilityTTL
+        self.dynamicAvailability = dynamicAvailability
         if let transport {
             self.transport = transport
         } else if #available(iOS 27.0, *) {
@@ -145,11 +157,24 @@ nonisolated final class PCCArbiterService: VerdictArbitrating, @unchecked Sendab
     // MARK: - Pipeline
 
     private func currentStatusLocked() -> JudgeStatusSnapshot {
-        if let cached = cachedStatus, !(cached.breakerOpenUntil.map { $0 > now() } ?? false) {
+        if let dynamicAvailability {
+            return JudgeStatusSnapshot(
+                availability: dynamicAvailability(),
+                approachingLimit: false,
+                breakerOpenUntil: breakerOpenUntil,
+                fetchedAt: now()
+            )
+        }
+        // The snapshot lives no longer than the availability probe behind it:
+        // quota state changes during a session, and a snapshot cached before
+        // exhaustion (or before reset) would gate on stale facts forever.
+        if let cached = cachedStatus,
+           now().timeIntervalSince(cached.fetchedAt) < availabilityTTL,
+           !(cached.breakerOpenUntil.map { $0 > now() } ?? false) {
             return cached
         }
         let availability: PCCJudgeAvailability
-        if let cache = availabilityCache, now().timeIntervalSince(cache.fetchedAt) < Self.availabilityTTL {
+        if let cache = availabilityCache, now().timeIntervalSince(cache.fetchedAt) < availabilityTTL {
             availability = cache.value
         } else {
             availability = PCCJudgeAvailability.current
@@ -158,7 +183,8 @@ nonisolated final class PCCArbiterService: VerdictArbitrating, @unchecked Sendab
         let snapshot = JudgeStatusSnapshot(
             availability: availability,
             approachingLimit: false,
-            breakerOpenUntil: breakerOpenUntil
+            breakerOpenUntil: breakerOpenUntil,
+            fetchedAt: now()
         )
         cachedStatus = snapshot
         return snapshot

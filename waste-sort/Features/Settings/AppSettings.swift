@@ -44,6 +44,16 @@ enum WasteSortConfig {
     static let defaultPCCBreakerThreshold = 3
     /// How long the breaker stays open after tripping.
     static let defaultPCCBreakerCooldownSeconds = 120.0
+    /// Judgment queue depth. Deep by design: entries are one 448 px crop each
+    /// and quota-holding means a busy day drains tonight instead of dying as skips.
+    static let defaultPCCQueueCapacity = 200
+    /// How long an entry may wait on *ambiguous* unavailability before it is
+    /// recorded as skipped. Quota and breaker holds never expire against this.
+    static let defaultPCCQueueEntryTTLSeconds = 120.0
+    /// Recheck cadence while parked on ambiguous unavailability.
+    static let defaultPCCQueueRetryPollSeconds = 15.0
+    /// Wake cadence when quota is exhausted but no reset time was reported.
+    static let defaultPCCQueueQuotaRetrySeconds = 60.0
     /// Records and crops older than this are pruned unless already exported.
     static let defaultPCCPruneDays = 30
     static let defaultPCCCropPadding: CGFloat = 0.15

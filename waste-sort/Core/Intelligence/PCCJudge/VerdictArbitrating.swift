@@ -50,6 +50,9 @@ nonisolated struct JudgeStatusSnapshot: Equatable, Sendable {
     var availability: PCCJudgeAvailability
     var approachingLimit: Bool
     var breakerOpenUntil: Date?
+    /// When this snapshot was assembled. Snapshots older than the arbiter's
+    /// availability TTL are stale — quota state changes during a session.
+    var fetchedAt: Date = .distantPast
 
     var isUsable: Bool {
         guard availability.isReady else { return false }

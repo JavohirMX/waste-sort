@@ -205,6 +205,9 @@ struct LiveYOLOCamera: UIViewRepresentable {
         /// lazily so a kiosk that never qualifies a deposit never touches store or
         /// availability APIs. Own work happens off the inference queue.
         private lazy var pccJudge: PCCArbiterService = PCCArbiterService(store: PCCRecordStore())
+        /// Serial line in front of the judge: back-to-back throws wait their turn
+        /// instead of stampeding quota; exhausted quota holds entries until reset.
+        private lazy var pccQueue = PCCJudgeQueue(arbiter: pccJudge)
         private let recheckBufferLock = NSLock()
         private var pendingRecheckOutcomes: [ZoomRecheckOutcome] = []
         let aprilTagPipeline = AprilTagFramePipeline(
@@ -575,7 +578,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
                 )
                 switch PCCTriggerPolicy.decision(for: policyInputs) {
                 case .trigger:
-                    pccJudge.arbitrate(context, crop: cropsByTrack[deposit.trackID])
+                    pccQueue.enqueue(context, crop: cropsByTrack[deposit.trackID])
                 case .skip(let reason):
                     guard reason != .notUncertainFallback else { continue }
                     pccJudge.recordSkip(

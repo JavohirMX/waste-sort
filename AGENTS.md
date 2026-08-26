@@ -119,7 +119,9 @@ Don't re-implement these, extend them:
   `pccConfidentAuditEnabled`) confident verdicts audited too; log-only, never
   touches live verdicts. iOS-27-gated behind `PCCJudgeABI` dlsym probes;
   quota/breaker discipline built in; uncertain deposits are always served
-  before audits so quota starvation only ever hits audits. Setup + export
+  before audits so quota starvation only ever hits audits. Qualifying deposits
+  enter `PCCJudgeQueue` (serial drain, capacity 200, uncertain-first): quota
+  exhaustion holds entries until reset instead of skipping them. Setup + export
   workflow: `specs/001-pcc-uncertainty-judge/quickstart.md`.
 - **Learned corrections** (specs/002, same folder): pure analyzer mines judge
   records for dominant PCC-vs-BinGuide disagreements (asymmetric thresholds:

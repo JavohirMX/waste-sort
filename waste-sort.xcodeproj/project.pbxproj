@@ -345,10 +345,10 @@
 				CODE_SIGN_ENTITLEMENTS = "waste-sort/waste-sort.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = MBBD9BRZ67;
+				DEVELOPMENT_TEAM = BD8SA4X398;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Sortla;
+				INFOPLIST_KEY_CFBundleDisplayName = "moe-sortla";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Sortla uses the camera to identify waste items and suggest a bin.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Sortla saves camera recordings to your photo library.";
@@ -364,7 +364,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.javohirmx.sortla;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mohamedmorad.sortla;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -384,10 +384,10 @@
 				CODE_SIGN_ENTITLEMENTS = "waste-sort/waste-sort.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = MBBD9BRZ67;
+				DEVELOPMENT_TEAM = BD8SA4X398;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Sortla;
+				INFOPLIST_KEY_CFBundleDisplayName = "moe-sortla";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Sortla uses the camera to identify waste items and suggest a bin.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Sortla saves camera recordings to your photo library.";
@@ -403,7 +403,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.javohirmx.sortla;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mohamedmorad.sortla;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
