@@ -404,6 +404,34 @@ struct BinMarkerEdgeTests {
             .contains { $0.slot(style: style)?.index == 2 }
         #expect(named == (style == .color))
     }
+
+    /// Every bin carries the *same* printed strip now, so two strips one above the other in
+    /// the frame share an identity and a stretch and differ only in where they are. The
+    /// scanner joins same-identity readings that cover the same stretch — a blurred strip's
+    /// middle can read as nothing while its two edges still alternate — and that join has to
+    /// stop short of joining two bins into one, or one of them silently never opens.
+    @Test("Two identical strips stacked apart stay two strips")
+    func identicalStripsAreNotMerged() {
+        var canvas = BinMarkerCanvas(width: 320, height: 260, includeChroma: false)
+        canvas.drawMonoStrip(barUnits: BinMarkerPattern.single.barUnits,
+                             unit: 6, origin: (x: 40, y: 40), thickness: 16)
+        canvas.drawMonoStrip(barUnits: BinMarkerPattern.single.barUnits,
+                             unit: 6, origin: (x: 40, y: 180), thickness: 16)
+        let found = scanner(.mono).scan(canvas.image).filter { $0.orientation == .horizontal }
+        #expect(found.count == 2)
+    }
+
+    /// The other half of that rule: a strip whose middle went unread is still one strip.
+    @Test("One strip read only along its two edges stays one strip")
+    func splitStripIsRejoined() {
+        var canvas = BinMarkerCanvas(width: 320, height: 200, includeChroma: false)
+        canvas.drawMonoStrip(barUnits: BinMarkerPattern.single.barUnits,
+                             unit: 6, origin: (x: 40, y: 60), thickness: 24)
+        // The blown-out middle: a band across the strip that alternates no longer.
+        canvas.fill(x: 0, y: 70, width: 320, height: 5, gray: 200)
+        let found = scanner(.mono).scan(canvas.image).filter { $0.orientation == .horizontal }
+        #expect(found.count == 1)
+    }
 }
 
 @Suite("Bin marker scanner, black and white")

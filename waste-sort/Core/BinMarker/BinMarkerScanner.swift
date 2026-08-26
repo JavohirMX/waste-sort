@@ -535,12 +535,32 @@ nonisolated final class BinMarkerScanner {
             end = max(end, segment.end)
         }
 
-        /// Whether another cluster of the same identity covers the same stretch, and so is
-        /// the same strip seen through a gap in the scan lines.
+        /// The first and last scan line this cluster was seen on.
+        var firstLine: Int { segments.map(\.line).min() ?? lastLine }
+        /// How many scan lines it spans — the strip's printed thickness, in samples.
+        var thickness: Int { lastLine - firstLine + 1 }
+
+        /// Whether another cluster of the same identity covers the same stretch **and lies
+        /// alongside it**, and so is the same strip seen through a gap in the scan lines.
+        ///
+        /// Both halves of that test are load-bearing, and the second one was learned late.
+        /// Overlap alone says two clusters are at the same place *along* the strip; it says
+        /// nothing about how far apart they are across it. Every bin now carries the same
+        /// printed strip, so two bins stacked in the frame produce two clusters with identical
+        /// identity and identical span — and merging those would report one strip where there
+        /// are two, opening one bin and leaving the other shut.
+        ///
+        /// The gap this exists to bridge is a strip's own dead middle, where blur smears the
+        /// bars into one band that reads as nothing while the softer edges still alternate.
+        /// That gap cannot be wider than the strip is thick, which makes the strip its own
+        /// yardstick and keeps the rule free of any assumption about scale.
         func overlaps(_ other: Cluster) -> Bool {
             let shared = min(end, other.end) - max(start, other.start)
-            guard shared > 0 else { return false }
-            return Double(shared) / Double(min(end - start, other.end - other.start)) >= 0.5
+            guard shared > 0,
+                  Double(shared) / Double(min(end - start, other.end - other.start)) >= 0.5
+            else { return false }
+            let apart = max(firstLine, other.firstLine) - min(lastLine, other.lastLine)
+            return apart <= max(thickness, other.thickness)
         }
 
         mutating func absorb(_ other: Cluster) {

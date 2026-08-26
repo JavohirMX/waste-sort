@@ -31,17 +31,14 @@ final class BinMarkerStore: ObservableObject {
     @Published var source: BinOpennessSource {
         didSet { defaults.set(source.rawValue, forKey: Keys.source) }
     }
-    @Published var style: BinMarkerStyle {
-        didSet { defaults.set(style.rawValue, forKey: Keys.style) }
+    /// What is printed on the strip. One choice, one sheet to print it from.
+    @Published var kind: BinMarkerKind {
+        didSet { defaults.set(kind.rawValue, forKey: Keys.kind) }
     }
-    /// How short the printed dash row may be, and what that costs in dashes and time.
+    /// How short the printed dash row may be, and what that costs in dashes and time. Only
+    /// `BinMarkerKind.dashes` leaves this open; the other two fix their own scan geometry.
     @Published var dashProfile: BinMarkerDashProfile {
         didSet { defaults.set(dashProfile.rawValue, forKey: Keys.dashProfile) }
-    }
-    /// What is printed in each dash. A chevron is checked across scan lines, which is what
-    /// lets it open on half as many dashes.
-    @Published var dashShape: BinMarkerDashShape {
-        didSet { defaults.set(dashShape.rawValue, forKey: Keys.dashShape) }
     }
     @Published var staleTimeout: Double {
         didSet { defaults.set(staleTimeout, forKey: Keys.staleTimeout) }
@@ -49,10 +46,10 @@ final class BinMarkerStore: ObservableObject {
     @Published var showDebugOverlay: Bool {
         didSet { defaults.set(showDebugOverlay, forKey: Keys.debug) }
     }
-    /// Zone id → marker slot.
-    @Published var bindings: [UUID: Int] {
-        didSet { persist(bindings, forKey: Keys.bindings) }
-    }
+
+    /// Which detector reads the chosen kind. Derived, because the two are one decision on site.
+    var style: BinMarkerStyle { kind.style }
+
     /// Slot → the chroma actually measured off the printed strip, under this room's light.
     ///
     /// The palette's built-in values describe ideal ink. What a printer lays down, a laminate
@@ -68,41 +65,31 @@ final class BinMarkerStore: ObservableObject {
 
     private enum Keys {
         static let source = "binMarker.source"
-        static let style = "binMarker.style"
+        static let kind = "binMarker.kind"
         static let dashProfile = "binMarker.dashProfile"
-        static let dashShape = "binMarker.dashShape"
         static let staleTimeout = "binMarker.staleTimeout"
         static let debug = "binMarker.debug"
-        static let bindings = "binMarker.bindings"
         static let calibration = "binMarker.calibration"
+        /// Read once, to carry a device that was already set up across the change to one flat
+        /// choice. Never written.
+        static let legacyStyle = "binMarker.style"
+        static let legacyDashShape = "binMarker.dashShape"
     }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.source = defaults.string(forKey: Keys.source)
             .flatMap(BinOpennessSource.init(rawValue:)) ?? .aprilTag
-        self.style = defaults.string(forKey: Keys.style)
-            .flatMap(BinMarkerStyle.init(rawValue:)) ?? .dashes
+        self.kind = defaults.string(forKey: Keys.kind)
+            .flatMap(BinMarkerKind.init(rawValue:))
+            ?? Self.migratedKind(from: defaults)
         self.staleTimeout = defaults.object(forKey: Keys.staleTimeout) != nil
             ? defaults.double(forKey: Keys.staleTimeout)
             : BinMarkerStateConfig.standard.staleTimeout
         self.dashProfile = defaults.string(forKey: Keys.dashProfile)
             .flatMap(BinMarkerDashProfile.init(rawValue:)) ?? .thin
-        // Plain until the chevron path in the shipped scanner matches what the prototype
-        // measured. The idea is validated — 477 accidental rows, none passing — but the
-        // integration is not: it reports 2 false rows and reads a printed chevron only 73% of
-        // the time, against 0 and 100% in the prototype. Shipping it on by default would be
-        // shipping the worse of the two.
-        self.dashShape = defaults.string(forKey: Keys.dashShape)
-            .flatMap(BinMarkerDashShape.init(rawValue:)) ?? .plain
         self.showDebugOverlay = defaults.bool(forKey: Keys.debug)
 
-        if let data = defaults.data(forKey: Keys.bindings),
-           let decoded = try? JSONDecoder().decode([UUID: Int].self, from: data) {
-            self.bindings = decoded
-        } else {
-            self.bindings = [:]
-        }
         if let data = defaults.data(forKey: Keys.calibration),
            let decoded = try? JSONDecoder().decode([Int: [Double]].self, from: data) {
             self.calibration = decoded.compactMapValues { pair in
@@ -110,6 +97,20 @@ final class BinMarkerStore: ObservableObject {
             }
         } else {
             self.calibration = [:]
+        }
+    }
+
+    /// What a device set up before the style and the shape were folded into one should show.
+    ///
+    /// Colour has nowhere to land — it is no longer offered — so a device left on it comes
+    /// back on dashes, which is what the site's own frames say it should have been on.
+    private static func migratedKind(from defaults: UserDefaults) -> BinMarkerKind {
+        let shape = defaults.string(forKey: Keys.legacyDashShape)
+            .flatMap(BinMarkerDashShape.init(rawValue:)) ?? .plain
+        switch defaults.string(forKey: Keys.legacyStyle).flatMap(BinMarkerStyle.init(rawValue:)) {
+        case .mono: return .bars
+        case .dashes: return shape == .chevron ? .chevrons : .dashes
+        case .color, .none: return .dashes
         }
     }
 
@@ -143,33 +144,18 @@ final class BinMarkerStore: ObservableObject {
         calibration = [:]
     }
 
-    // MARK: - Bindings
-
-    func slot(for zoneID: UUID, defaultIndex: Int) -> Int {
-        bindings[zoneID] ?? defaultIndex
-    }
-
-    func setSlot(_ slot: Int, for zoneID: UUID) {
-        bindings[zoneID] = slot
-    }
-
-    func prune(toActiveZoneIDs activeZoneIDs: Set<UUID>) {
-        let kept = bindings.filter { activeZoneIDs.contains($0.key) }
-        if kept.count != bindings.count { bindings = kept }
-    }
-
     // MARK: - Config
 
     var detectionConfig: BinMarkerConfig {
         var config = BinMarkerConfig.standard
-        config.style = style
+        config.style = kind.style
         return config
     }
 
     var dashConfig: BinMarkerDashConfig {
         var config = BinMarkerDashConfig.standard
         config.profile = dashProfile
-        config.shape = dashShape
+        config.shape = kind.shape
         return config
     }
 

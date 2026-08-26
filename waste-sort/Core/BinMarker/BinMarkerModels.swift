@@ -129,10 +129,33 @@ nonisolated struct BinMarkerConfig: Equatable, Sendable {
     /// Local light-to-dark spread a mono scan line needs before its samples mean anything.
     /// Flat wall is not a strip with unlucky thresholds; it is flat wall.
     var minMonoContrast: Int = 40
-    /// Half-width of the sliding window the mono threshold is taken from, in samples. Wide
-    /// enough to span a bar and its neighbours, narrow enough that a lighting gradient across
-    /// the frame never becomes the thing being measured.
-    var monoWindowRadius: Int = 24
+    /// Half-width of the sliding window the mono threshold is taken from, in samples.
+    ///
+    /// This sets the **largest** strip that can be read, which is not obvious and is worth
+    /// stating plainly: the threshold at each sample is the midpoint of the window around it,
+    /// so a bar wider than the window has a middle whose neighbourhood is all ink. The
+    /// midpoint there sits inside the ink, the centre of the bar reads as paper, and the bar
+    /// splits in two. The widest printed bar is two units, so the readable ceiling is roughly
+    /// this radius in samples per unit.
+    ///
+    /// Raised from 24 after a lone 12 mm strip went unread at close range while the same strip
+    /// read perfectly from further away — a 28-sample unit, a 57-sample wide bar, against a
+    /// 48-sample window. Measured against the printed sheet and fifteen frames of the empty
+    /// room:
+    ///
+    ///     radius │ largest readable print │ false strips │ ms a pass
+    ///         24 │                  10 mm │            3 │       59
+    ///         32 │                  12 mm │            3 │       59
+    ///         40 │                  15 mm │            1 │       60
+    ///         56 │                  15 mm │            0 │       60
+    ///
+    /// Wider is better on both counts and costs nothing — the sliding extreme is linear in the
+    /// line length whatever this is — because a wider window is likelier to hold both ink and
+    /// paper, which is the whole job. Forty is where it first covers every size on the sheet;
+    /// past that the only difference is one false strip in fifteen frames, which is noise, and
+    /// a window is still supposed to be local enough that a lighting gradient across the room
+    /// is not what gets measured.
+    var monoWindowRadius: Int = 40
 
     /// Accept a color strip that shows at least `minDegradedBars` bars but no readable
     /// rhythm, naming the bin from its ink alone. This is the whole point of printing in
@@ -182,20 +205,28 @@ nonisolated enum BinMarkerDashShape: String, Codable, CaseIterable, Identifiable
     ///
     /// **A straight edge in the scene has one slope.** Wood grain, a counter lip, a sleeve —
     /// seen in perspective they all ramp steadily, and a third of the room's accidental rows
-    /// do look sheared. None of them can reverse slope at a midline. Measured on the site's
-    /// frames at a deliberately reckless threshold — five alternating runs, where the plain
-    /// row needs ten — the room produced 477 candidate rows and **not one** passed the chevron
-    /// check, while a printed chevron passed every time.
+    /// do look sheared. None of them can reverse slope at a midline.
     ///
-    /// That is what pays for the sensitivity: three dashes clear of the counter edge instead
-    /// of six. The cost is height — telling the two halves apart needs six scan lines, so the
-    /// hairline profile is not available with it.
+    /// What that is worth, measured on rendered prints slid out a dash at a time from behind a
+    /// straight edge — which is what a drawer does — is **a third of the travel**:
     ///
-    /// **Not yet the default.** Wired into this scanner it reports 2 false rows on those same
-    /// frames and reads a printed chevron 73% of the time, against 0 and 100% in the prototype
-    /// the numbers above come from. The gap is in the integration, not the idea — most likely
-    /// the column pass and the far looser run threshold admitting fragments of the row itself
-    /// — and until it closes, plain is the honest default.
+    ///     dashes clear of the edge │  3    4    5    6
+    ///     chevron                  │  —   ✓✓   ✓✓   ✓✓
+    ///     plain, same printed height│  —    —   ½    ✓✓
+    ///
+    /// Neither reads anything false in fifteen frames of the empty room. Like for like — at
+    /// the lowest run threshold where each first reads nothing false, seven against eight —
+    /// the shape is worth one dash; the other dash comes from the margin the plain profiles
+    /// carry, and that margin is what the shape makes unnecessary.
+    ///
+    /// An earlier prototype claimed three dashes against six. It had scored its own detection
+    /// on a synthetic canvas whose row edges were exact; on a real raster, where the top and
+    /// bottom scan lines cut half-covered anti-aliased ink, the same threshold reads the room
+    /// as readily as the marker.
+    ///
+    /// The cost is the row stride: telling the two halves apart needs six scan lines, so this
+    /// always scans every line, where a plain row of the same printed height scans every
+    /// second one. Measured at 30 ms a frame against 17, on a device shared with the model.
     case chevron
 
     var id: String { rawValue }
@@ -213,18 +244,30 @@ nonisolated enum BinMarkerDashShape: String, Codable, CaseIterable, Identifiable
             return "Rectangles. Any height, but the row itself has to be long enough to be "
                 + "unmistakable."
         case .chevron:
-            return "Each dash bent into a shallow V, which no straight edge in the room can "
-                + "counterfeit. Opens on 3 dashes instead of 6, at the cost of needing about "
-                + "7.5 mm of printed height."
+            return "Each dash bent into a V, which no straight edge in the room can "
+                + "counterfeit. Opens on 4 dashes where a plain row of the same height needs "
+                + "6 — a third less drawer travel — for about twice the time per frame."
         }
     }
 
     /// Alternating runs a stretch needs before it is even considered.
     ///
-    /// Far lower for a chevron because the run count is no longer what does the discriminating
-    /// — the shape is. Measured on the site: 477 accidental rows at five runs, none surviving
-    /// the shape check.
-    var minRuns: Int { self == .chevron ? 5 : 10 }
+    /// Lower for a chevron because the run count is no longer carrying the discrimination on
+    /// its own — the shape shares it. Measured on fifteen site frames against sixteen rendered
+    /// prints, at the row stride of one that both settings use:
+    ///
+    ///     runs  dashes │ plain: read  invented │ chevron: read  invented
+    ///        5       3 │      16 / 16      185 │       16 / 16       28
+    ///        6       4 │      16 / 16       27 │       16 / 16        3
+    ///        7       4 │      16 / 16        5 │       16 / 16        0
+    ///        8       5 │      12 / 16        0 │       12 / 16        0
+    ///
+    /// Seven is where the chevron reads every print and the room produces nothing; a plain row
+    /// has to go to eight for that, and eight is a dash further out of the drawer. So the
+    /// shape is worth one dash of travel at equal printed height — not the three an earlier
+    /// prototype claimed, which had scored its detection on a synthetic canvas where the row's
+    /// edges were exact.
+    var minRuns: Int { self == .chevron ? 7 : 10 }
 
     /// Scan lines needed to tell the two halves apart.
     var minLines: Int { self == .chevron ? 6 : 3 }
@@ -387,9 +430,15 @@ nonisolated struct BinMarkerDashConfig: Equatable, Sendable {
     var maxShapeResidual: Double = 1.2
     /// How steep each half must lean. Below this the row is straight, not bent.
     var minShapeSlope: Double = 0.4
-    /// How far the two halves' steepness may differ. Generous on purpose: perspective
-    /// stretches one half of a row more than the other, and it is the sign flip that carries
-    /// the meaning, not the magnitude.
+    /// How far the two halves' steepness may differ, as a fraction of the steeper one.
+    ///
+    /// A fraction rather than an absolute, because slope is not a fixed quantity: a chevron
+    /// printed with a deeper bend, or read from closer, ramps faster in both halves at once.
+    /// Half a pixel per line is a quarter of the difference at a slope of 2 and more than the
+    /// whole of it at a slope of 0.4 — the same number meaning two different tests.
+    ///
+    /// Generous on purpose either way: perspective stretches one half of a row more than the
+    /// other, and it is the sign flip that carries the meaning, not the magnitude.
     var maxShapeSlopeSpread: Double = 0.5
 
     /// How far a detected row may sit from a zone's centre and still be taken as that bin's.

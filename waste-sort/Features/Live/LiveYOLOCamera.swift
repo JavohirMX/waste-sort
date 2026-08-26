@@ -401,11 +401,9 @@ struct LiveYOLOCamera: UIViewRepresentable {
             if inputs.openness.usesMarkers {
                 markerFrame = markerBinDetector.update(
                     zones: currentZones,
-                    bindings: inputs.openness.markerBindings,
-                    style: inputs.openness.markerStyle,
                     config: BinMarkerStateConfig(staleTimeout: inputs.openness.markerStaleTimeout)
                 )
-                markerFrame.stats = inputs.openness.markerStyle.usesDashRows
+                markerFrame.stats = inputs.openness.markerKind.style.usesDashRows
                     ? markerPipeline.dashScanner.lastFrameStats
                     : markerPipeline.scanner.lastFrameStats
             }
@@ -618,10 +616,10 @@ struct LiveYOLOCamera: UIViewRepresentable {
                     // Marker detection reads chroma, so it has to run on the buffer as the
                     // sensor delivered it — before `FrameColorAdjuster` rewrites it below.
                     var config = BinMarkerConfig.standard
-                    config.style = inputs.openness.markerStyle
+                    config.style = inputs.openness.markerKind.style
                     var dashConfig = BinMarkerDashConfig.standard
                     dashConfig.profile = inputs.openness.markerDashProfile
-                    dashConfig.shape = inputs.openness.markerDashShape
+                    dashConfig.shape = inputs.openness.markerKind.shape
                     self.markerPipeline.apply(config: config, dashConfig: dashConfig,
                                               inks: inputs.openness.markerInks)
                     self.markerPipeline.submit(pixelBuffer)
@@ -746,10 +744,10 @@ private struct PipelineInputs {
 /// initialisers every time.
 struct BinOpennessInputs: Equatable, Sendable {
     var source: BinOpennessSource = .aprilTag
-    var markerStyle: BinMarkerStyle = .dashes
+    /// What is printed on the strips. Carries both the detection style and the dash shape,
+    /// because on site they are not two decisions.
+    var markerKind: BinMarkerKind = .dashes
     var markerDashProfile: BinMarkerDashProfile = .thin
-    var markerDashShape: BinMarkerDashShape = .plain
-    var markerBindings: [UUID: Int] = [:]
     var markerStaleTimeout: Double = BinMarkerStateConfig.standard.staleTimeout
     /// Palette with any on-site calibration already folded in.
     var markerInks: [BinMarkerInk] = BinMarkerInk.all

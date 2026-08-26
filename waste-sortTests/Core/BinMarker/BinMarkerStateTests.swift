@@ -93,6 +93,34 @@ struct BinMarkerTemporalFilterTests {
         #expect(trusted == 0)
     }
 
+    /// The gate is where "is this one of our prints at all" is settled. Which bin it opens is
+    /// a separate question, answered by position further down.
+    @Test("A strip whose halves disagree is never confirmed")
+    func contradictoryStripIsRejected() {
+        let filter = BinMarkerTemporalFilter()
+        let contradictory = detection(slot: 0, patternOverride: 3)
+        #expect(filter.filter([contradictory], style: .color, timestamp: 100).isEmpty)
+        #expect(filter.filter([contradictory], style: .color, timestamp: 100.1).isEmpty)
+        #expect(filter.filter([contradictory], style: .color, timestamp: 100.2).isEmpty)
+    }
+
+    /// Every bin carries the same print now, so two open bins are two strips with nothing to
+    /// tell them apart but where they are. Confirming one must not confirm the other.
+    @Test("Two identical strips are confirmed separately")
+    func identicalStripsDoNotShareAHistory() {
+        let filter = BinMarkerTemporalFilter()
+        let left = CGPoint(x: 0.2, y: 0.5)
+        let right = CGPoint(x: 0.8, y: 0.5)
+        _ = filter.filter([detection(slot: 0, at: left)], style: .color, timestamp: 100)
+        // The left strip is one sighting from trusted; the right one has never been seen.
+        let second = filter.filter(
+            [detection(slot: 0, at: left), detection(slot: 0, at: right)],
+            style: .color, timestamp: 100.1
+        )
+        #expect(second.count == 1)
+        #expect(second.first?.center == left)
+    }
+
     @Test("A degraded reading needs one sighting more")
     func degradedNeedsAnExtraHit() {
         let filter = BinMarkerTemporalFilter()
@@ -113,16 +141,60 @@ struct BinMarkerTemporalFilterTests {
 
 @Suite("Bin marker openness")
 struct BinMarkerStateDetectorTests {
-    @Test("A visible strip opens its bin, and only its bin")
+    @Test("A visible strip opens the bin it appears on, and only that bin")
     func visibleStripOpensOneBin() {
         let detector = BinMarkerStateDetector()
         let list = zones(3)
-        detector.ingest(detections: [detection(slot: 1, timestamp: 100)], timestamp: 100)
-        let frame = detector.update(zones: list, style: .color, timestamp: 100)
+        detector.ingest(
+            detections: [detection(slot: 1, at: list[1].centroid, timestamp: 100)],
+            timestamp: 100
+        )
+        let frame = detector.update(zones: list, timestamp: 100)
         #expect(frame.statuses[list[1].id]?.state == .open)
         #expect(frame.statuses[list[0].id]?.state == .closed)
         #expect(frame.statuses[list[2].id]?.state == .closed)
         #expect(frame.openZoneIDs == [list[1].id])
+    }
+
+    /// The point of the whole design: the print carries no identity, so the *same* strip on a
+    /// different bin opens that bin instead. Nothing is bound, nothing can be stuck on wrong.
+    @Test("The same strip on another bin opens that one")
+    func identityComesFromPositionAlone() {
+        let list = zones(3)
+        for index in [0, 2] {
+            // A detector each, or the first bin is still coasting when the second is measured.
+            let detector = BinMarkerStateDetector()
+            detector.ingest(
+                detections: [detection(slot: 1, at: list[index].centroid, timestamp: 100)],
+                timestamp: 100
+            )
+            #expect(detector.update(zones: list, timestamp: 100).openZoneIDs == [list[index].id])
+        }
+    }
+
+    @Test("A strip far from every bin opens none of them")
+    func strayStripOpensNothing() {
+        let detector = BinMarkerStateDetector()
+        let list = zones(3)
+        detector.ingest(
+            detections: [detection(slot: 0, at: CGPoint(x: 0.5, y: 0.02), timestamp: 100)],
+            timestamp: 100
+        )
+        #expect(detector.update(zones: list, timestamp: 100).openZoneIDs.isEmpty)
+    }
+
+    /// Two strips landing on one bin means one of them is not a strip. The one showing more of
+    /// itself wins, and a fully read rhythm beats one named by ink alone at any size.
+    @Test("The stronger of two strips on one bin is the one that counts")
+    func strongerSightingWins() {
+        let detector = BinMarkerStateDetector()
+        let list = zones(3)
+        detector.ingest(detections: [
+            detection(slot: 0, degraded: true, at: list[0].centroid, timestamp: 100),
+            detection(slot: 0, at: list[0].centroid, timestamp: 100),
+        ], timestamp: 100)
+        let frame = detector.update(zones: list, timestamp: 100)
+        #expect(frame.statuses[list[0].id]?.isDegraded == false)
     }
 
     /// Most dropouts are an arm reaching in, not a lid coming down.
@@ -130,27 +202,19 @@ struct BinMarkerStateDetectorTests {
     func opennessCoasts() {
         let detector = BinMarkerStateDetector()
         let list = zones(3)
-        detector.ingest(detections: [detection(slot: 0, timestamp: 100)], timestamp: 100)
-        _ = detector.update(zones: list, style: .color, timestamp: 100)
+        detector.ingest(
+            detections: [detection(slot: 0, at: list[0].centroid, timestamp: 100)],
+            timestamp: 100
+        )
+        _ = detector.update(zones: list, timestamp: 100)
 
-        let coasting = detector.update(zones: list, style: .color, timestamp: 101)
+        let coasting = detector.update(zones: list, timestamp: 101)
         #expect(coasting.statuses[list[0].id]?.state == .open)
         #expect(coasting.statuses[list[0].id]?.isCoasting == true)
         #expect((coasting.statuses[list[0].id]?.confidence ?? 1) < 0.95)
 
-        let lapsed = detector.update(zones: list, style: .color, timestamp: 103)
+        let lapsed = detector.update(zones: list, timestamp: 103)
         #expect(lapsed.statuses[list[0].id]?.state == .closed)
-    }
-
-    @Test("Bindings decide which strip belongs to which bin")
-    func bindingsAreHonoured() {
-        let detector = BinMarkerStateDetector()
-        let list = zones(3)
-        let bindings: [UUID: Int] = [list[0].id: 2, list[2].id: 0]
-        detector.ingest(detections: [detection(slot: 2, timestamp: 100)], timestamp: 100)
-        let frame = detector.update(zones: list, bindings: bindings, style: .color, timestamp: 100)
-        #expect(frame.statuses[list[0].id]?.state == .open)
-        #expect(frame.statuses[list[2].id]?.state == .closed)
     }
 
     @Test("A degraded sighting opens the bin but says it is degraded")
@@ -158,34 +222,25 @@ struct BinMarkerStateDetectorTests {
         let detector = BinMarkerStateDetector()
         let list = zones(3)
         detector.ingest(
-            detections: [detection(slot: 0, degraded: true, timestamp: 100)],
+            detections: [detection(slot: 0, degraded: true, at: list[0].centroid, timestamp: 100)],
             timestamp: 100
         )
-        let frame = detector.update(zones: list, style: .color, timestamp: 100)
+        let frame = detector.update(zones: list, timestamp: 100)
         #expect(frame.statuses[list[0].id]?.state == .open)
         #expect(frame.statuses[list[0].id]?.isDegraded == true)
         #expect((frame.statuses[list[0].id]?.confidence ?? 1) < 0.95)
-    }
-
-    @Test("A strip whose halves disagree opens nothing")
-    func contradictoryStripOpensNothing() {
-        let detector = BinMarkerStateDetector()
-        let list = zones(3)
-        detector.ingest(
-            detections: [detection(slot: 0, timestamp: 100, patternOverride: 3)],
-            timestamp: 100
-        )
-        let frame = detector.update(zones: list, style: .color, timestamp: 100)
-        #expect(frame.openZoneIDs.isEmpty)
     }
 
     @Test("Dropping a zone forgets its history")
     func removedZonesArePruned() {
         let detector = BinMarkerStateDetector()
         let list = zones(3)
-        detector.ingest(detections: [detection(slot: 0, timestamp: 100)], timestamp: 100)
-        _ = detector.update(zones: list, style: .color, timestamp: 100)
-        let frame = detector.update(zones: Array(list.dropFirst()), style: .color, timestamp: 100.2)
+        detector.ingest(
+            detections: [detection(slot: 0, at: list[0].centroid, timestamp: 100)],
+            timestamp: 100
+        )
+        _ = detector.update(zones: list, timestamp: 100)
+        let frame = detector.update(zones: Array(list.dropFirst()), timestamp: 100.2)
         #expect(frame.statuses.count == 2)
         #expect(frame.statuses[list[0].id] == nil)
     }
@@ -195,8 +250,11 @@ struct BinMarkerStateDetectorTests {
     func markerStateFeedsTheGate() {
         let detector = BinMarkerStateDetector()
         let list = zones(3)
-        detector.ingest(detections: [detection(slot: 1, timestamp: 100)], timestamp: 100)
-        let frame = detector.update(zones: list, style: .color, timestamp: 100)
+        detector.ingest(
+            detections: [detection(slot: 1, at: list[1].centroid, timestamp: 100)],
+            timestamp: 100
+        )
+        let frame = detector.update(zones: list, timestamp: 100)
         let gate = FrameBinOpenState(markerFrame: frame, zones: list)
         #expect(gate.isOpen(binID: list[1].binID))
         #expect(!gate.isOpen(binID: list[0].binID))
@@ -206,8 +264,11 @@ struct BinMarkerStateDetectorTests {
     func snapshotRoutesToSelectedSource() {
         let detector = BinMarkerStateDetector()
         let list = zones(3)
-        detector.ingest(detections: [detection(slot: 1, timestamp: 100)], timestamp: 100)
-        let markerFrame = detector.update(zones: list, style: .color, timestamp: 100)
+        detector.ingest(
+            detections: [detection(slot: 1, at: list[1].centroid, timestamp: 100)],
+            timestamp: 100
+        )
+        let markerFrame = detector.update(zones: list, timestamp: 100)
 
         // With markers selected, the marker frame decides: bin 1 open, the rest shut.
         let usingMarkers = BinOpennessSnapshot(source: .marker, marker: markerFrame)

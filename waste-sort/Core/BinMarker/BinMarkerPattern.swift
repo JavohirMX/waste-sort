@@ -1,5 +1,77 @@
 import Foundation
 
+/// What is printed on the marker — the single choice an operator makes.
+///
+/// Flat on purpose. Underneath sits a detection style and, for the two dash kinds, a shape,
+/// but nobody standing in front of a bin is picking a "style" and then a "shape": they are
+/// picking which of three printed sheets they cut a strip from. One list, three entries, one
+/// sheet each, and every bin gets the same strip because position is what names a bin.
+///
+/// Colour is deliberately not here. It is still in `BinMarkerStyle` and still tested, but the
+/// site's own frames settled it: three hue cones wide enough to survive the room's light claim
+/// a third of every hue there is, and the room is full of blue liners and warm wood. It
+/// outlined everything. Nothing is served by offering it in front of a bin.
+nonisolated enum BinMarkerKind: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// A row of equal rectangles.
+    case dashes
+    /// The same row with each dash bent into a V.
+    case chevrons
+    /// Five black bars, one or two units wide. The oldest of the three.
+    case bars
+
+    var id: String { rawValue }
+
+    var style: BinMarkerStyle {
+        switch self {
+        case .dashes, .chevrons: return .dashes
+        case .bars: return .mono
+        }
+    }
+
+    var shape: BinMarkerDashShape {
+        self == .chevrons ? .chevron : .plain
+    }
+
+    /// Whether the printed height is an open choice. A chevron has to be read across six scan
+    /// lines to be told from a straight edge, and bars are measured rather than counted, so
+    /// only a plain row lets the height be traded against dashes.
+    var hasHeightChoice: Bool { self == .dashes }
+
+    var displayName: String {
+        switch self {
+        case .dashes: return "Dashes"
+        case .chevrons: return "Chevrons"
+        case .bars: return "Bars"
+        }
+    }
+
+    /// The sheet in `BinMarkers/` to cut this from.
+    var sheetPage: String {
+        switch self {
+        case .dashes: return "sheet 1"
+        case .chevrons: return "sheet 2"
+        case .bars: return "sheet 3"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .dashes:
+            return "A row of equal dashes. Nothing encoded — the bin is named by where the row "
+                + "appears. Nothing false in fifteen frames of this room, and an arm across "
+                + "the middle only lowers the count."
+        case .chevrons:
+            return "The same row with each dash bent into a V, which no straight edge in the "
+                + "room can counterfeit. Opens on 4 dashes where a plain row of the same "
+                + "height needs 6, for about twice the time per frame."
+        case .bars:
+            return "Five black bars told apart by width. Wants the largest print of the three, "
+                + "because bar widths are the first thing distance takes — but it is the one "
+                + "that survives a row being read end-on."
+        }
+    }
+}
+
 /// How a bin's marker strip is printed.
 ///
 /// The two styles exist to be compared on site, not in theory: which one survives the room's

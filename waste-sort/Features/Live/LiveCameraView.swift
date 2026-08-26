@@ -103,10 +103,8 @@ struct LiveCameraView: View {
                         aprilTagRangeProfile: aprilTagStore.rangeProfile,
                         openness: BinOpennessInputs(
                             source: markerStore.source,
-                            markerStyle: markerStore.style,
+                            markerKind: markerStore.kind,
                             markerDashProfile: markerStore.dashProfile,
-                            markerDashShape: markerStore.dashShape,
-                            markerBindings: markerStore.bindings,
                             markerStaleTimeout: markerStore.staleTimeout,
                             markerInks: markerStore.inks,
                             markerDebugOverlay: markerStore.showDebugOverlay

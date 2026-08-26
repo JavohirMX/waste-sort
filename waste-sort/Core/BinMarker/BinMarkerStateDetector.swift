@@ -1,6 +1,26 @@
 import CoreGraphics
 import Foundation
 
+/// Something the detector can credit to a bin.
+///
+/// Both kinds of sighting answer the same two questions — where it was, and how much of it was
+/// showing — and once identity comes from position, nothing else about them matters here.
+nonisolated protocol BinMarkerSighting {
+    var center: CGPoint { get }
+    /// How much of the marker was visible, for choosing between two that land on one bin.
+    var reach: Int { get }
+}
+
+extension BinMarkerDashRow: BinMarkerSighting {
+    var reach: Int { dashes }
+}
+
+extension BinMarkerDetection: BinMarkerSighting {
+    /// A fully read rhythm beats one named by ink alone whatever their sizes; past that, more
+    /// scan lines is more strip.
+    var reach: Int { (isDegraded ? 0 : 1 << 20) + lineCount }
+}
+
 /// Turns confirmed strip sightings into per-zone openness.
 ///
 /// The rule is the one the physical setup implies and nothing more: the strip is mounted where
@@ -52,13 +72,12 @@ nonisolated final class BinMarkerStateDetector: @unchecked Sendable {
         hasPending = true
     }
 
-    /// - Parameter bindings: zone id → marker slot. A zone with no entry falls back to its
-    ///   position in `zones`, which is what makes the feature work before anyone has opened
-    ///   settings.
+    /// Takes no style. It used to need one to know how a sighting named its bin; nothing here
+    /// asks that question any more. Whether something is one of our prints at all is settled
+    /// upstream, in the scanner and the confirmation gate — by the time a sighting arrives
+    /// here, the only question left is which bin it is nearest to.
     func update(
         zones: [DropZone],
-        bindings: [UUID: Int] = [:],
-        style: BinMarkerStyle,
         config: BinMarkerStateConfig = .standard,
         timestamp: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
     ) -> BinMarkerStatusFrame {
@@ -84,14 +103,8 @@ nonisolated final class BinMarkerStateDetector: @unchecked Sendable {
         }
         let now = max(frameTimestamp, timestamp)
 
-        var bySlot: [Int: BinMarkerDetection] = [:]
-        for detection in detections {
-            guard let slot = detection.slot(style: style) else { continue }
-            // Prefer a fully read strip over a degraded one when both name the same bin.
-            if let existing = bySlot[slot.index], !existing.isDegraded { continue }
-            bySlot[slot.index] = detection
-        }
-        let byZone = style.usesDashRows ? bind(rows: rows, to: zones, config: config) : [:]
+        let rowsByZone = bind(rows, to: zones, config: config)
+        let stripsByZone = bind(detections, to: zones, config: config)
 
         let activeZoneIDs = Set(zones.map(\.id))
         lastSeen = lastSeen.filter { activeZoneIDs.contains($0.key) }
@@ -100,8 +113,7 @@ nonisolated final class BinMarkerStateDetector: @unchecked Sendable {
 
         var statuses: [UUID: BinMarkerOpenness] = [:]
         for (index, zone) in zones.enumerated() {
-            let slot = bindings[zone.id] ?? index
-            if let row = byZone[zone.id] {
+            if let row = rowsByZone[zone.id] {
                 lastSeen[zone.id] = frameTimestamp
                 lastSlot[zone.id] = index
                 lastDegraded[zone.id] = false
@@ -117,16 +129,16 @@ nonisolated final class BinMarkerStateDetector: @unchecked Sendable {
                 )
                 continue
             }
-            if let detection = bySlot[slot] {
+            if let detection = stripsByZone[zone.id] {
                 lastSeen[zone.id] = frameTimestamp
-                lastSlot[zone.id] = slot
+                lastSlot[zone.id] = index
                 lastDegraded[zone.id] = detection.isDegraded
                 statuses[zone.id] = BinMarkerOpenness(
                     state: .open,
                     // A degraded strip is a real sighting, just a less specific one; the
                     // confidence says so rather than the state pretending otherwise.
                     confidence: detection.isDegraded ? 0.82 : 0.97,
-                    slot: slot,
+                    slot: index,
                     isDegraded: detection.isDegraded,
                     isCoasting: false,
                     lastSeenAt: frameTimestamp
@@ -140,7 +152,7 @@ nonisolated final class BinMarkerStateDetector: @unchecked Sendable {
                 statuses[zone.id] = BinMarkerOpenness(
                     state: .open,
                     confidence: min(0.95, max(0.2, 1 - elapsed / config.staleTimeout)),
-                    slot: lastSlot[zone.id] ?? slot,
+                    slot: lastSlot[zone.id] ?? index,
                     isDegraded: lastDegraded[zone.id] ?? false,
                     isCoasting: true,
                     lastSeenAt: seen
@@ -149,7 +161,7 @@ nonisolated final class BinMarkerStateDetector: @unchecked Sendable {
                 statuses[zone.id] = BinMarkerOpenness(
                     state: .closed,
                     confidence: 0.95,
-                    slot: lastSlot[zone.id] ?? slot,
+                    slot: lastSlot[zone.id] ?? index,
                     isDegraded: false,
                     isCoasting: false,
                     lastSeenAt: seen
@@ -165,30 +177,37 @@ nonisolated final class BinMarkerStateDetector: @unchecked Sendable {
         )
     }
 
-    /// Assigns each dash row to the bin it belongs to, by where it is.
+    /// Assigns each sighting to the bin it belongs to, by where it is.
     ///
-    /// This is the entire identity mechanism of the dash style, and it is worth being blunt
+    /// This is the entire identity mechanism, for every style, and it is worth being blunt
     /// about why it can be this thin: the camera is bolted overhead and the bins do not move,
-    /// so a row's position in the frame already says which drawer produced it. Encoding that
-    /// into the marker — as colour, as a bar rhythm — was solving a problem this installation
-    /// does not have, and every failure so far came from the encoding rather than from the
-    /// finding.
+    /// so a marker's position in the frame already says which drawer produced it. Encoding
+    /// that into the marker as well — as an ink, as a bar rhythm — was answering a question
+    /// this installation does not ask, and every failure the feature has had came from the
+    /// encoding rather than from the finding. A colour cone wide enough to survive the room's
+    /// light was wide enough to match the room's rubbish; bar widths are the first thing
+    /// distance takes.
     ///
-    /// Nearest centre wins, within a radius, and one row per zone: two rows landing on the
-    /// same bin means the longer one is the marker and the other is something else.
-    private func bind(
-        rows: [BinMarkerDashRow],
+    /// So all three bins carry the *same* printed marker. Nothing has to be bound in settings,
+    /// nothing can be stuck on the wrong drawer, and a strip that goes missing is replaced
+    /// from whichever spare is nearest to hand.
+    ///
+    /// Nearest centre wins, within a radius, and one sighting per zone: two landing on the
+    /// same bin means the one showing more of itself is the marker and the other is something
+    /// else.
+    private func bind<Sighting: BinMarkerSighting>(
+        _ sightings: [Sighting],
         to zones: [DropZone],
         config: BinMarkerStateConfig
-    ) -> [UUID: BinMarkerDashRow] {
-        var byZone: [UUID: BinMarkerDashRow] = [:]
-        for row in rows {
+    ) -> [UUID: Sighting] {
+        var byZone: [UUID: Sighting] = [:]
+        for sighting in sightings {
             var bestZone: UUID?
             var bestDistance = config.maxBindingDistance
             for zone in zones {
                 let centre = zone.centroid
-                let dx = centre.x - row.center.x
-                let dy = centre.y - row.center.y
+                let dx = centre.x - sighting.center.x
+                let dy = centre.y - sighting.center.y
                 let distance = (dx * dx + dy * dy).squareRoot()
                 if distance < bestDistance {
                     bestDistance = distance
@@ -196,8 +215,8 @@ nonisolated final class BinMarkerStateDetector: @unchecked Sendable {
                 }
             }
             guard let bestZone else { continue }
-            if let existing = byZone[bestZone], existing.dashes >= row.dashes { continue }
-            byZone[bestZone] = row
+            if let existing = byZone[bestZone], existing.reach >= sighting.reach { continue }
+            byZone[bestZone] = sighting
         }
         return byZone
     }

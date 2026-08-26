@@ -275,8 +275,8 @@ nonisolated final class BinMarkerDashScanner {
         return rows.sorted { $0.bounds.minY < $1.bounds.minY }
     }
 
-    /// Whether the row bends: offset ramping one way through its top half and the opposite way
-    /// through its bottom.
+    /// Whether the row bends: offset ramping one way through the top of the row and the
+    /// opposite way through the bottom.
     ///
     /// This is the only place the scanner looks *across* scan lines rather than along one, and
     /// it is where the marker stops being merely tidy and becomes unforgeable. A straight edge
@@ -284,45 +284,99 @@ nonisolated final class BinMarkerDashScanner {
     /// third of the room's accidental rows do look convincingly sheared. Not one of them can
     /// reverse that slope at a midline. On the site's frames, 477 candidate rows at a reckless
     /// five-run threshold, none passing.
+    ///
+    /// Both edges of the row are offered, and either may carry the verdict. A drawer reveals
+    /// the row by sliding it out from under the counter, so while it is opening the leading
+    /// edge is the counter's straight lip rather than the print — and a straight edge is
+    /// exactly what this test is built to reject. The trailing edge is the printed one, and
+    /// that is the half that answers.
     private func isChevron(_ segments: [Segment]) -> Bool {
-        guard segments.count >= config.shape.minLines else { return false }
-        let sorted = segments.sorted { $0.line < $1.line }
-        let middle = sorted.count / 2
-        let top = fit(sorted[..<middle])
-        let bottom = fit(sorted[middle...])
-        guard top.residual < config.maxShapeResidual,
-              bottom.residual < config.maxShapeResidual,
-              abs(top.slope) >= config.minShapeSlope,
-              abs(bottom.slope) >= config.minShapeSlope,
-              // Equal and opposite. The sign flip is the part a straight line cannot do; the
-              // magnitudes only have to be in the same neighbourhood, because perspective
-              // stretches one half of a row more than the other.
-              top.slope * bottom.slope < 0,
-              abs(abs(top.slope) - abs(bottom.slope)) <= config.maxShapeSlopeSpread
-        else { return false }
-        return true
+        // One segment per scan line, the longest of them. A line that contributed two is a
+        // line where something crossed the row and split it, and neither fragment begins
+        // where the row begins — feeding both to the fit puts a false step in the middle of
+        // an otherwise clean ramp.
+        var longest: [Int: Segment] = [:]
+        for segment in segments {
+            if let existing = longest[segment.line], existing.length >= segment.length {
+                continue
+            }
+            longest[segment.line] = segment
+        }
+        guard longest.count >= config.shape.minLines else { return false }
+        let sorted = longest.values.sorted { $0.line < $1.line }
+        let lines = sorted.map { Double($0.line) }
+        return bends(lines, sorted.map { Double($0.start) })
+            || bends(lines, sorted.map { Double($0.end) })
     }
 
-    /// Least squares of a segment's start position against its scan line.
-    private func fit(_ segments: ArraySlice<Segment>) -> (slope: Double, residual: Double) {
-        let count = Double(segments.count)
-        guard count >= 2 else { return (0, .greatestFiniteMagnitude) }
-        let xs = segments.map { Double($0.line) }
-        let ys = segments.map { Double($0.start) }
-        let meanX = xs.reduce(0, +) / count
-        let meanY = ys.reduce(0, +) / count
-        var covariance = 0.0
-        var variance = 0.0
-        for (x, y) in zip(xs, ys) {
-            covariance += (x - meanX) * (y - meanY)
-            variance += (x - meanX) * (x - meanX)
+    /// Whether one edge, traced against its scan lines, is a V.
+    ///
+    /// The apex is **searched for, not assumed**, and that is the difference between this
+    /// working and not. Splitting the lines down the middle instead sounds equivalent and is
+    /// not: the top and bottom rows of a print are half-covered and land in the cluster or
+    /// don't, so the apex is rarely at the median line. One misplaced line puts a kink inside
+    /// a half, and the residual that kink contributes grows with the slope — which meant the
+    /// check rejected exactly the steep, most unmistakable chevrons and kept only the shallow
+    /// ones. Measured on printed rows: assuming the median read 5 of 10 renders, searching
+    /// reads 10 of 10.
+    private func bends(_ lines: [Double], _ offsets: [Double]) -> Bool {
+        // Two points are the fewest that have a slope at all, so that is what each half needs.
+        let margin = 2
+        guard lines.count >= margin * 2 else { return false }
+        for split in margin...(lines.count - margin) {
+            let top = fit(lines[..<split], offsets[..<split])
+            let bottom = fit(lines[split...], offsets[split...])
+            guard top.residual < config.maxShapeResidual,
+                  bottom.residual < config.maxShapeResidual,
+                  abs(top.slope) >= config.minShapeSlope,
+                  abs(bottom.slope) >= config.minShapeSlope,
+                  // Equal and opposite. The sign flip is the part a straight line cannot do;
+                  // the magnitudes only have to be in the same neighbourhood, because
+                  // perspective stretches one half of a row more than the other.
+                  top.slope * bottom.slope < 0,
+                  abs(abs(top.slope) - abs(bottom.slope))
+                      <= config.maxShapeSlopeSpread * max(abs(top.slope), abs(bottom.slope))
+            else { continue }
+            return true
         }
-        let slope = variance > 0 ? covariance / variance : 0
-        let intercept = meanY - slope * meanX
-        let residual = zip(xs, ys)
-            .map { abs($1 - (slope * $0 + intercept)) }
-            .reduce(0, +) / count
-        return (slope, residual)
+        return false
+    }
+
+    /// One edge's offset against its scan line, fitted by the median of every pairwise slope.
+    ///
+    /// Theil–Sen rather than least squares, because the lines that need discarding are exactly
+    /// the ones least squares weights most. The top and bottom scan lines of a printed row cut
+    /// through half-covered, anti-aliased ink, and the local threshold there often finds its
+    /// alternation starting at the page margin instead of the first dash — an offset wrong by
+    /// the whole width of the row. Least squares spreads one such line across the whole fit,
+    /// and the damage grows with the slope, so it rejected precisely the steepest and least
+    /// mistakable chevrons. A median ignores them.
+    ///
+    /// Quadratic in the scan lines crossing one row, which is six to twenty for a sticker on
+    /// a rim.
+    private func fit(
+        _ xs: ArraySlice<Double>,
+        _ ys: ArraySlice<Double>
+    ) -> (slope: Double, residual: Double) {
+        guard xs.count >= 2 else { return (0, .greatestFiniteMagnitude) }
+        let x = Array(xs)
+        let y = Array(ys)
+        var slopes: [Double] = []
+        slopes.reserveCapacity(x.count * (x.count - 1) / 2)
+        for i in 0..<x.count {
+            for j in (i + 1)..<x.count where x[j] != x[i] {
+                slopes.append((y[j] - y[i]) / (x[j] - x[i]))
+            }
+        }
+        guard !slopes.isEmpty else { return (0, .greatestFiniteMagnitude) }
+        slopes.sort()
+        let slope = slopes[slopes.count / 2]
+        var intercepts = zip(x, y).map { $1 - slope * $0 }
+        intercepts.sort()
+        let intercept = intercepts[intercepts.count / 2]
+        var residuals = zip(x, y).map { abs($1 - (slope * $0 + intercept)) }
+        residuals.sort()
+        return (slope, residuals[residuals.count / 2])
     }
 
     private struct Cluster {
