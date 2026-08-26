@@ -4,6 +4,7 @@ struct ZoneSettingsPane: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var zoneStore: ZoneStore
     @EnvironmentObject private var aprilTagStore: AprilTagBindingStore
+    @EnvironmentObject private var markerStore: BinMarkerStore
     @EnvironmentObject private var binStyle: BinStyleStore
     @State private var showZoneResetConfirm = false
 
@@ -12,7 +13,13 @@ struct ZoneSettingsPane: View {
     var body: some View {
         Form {
             zonesSection
-            aprilTagSection
+            // Bin openness belongs beside zones because a zone is what a marker is credited
+            // to. Only one detector gates deposits at a time, so the one that is not chosen
+            // is hidden rather than left on screen looking as though it were doing something.
+            MarkerSettingsSections()
+            if markerStore.source == .aprilTag {
+                aprilTagSection
+            }
         }
         .font(.system(.body, design: .default))
     }

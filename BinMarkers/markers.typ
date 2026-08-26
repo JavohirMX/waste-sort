@@ -156,29 +156,39 @@
   let dash = 8mm
   let length = content-width
   let row = filled-row(length, dash)
-  // A page per set, rather than six strips crowded onto one. Partly so the two heights cannot
-  // be mixed up once they are cut apart, and partly so the strips sit far enough apart to be
-  // read as three: the scan joins rows that cover the same stretch and lie within a few scan
-  // lines of each other, which is right for one row glimpsed through a gap and wrong for two
-  // stickers stacked flush. On a bin that never comes up — the bins are side by side — but on
-  // a sheet laid flat under the camera it decides whether you see three rows or one.
+  // A page per height, five strips on each: three bins and two spares, since a strip that goes
+  // on crooked or picks up a thumbprint is cheaper to replace than to reprint. Splitting the
+  // heights across two pages is also what stops them being mixed up once they are cut apart.
+  //
+  // The space between them is `1fr`, so the five spread to fill whatever the header leaves.
+  // That is worth having rather than a fixed gap: the scan joins rows that cover the same
+  // stretch and lie within a few scan lines of each other — right for one row glimpsed through
+  // a gap, wrong for two stickers stacked flush — so the further apart they sit, the closer
+  // the sheet laid flat under the camera comes to reading as five rows rather than one. On a
+  // bin it never arises, because the bins are side by side and share no stretch at all.
+  let copies = 5
   for (index, height) in (20mm, 24mm).enumerate() {
     if index > 0 { pagebreak() }
     header(
       [Bin markers — dashes, #mm-of(length) × #mm-of(height) mm],
-      [Settings → Bin Openness → Marker strips → #emph[Dashes]. Set #(index + 1) of 2: three
-        strips, one per bin, #mm-of(length) mm long and #mm-of(height) mm tall, carrying
-        #row.count dashes of #mm-of(dash) mm with #mm-of(row.quiet) mm of quiet paper at either
-        end. #mm-of(height - 6mm) mm of that height is printed; the rest is for the scissors.
-        All three bins carry the same strip — a marker is credited to whichever bin it appears
-        nearest — so these three are interchangeable. Opens once 6 dashes are clear of the
-        counter edge on the default #emph[Thin] row height, which at this dash is
-        #mm-of(dash * 11) mm of drawer; #emph[Tall] opens on 5, or #mm-of(dash * 9) mm. Print
-        at 100%, no fit-to-page, matte stock, and cut on the dashed line.],
+      [Settings → Bin Openness → Marker strips → #emph[Dashes]. Set #(index + 1) of 2:
+        #copies strips — three bins and two spares — #mm-of(length) mm long and
+        #mm-of(height) mm tall, carrying #row.count dashes of #mm-of(dash) mm with
+        #mm-of(row.quiet) mm of quiet paper at either end. #mm-of(height - 6mm) mm of that
+        height is printed; the rest is for the scissors. Every bin carries the same strip — a
+        marker is credited to whichever bin it appears nearest — so these are interchangeable.
+        #if height >= 24mm [
+          Tall enough for the #emph[Tall] row height, which opens once 5 dashes are clear of
+          the counter edge: #mm-of(dash * 9) mm of drawer.
+        ] else [
+          #mm-of(height - 6mm) mm is short of the #emph[Tall] row height at this site's scale,
+          so this set reads on #emph[Thin] — 6 dashes clear, or #mm-of(dash * 11) mm of drawer.
+        ]
+        Print at 100%, no fit-to-page, matte stock, and cut on the dashed line.],
     )
-    for _ in range(3) {
+    for copy in range(copies) {
       fixed-strip(length, height, dash)
-      v(30mm)
+      if copy < copies - 1 { v(1fr) }
     }
   }
 } else {

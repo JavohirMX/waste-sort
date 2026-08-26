@@ -277,25 +277,30 @@ nonisolated enum BinMarkerDashShape: String, Codable, CaseIterable, Identifiable
 
 /// How short the printed row is allowed to be, and what that costs.
 ///
-/// These are one setting rather than two knobs because the two only move together. A finer row
-/// stride is what lets the sticker be thinner — three scan lines must cross it, so its height
-/// is the stride times three — but finer also means more scan lines, and more scan lines means
+/// One setting rather than two knobs, because the two only move together. A finer row stride is
+/// what lets the sticker be shorter — three scan lines must cross it, so its printed height is
+/// the stride times three — but finer also means more scan lines, and more scan lines means
 /// more chances for the room to produce a stretch that looks like a row. The way to pay that
-/// back is a longer printed row, so each step down in height costs one more dash.
+/// back is a longer printed row, so the shorter setting also costs a dash.
 ///
 /// Measured on fifteen frames of the site with nothing installed, at 8 px per cm:
 ///
-///     height    stride  dashes  travel at a 4 mm pitch   cost   false rows
-///     15.0 mm        4       5                   36 mm   16 ms           0
-///      7.5 mm        2       6                   44 mm   20 ms           0
-///      3.8 mm        1       7                   52 mm   37 ms           0
+///     setting  height  stride  dashes  travel at 8 mm   cost   false rows
+///     tall     15.0mm       4       5           72 mm   10 ms           0
+///     thin      7.5mm       2       6           88 mm   17 ms           0
 ///
-/// Every row of that table is clean; the trade is height against how far the drawer must be
-/// pulled and how much of the frame budget the pass takes.
+/// **Tall is better on every axis a bin cares about** — it opens a dash sooner and costs
+/// two-fifths of the frame time — so the only reason to choose thin is a rim that cannot give
+/// up 15 mm. Prefer tall wherever the sticker fits.
+///
+/// A third setting, hairline, is gone. It scanned every line for a 3.8 mm sticker and was
+/// therefore both the slowest (31 ms) and the least sensitive (7 dashes): strictly worse than
+/// thin for any print over about 7.5 mm, which is every print on the sheet. It was answering a
+/// question the printed sheets stopped asking. A device left on it comes back on thin, which
+/// is what the raw value failing to decode already does.
 nonisolated enum BinMarkerDashProfile: String, Codable, CaseIterable, Identifiable, Sendable {
     case tall
     case thin
-    case hairline
 
     var id: String { rawValue }
 
@@ -303,7 +308,6 @@ nonisolated enum BinMarkerDashProfile: String, Codable, CaseIterable, Identifiab
         switch self {
         case .tall: return 4
         case .thin: return 2
-        case .hairline: return 1
         }
     }
 
@@ -312,7 +316,6 @@ nonisolated enum BinMarkerDashProfile: String, Codable, CaseIterable, Identifiab
         switch self {
         case .tall: return 8
         case .thin: return 10
-        case .hairline: return 12
         }
     }
 
@@ -324,19 +327,17 @@ nonisolated enum BinMarkerDashProfile: String, Codable, CaseIterable, Identifiab
         switch self {
         case .tall: return "Tall"
         case .thin: return "Thin"
-        case .hairline: return "Hairline"
         }
     }
 
     var detail: String {
         switch self {
         case .tall:
-            return "About 15 mm of printed height, 5 dashes to open, lightest on frame rate."
+            return "Wants about 15 mm of printed height. Opens on 5 dashes and is the lighter "
+                + "of the two on frame rate — use it wherever the rim allows."
         case .thin:
-            return "About 7.5 mm, 6 dashes to open. Half the sticker for a quarter more time."
-        case .hairline:
-            return "About 3.8 mm, 7 dashes to open. The thinnest measured clean, and the "
-                + "heaviest — 37 ms a pass, which shares a device with the model."
+            return "About 7.5 mm, for a rim that cannot give up more. Costs a dash to open, "
+                + "and about half again the time a frame."
         }
     }
 }
