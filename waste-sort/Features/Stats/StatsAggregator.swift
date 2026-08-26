@@ -15,6 +15,21 @@ struct StatsCategoryCount: Identifiable, Equatable {
     var id: String { binID }
 }
 
+/// Throws into one destination bin, split by whether they belonged there.
+struct StatsBinPlacement: Identifiable, Equatable {
+    let binID: String
+    let total: Int
+    let correct: Int
+    var id: String { binID }
+    var misplaced: Int { total - correct }
+
+    /// Rounded 0…100 share of throws into this bin that belonged there.
+    var accuracyPercent: Int {
+        guard total > 0 else { return 0 }
+        return Int((Double(correct) / Double(total) * 100).rounded())
+    }
+}
+
 struct StatsTimeBucket: Identifiable, Equatable {
     let date: Date
     let generated: Int
@@ -27,7 +42,7 @@ struct StatsSnapshot: Equatable {
     /// Deposits with `isCorrect == true` in the selected period.
     var correctlyPlacedCount: Int
     var categoryCounts: [StatsCategoryCount]
-    var destinationCounts: [StatsCategoryCount]
+    var placements: [StatsBinPlacement]
     var timeBuckets: [StatsTimeBucket]
     var isEmpty: Bool { generatedTotal == 0 }
 
@@ -40,6 +55,13 @@ struct StatsSnapshot: Equatable {
 
 /// Pure aggregation over deposit events for the Stats page.
 nonisolated enum StatsAggregator {
+    /// Stats weeks are Monday–Sunday, independent of locale.
+    static func mondayStarted(_ calendar: Calendar = .current) -> Calendar {
+        var cal = calendar
+        cal.firstWeekday = 2
+        return cal
+    }
+
     static func snapshot(
         events: [ZoneEventRecord],
         period: StatsPeriod,
@@ -47,15 +69,16 @@ nonisolated enum StatsAggregator {
         calendar: Calendar = .current,
         binIDs: [String] = BinGuide.all.map(\.id)
     ) -> StatsSnapshot {
+        let calendar = mondayStarted(calendar)
         let scoped = filter(events, period: period, now: now, calendar: calendar)
         let category = countsByClass(scoped, binIDs: binIDs)
-        let destination = countsByDestination(scoped, binIDs: binIDs)
+        let placements = placementsByDestination(scoped, binIDs: binIDs)
         let buckets = timeBuckets(scoped, period: period, now: now, calendar: calendar)
         return StatsSnapshot(
             generatedTotal: scoped.count,
             correctlyPlacedCount: scoped.filter(\.isCorrect).count,
             categoryCounts: category,
-            destinationCounts: destination,
+            placements: placements,
             timeBuckets: buckets
         )
     }
@@ -66,6 +89,7 @@ nonisolated enum StatsAggregator {
         now: Date,
         calendar: Calendar
     ) -> [ZoneEventRecord] {
+        let calendar = mondayStarted(calendar)
         guard let interval = periodInterval(period, now: now, calendar: calendar) else {
             return events
         }
@@ -77,6 +101,7 @@ nonisolated enum StatsAggregator {
         now: Date,
         calendar: Calendar
     ) -> DateInterval? {
+        let calendar = mondayStarted(calendar)
         switch period {
         case .daily:
             return calendar.dateInterval(of: .day, for: now)
@@ -99,13 +124,18 @@ nonisolated enum StatsAggregator {
         }
     }
 
-    static func countsByDestination(
+    static func placementsByDestination(
         _ events: [ZoneEventRecord],
         binIDs: [String]
-    ) -> [StatsCategoryCount] {
+    ) -> [StatsBinPlacement] {
         let grouped = Dictionary(grouping: events) { BinGuide.info(for: $0.zoneBinID).id }
         return binIDs.map { id in
-            StatsCategoryCount(binID: id, count: grouped[id]?.count ?? 0)
+            let matching = grouped[id] ?? []
+            return StatsBinPlacement(
+                binID: id,
+                total: matching.count,
+                correct: matching.filter(\.isCorrect).count
+            )
         }
     }
 
@@ -115,12 +145,18 @@ nonisolated enum StatsAggregator {
         now: Date,
         calendar: Calendar
     ) -> [StatsTimeBucket] {
-        let slots = axisSlots(period: period, now: now, calendar: calendar)
+        let calendar = mondayStarted(calendar)
         let component: Calendar.Component
         switch period {
         case .daily: component = .hour
         case .weekly, .monthly: component = .day
         case .yearly: component = .month
+        }
+
+        // Snap axis slots through the same interval start used to group events.
+        // Adding months onto year.start can disagree with dateInterval(of: .month).
+        let slots = axisSlots(period: period, now: now, calendar: calendar).map { slot in
+            calendar.dateInterval(of: component, for: slot)?.start ?? slot
         }
 
         let grouped = Dictionary(grouping: events) { event -> Date in
@@ -144,6 +180,7 @@ nonisolated enum StatsAggregator {
         now: Date,
         calendar: Calendar
     ) -> [Date] {
+        let calendar = mondayStarted(calendar)
         switch period {
         case .daily:
             let startOfDay = calendar.startOfDay(for: now)

@@ -17,53 +17,34 @@ struct StatsView: View {
     /// Used when Stats is shown as an overlay (slide from right) instead of a cover.
     var onClose: (() -> Void)?
 
-    private var events: [ZoneEventRecord] {
-        settings.useMockStats ? StatsMockData.events() : history.events
-    }
-
     private var snapshot: StatsSnapshot {
-        StatsAggregator.snapshot(
-            events: events,
+        let binIDs = binStyle.orderedBins.map(\.id)
+        if settings.useMockStats {
+            return StatsMockData.snapshot(period: period, binIDs: binIDs)
+        }
+        return StatsAggregator.snapshot(
+            events: history.events,
             period: period,
-            binIDs: binStyle.orderedBins.map(\.id)
+            binIDs: binIDs
         )
     }
 
     private var timelineBuckets: [StatsTimeBucket] {
-        if settings.useMockStats, period == .daily {
-            return StatsMockData.dailyTimelineBuckets()
-        }
-        return snapshot.timeBuckets
-    }
-
-    /// Daily mock uses design overlay heights; otherwise live category counts.
-    private var displayCategoryCounts: [StatsCategoryCount] {
-        if settings.useMockStats, period == .daily {
-            return binStyle.orderedBins.map { bin in
-                StatsCategoryCount(
-                    binID: bin.id,
-                    count: StatsMockData.categoryCounts[bin.id] ?? 0
-                )
-            }
-        }
-        return snapshot.categoryCounts
-    }
-
-    private var binsFilledCounts: [StatsCategoryCount] {
-        if settings.useMockStats {
-            return binStyle.orderedBins.map { bin in
-                StatsCategoryCount(
-                    binID: bin.id,
-                    count: StatsMockData.binsFilled[bin.id] ?? 0
-                )
-            }
-        }
-        return snapshot.destinationCounts
+        snapshot.timeBuckets
     }
 
     private var isWide: Bool { horizontalSizeClass == .regular }
 
-    private var useMockDailyBars: Bool { settings.useMockStats && period == .daily }
+    private var generatedTotalPointSize: CGFloat {
+        switch String(snapshot.generatedTotal).count {
+        case 0...3:
+            return isWide ? 48 : 40
+        case 4:
+            return isWide ? 34 : 28
+        default:
+            return isWide ? 26 : 22
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -88,7 +69,7 @@ struct StatsView: View {
                                     VStack(spacing: 18) {
                                         generatedCard
                                             .frame(minHeight: 320)
-                                        binsFilledCard
+                                        thrownIntoCard
                                             .frame(minHeight: 300)
                                         timelineCard
                                             .frame(height: 360)
@@ -195,7 +176,7 @@ struct StatsView: View {
         return VStack(spacing: gap) {
             HStack(alignment: .top, spacing: 20) {
                 generatedCard
-                binsFilledCard
+                thrownIntoCard
             }
             .frame(height: topHeight)
 
@@ -225,7 +206,7 @@ struct StatsView: View {
     /// Left column: title + total + legend; right: wide track bars.
     private var generatedCard: some View {
         StatsCardSurface {
-            if snapshot.isEmpty && !useMockDailyBars {
+            if snapshot.isEmpty {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Generated waste")
                         .font(.system(size: isWide ? 19 : 17, weight: .medium, design: .default))
@@ -255,12 +236,17 @@ struct StatsView: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("\(snapshot.generatedTotal)")
-                    .font(.system(size: isWide ? 48 : 40, weight: .bold, design: .default).monospacedDigit())
+                    .font(.system(size: generatedTotalPointSize, weight: .bold, design: .default).monospacedDigit())
                     .foregroundStyle(Color(white: 0.12))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.55)
+                    .allowsTightening(true)
                 Text("items")
                     .font(.system(size: isWide ? 20 : 16, weight: .medium, design: .default))
                     .foregroundStyle(Color(white: 0.35))
+                    .lineLimit(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 12) {
                 Spacer()
@@ -283,17 +269,15 @@ struct StatsView: View {
 
     /// Equal-height gray tracks with bottom-up colored fills and icons (design crop).
     private var categoryBars: some View {
-        let peak = displayCategoryCounts.map(\.count).max() ?? 0
-        let yMax: Int = {
-            if useMockDailyBars { return 150 }
-            return max(150, Int((Double(peak) * 1.1 / 50).rounded(.up) * 50))
-        }()
-        let ticks = stride(from: 0, through: yMax, by: 50).map { $0 }
+        let peak = snapshot.categoryCounts.map(\.count).max() ?? 0
+        let axis = StatsChartScale.axis(peak: peak)
+        let yMax = axis.max
+        let ticks = axis.ticks
+        let yLabelWidth: CGFloat = axis.max >= 1_000 ? 36 : 28
 
         return GeometryReader { geo in
             let trackHeight = max(geo.size.height - 4, 160)
             let barWidth: CGFloat = isWide ? 96 : 68
-            let yLabelWidth: CGFloat = 28
             let chartWidth = max(geo.size.width - yLabelWidth, 120)
 
             ZStack(alignment: .bottomLeading) {
@@ -305,15 +289,15 @@ struct StatsView: View {
                     }
                     .stroke(Color.black.opacity(0.12), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
 
-                    Text("\(tick)")
+                    Text(StatsChartScale.label(tick))
                         .font(.system(size: 13, weight: .medium, design: .default).monospacedDigit())
                         .foregroundStyle(Color(white: 0.4))
-                        .position(x: 12, y: y)
+                        .position(x: yLabelWidth / 2, y: y)
                 }
 
                 HStack(alignment: .bottom, spacing: isWide ? 24 : 16) {
                     ForEach(binStyle.orderedBins) { bin in
-                        let count = displayCategoryCounts.first { $0.binID == bin.id }?.count ?? 0
+                        let count = snapshot.categoryCounts.first { $0.binID == bin.id }?.count ?? 0
                         let fillRatio = CGFloat(count) / CGFloat(max(yMax, 1))
                         let fillHeight = max(trackHeight * fillRatio, count > 0 ? 44 : 0)
 
@@ -344,45 +328,30 @@ struct StatsView: View {
         }
     }
 
-    private var binsFilledCard: some View {
+    private var thrownIntoCard: some View {
         StatsCardSurface {
-            VStack(alignment: .leading, spacing: isWide ? 18 : 12) {
-                Text("Bins filled")
+            VStack(alignment: .leading, spacing: isWide ? 16 : 12) {
+                Text("Thrown into")
                     .font(.system(size: isWide ? 19 : 17, weight: .semibold, design: .default))
                     .foregroundStyle(.gray)
-//                    .underline()
 
                 VStack(spacing: isWide ? 12 : 8) {
                     ForEach(binStyle.orderedBins) { bin in
-                        let count = binsFilledCounts.first { $0.binID == bin.id }?.count ?? 0
-                        HStack(spacing: 14) {
-                            Image(systemName: bin.symbolName)
-                                .font(.system(size: isWide ? 22 : 18, weight: .bold))
-                                .foregroundStyle(bin.color)
-
-                            Text(bin.displayName.capitalized)
-                                .font(.system(size: isWide ? 18 : 15, weight: .medium, design: .default))
-                                .foregroundStyle(Color(white: 0.40))
-
-                            Spacer()
-
-                            Text("\(count)")
-                                .font(.system(size: isWide ? 22 : 18, weight: .bold, design: .default).monospacedDigit())
-                                .foregroundStyle(Color(white: 0.12))
-                        }
-                        .padding(.horizontal, isWide ? 20 : 14)
-                        .padding(.vertical, isWide ? 14 : 10)
-                        .background(Color(white: 0.97), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        let placement = snapshot.placements.first { $0.binID == bin.id }
+                            ?? StatsBinPlacement(binID: bin.id, total: 0, correct: 0)
+                        ThrownIntoRow(bin: bin, placement: placement, isWide: isWide)
                     }
                 }
-                .frame(maxHeight: .infinity, alignment: .center)
+                .frame(maxHeight: .infinity)
             }
         }
     }
 
     private var timelineCard: some View {
-        let chartYMax = (settings.useMockStats && period == .daily) ? 200 : timelineYAxisMax
-        let chartYTicks = stride(from: 0, through: chartYMax, by: 50).map { $0 }
+        let peak = timelineBuckets.map { max($0.generated, $0.misplaced) }.max() ?? 0
+        let axis = StatsChartScale.axis(peak: peak)
+        let chartYMax = axis.max
+        let chartYTicks = axis.ticks
         let trailingInset: CGFloat = isWide ? 160 : 130
 
         return StatsCardSurface(padding: 22) {
@@ -426,7 +395,7 @@ struct StatsView: View {
                             .foregroundStyle(Color.black.opacity(0.14))
                         AxisValueLabel {
                             if let n = value.as(Int.self) {
-                                Text("\(n)")
+                                Text(StatsChartScale.label(n))
                                     .font(.system(size: 13, weight: .medium, design: .default).monospacedDigit())
                                     .foregroundStyle(Color(white: 0.4))
                             }
@@ -473,13 +442,6 @@ struct StatsView: View {
                 .padding(.leading, 8)
             }
         }
-    }
-
-    private var timelineYAxisMax: Int {
-        let peak = timelineBuckets.map { max($0.generated, $0.misplaced) }.max() ?? 0
-        if peak <= 0 { return 50 }
-        let stepped = Int((Double(peak) * 1.15 / 50).rounded(.up) * 50)
-        return max(stepped, 50)
     }
 
     /// Fixed 7am–7pm domain for Daily so 7 pm is always visible.
@@ -614,57 +576,6 @@ private struct SiteNameEditorSheet: View {
             }
             .onAppear { fieldFocused = true }
         }
-    }
-}
-
-/// Three bins from the design asset with counts overlaid (default art order: organic, residual, recyclable).
-private struct BinsFilledArtwork: View {
-    let bins: [BinInfo]
-    let counts: [StatsCategoryCount]
-    var isWide: Bool
-
-    /// Default left-to-right order in `BinsFilled` art.
-    private static let artOrder = [
-        BinGuide.organic.id,
-        BinGuide.residual.id,
-        BinGuide.cleanInorganic.id
-    ]
-
-    var body: some View {
-        GeometryReader { geo in
-            let height = geo.size.height
-            let width = geo.size.width
-            ZStack {
-                Image("BinsFilled")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: width, maxHeight: height)
-
-                HStack(spacing: 0) {
-                    ForEach(Self.artOrder, id: \.self) { binID in
-                        let count = counts.first { $0.binID == binID }?.count ?? 0
-                        Text("\(count)")
-                            .font(.system(size: isWide ? 36 : 28, weight: .bold, design: .default).monospacedDigit())
-                            .foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
-                            .frame(maxWidth: .infinity)
-                            .offset(x: -width * 0.05, y: height * 0.1)
-                    }
-                }
-                .frame(width: min(width, height * 1.75), height: height)
-            }
-            .frame(width: width, height: height)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
-    }
-
-    private var accessibilityLabel: String {
-        bins.map { bin in
-            let count = counts.first { $0.binID == bin.id }?.count ?? 0
-            return "\(bin.displayName) \(count)"
-        }
-        .joined(separator: ", ")
     }
 }
 
