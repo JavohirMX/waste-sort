@@ -129,7 +129,13 @@ final class BinStyleStore: ObservableObject {
         if let data = defaults.data(forKey: Keys.customizations),
            let decoded = try? JSONDecoder().decode([BinCustomization].self, from: data),
            Self.isValid(decoded) {
-            customizations = decoded.sorted { $0.order < $1.order }
+            let sorted = decoded.sorted { $0.order < $1.order }
+            let migrated = Self.migratingLegacyInorganicLabel(sorted)
+            customizations = migrated
+            // `didSet` does not fire during init; write through if the old default was rewritten.
+            if migrated != sorted {
+                persistCustomizations()
+            }
         } else {
             customizations = Self.defaultCustomizations()
         }
@@ -262,6 +268,19 @@ final class BinStyleStore: ObservableObject {
         return ids == Set(BinGuide.all.map(\.id)) && items.count == BinGuide.all.count
     }
 
+    /// Rewrites the old shipped default "Inorganic" so existing kiosks pick up Recyclable.
+    /// Any other custom label is left alone.
+    static func migratingLegacyInorganicLabel(_ items: [BinCustomization]) -> [BinCustomization] {
+        items.map { item in
+            guard item.binID == BinGuide.cleanInorganic.id,
+                  item.label.lowercased() == "inorganic"
+            else { return item }
+            var next = item
+            next.label = "Recyclable"
+            return next
+        }
+    }
+
     static func defaultCustomizations() -> [BinCustomization] {
         [
             BinCustomization(
@@ -280,7 +299,7 @@ final class BinStyleStore: ObservableObject {
             ),
             BinCustomization(
                 binID: BinGuide.cleanInorganic.id,
-                label: "Inorganic",
+                label: "Recyclable",
                 symbolName: BinIconOption.recycle.symbolName,
                 colorToken: BinColorToken.yellow.rawValue,
                 order: 2

@@ -269,7 +269,7 @@ struct StatsView: View {
                         Circle()
                             .fill(bin.color)
                             .frame(width: 11, height: 11)
-                        Text(bin.id == BinGuide.cleanInorganic.id ? "Recyclable" : bin.displayName.capitalized)
+                        Text(bin.displayName.capitalized)
                             .font(.system(size: isWide ? 16 : 14, weight: .medium, design: .default))
                             .foregroundStyle(Color(white: 0.4))
                     }
@@ -360,7 +360,7 @@ struct StatsView: View {
                                 .font(.system(size: isWide ? 22 : 18, weight: .bold))
                                 .foregroundStyle(bin.color)
 
-                            Text(bin.id == BinGuide.cleanInorganic.id ? "Recyclable" : bin.displayName.capitalized)
+                            Text(bin.displayName.capitalized)
                                 .font(.system(size: isWide ? 18 : 15, weight: .medium, design: .default))
                                 .foregroundStyle(Color(white: 0.40))
 

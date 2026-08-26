@@ -39,7 +39,12 @@ struct CameraSettingsPane: View {
             Text("Camera")
                 .foregroundStyle(BinGuide.residual.color)
         } footer: {
-            Text("Auto uses a connected USB-C webcam when available, otherwise the iPad back camera. Rotation and mirror apply to Live preview and to recordings started after you change them.")
+            Text(
+                "Auto uses a connected USB-C webcam when available, otherwise the iPad back camera. "
+                    + "Rotation is extra on top of the camera's native orientation "
+                    + "(overhead USB mounts often need 180°) and applies to Live preview "
+                    + "and to recordings started after you change it. Mirror does the same."
+            )
         }
     }
 

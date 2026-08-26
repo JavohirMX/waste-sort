@@ -87,7 +87,7 @@ struct PhotoSortView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Point the camera, or pick a photo.")
                     .font(.system(.title3, design: .default).weight(.semibold))
-                Text("Items are sorted into Organic, Residual, or Inorganic.")
+                Text("Items are sorted into Organic, Residual, or Recyclable.")
                     .font(.system(.body, design: .default))
                     .foregroundStyle(.secondary)
             }
@@ -166,7 +166,7 @@ struct PhotoSortView: View {
 
             ForEach(fused.indices, id: \.self) { index in
                 DetectionRow(
-                    className: displayName(for: index),
+                    classKey: overrides[index] ?? fused[index].classKey,
                     confidence: fused[index].conf
                 )
                 if fused[index].wasUncertain, overrides[index] == nil {
@@ -176,15 +176,6 @@ struct PhotoSortView: View {
         }
     }
 
-    private func displayName(for index: Int) -> String {
-        if let override = overrides[index] {
-            return BinGuide.bin(id: override).displayName
-        }
-        return fused[index].wasUncertain
-            ? "UNSURE → \(BinGuide.bin(id: fused[index].classKey).displayName)"
-            : BinGuide.bin(id: fused[index].classKey).displayName
-    }
-
     /// Two-button resolution for an unsure photo item; photo mode is not
     /// throughput-bound, so asking beats guessing.
     private func resolveChip(index: Int) -> some View {
@@ -192,9 +183,11 @@ struct PhotoSortView: View {
             Text("Not sure about this one?")
                 .font(.system(.footnote, design: .default))
                 .foregroundStyle(.secondary)
-            Button("Inorganic") { overrides[index] = BinGuide.cleanInorganic.id }
-                .buttonStyle(.bordered)
-                .tint(BinGuide.cleanInorganic.color)
+            Button(BinGuide.cleanInorganic.displayName.capitalized) {
+                overrides[index] = BinGuide.cleanInorganic.id
+            }
+            .buttonStyle(.bordered)
+            .tint(BinGuide.cleanInorganic.color)
             Button("Residual") { overrides[index] = BinGuide.residual.id }
                 .buttonStyle(.borderedProminent)
                 .tint(BinGuide.residual.color)
