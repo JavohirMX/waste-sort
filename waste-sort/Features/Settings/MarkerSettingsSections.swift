@@ -10,6 +10,7 @@ struct MarkerSettingsSections: View {
     /// Only for the capture-resolution picker, which lives in that store for historical
     /// reasons and is not an AprilTag setting at all — both detectors read the same frames.
     @EnvironmentObject private var aprilTagStore: AprilTagBindingStore
+    @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
         sourceSection
@@ -27,6 +28,7 @@ struct MarkerSettingsSections: View {
                 }
             }
             .pickerStyle(.segmented)
+            .disabled(settings.demoMode)
         } header: {
             Text("Bin Openness")
                 .foregroundStyle(BinGuide.organic.color)
@@ -36,6 +38,9 @@ struct MarkerSettingsSections: View {
     }
 
     private var sourceFooter: String {
+        if settings.demoMode {
+            return "Demo mode leaves bins open. Turn it off to use lid detection."
+        }
         switch markerStore.source {
         case .aprilTag:
             return "Bins read as open while a tag mounted inside them is visible."
@@ -123,6 +128,7 @@ struct MarkerSettingsSections: View {
         } footer: {
             Text(markerFooter)
         }
+        .disabled(settings.demoMode)
     }
 
     /// Below the floor this height and shape were measured at, the room starts producing rows
@@ -173,7 +179,10 @@ struct MarkerSettingsSections: View {
     /// a row of pickers binding each bin to its own strip was the first thing anyone opening
     /// this screen had to get right, and it is gone.
     private var markerFooter: String {
-        "All three bins carry the same strip — a marker is credited to whichever bin it "
+        if settings.demoMode {
+            return "Demo mode leaves bins open. Turn it off to use lid detection."
+        }
+        return "All three bins carry the same strip — a marker is credited to whichever bin it "
             + "appears nearest, because the camera and the bins do not move. Mount it level "
             + "and inside, on the rim a shut drawer hides under the counter."
     }

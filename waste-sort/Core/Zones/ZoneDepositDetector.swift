@@ -141,6 +141,10 @@ nonisolated final class ZoneDepositDetector {
     /// Lid signal for the two rules that depend on it. Defaults to `AlwaysOpenBins`.
     /// The live camera replaces this each frame with `FrameBinOpenState` from AprilTag.
     var binOpenState: BinOpenStateProviding = AlwaysOpenBins()
+    /// Demo tabletop: a first sighting inside a zone still counts as arriving from outside,
+    /// so a printed card whose base is already over a bin stays throwable. Production leaves
+    /// this off — waste that only ever appears in an open bin is bin contents.
+    var treatInZoneSpawnAsOutside = false
 
     /// How far the last motion is projected forward when an object vanishes outside every
     /// zone, in normalized image widths. Roughly a hand's width: the model routinely loses an
@@ -199,7 +203,8 @@ nonisolated final class ZoneDepositDetector {
         private(set) var classesSeen = 0
         private var seenClasses: Set<String> = []
         /// Evidence the object is not simply waste already lying in a bin: it was seen
-        /// outside every zone at some point, or it was first seen inside a *closed* one.
+        /// outside every zone at some point, it was first seen inside a *closed* one, or
+        /// `treatInZoneSpawnAsOutside` credited a tabletop spawn.
         var arrivedFromOutside = false
         var zoneID: UUID?
         var zoneName = ""
@@ -454,8 +459,10 @@ nonisolated final class ZoneDepositDetector {
 
             // Materialising inside a zone only disqualifies an object while the bin is open,
             // because only an open bin can be where it came from. Appearing on a shut lid
-            // means it arrived from outside by definition, and it stays throwable.
-            if isFirstSighting, !binOpenState.isOpen(binID: zone.binID) {
+            // means it arrived from outside by definition, and it stays throwable. Demo
+            // tabletop skips that disqualification so a card whose base is already over a
+            // bin is still a throw.
+            if isFirstSighting, treatInZoneSpawnAsOutside || !binOpenState.isOpen(binID: zone.binID) {
                 object.arrivedFromOutside = true
             }
 

@@ -51,7 +51,7 @@ struct LiveCameraView: View {
 
     /// Non-nil while the AprilTag detector failed to initialize - lid gating is inert.
     private var tagFailureReason: String? {
-        guard aprilTagStore.isEnabled else { return nil }
+        guard !settings.demoMode, aprilTagStore.isEnabled else { return nil }
         return detectedTagFailure
     }
 
@@ -109,7 +109,8 @@ struct LiveCameraView: View {
                             markerDashesToOpen: markerStore.dashesToOpen,
                             markerStaleTimeout: markerStore.staleTimeout,
                             markerInks: markerStore.inks,
-                            markerDebugOverlay: markerStore.showDebugOverlay
+                            markerDebugOverlay: markerStore.showDebugOverlay,
+                            forceOpen: settings.demoMode
                         ),
                         foundationConfirmationEnabled: settings.foundationConfirmationEnabled,
                         onPresentationDelta: { delta in
@@ -206,7 +207,7 @@ struct LiveCameraView: View {
                         onSelectZone: { selectedZoneID = $0 }
                     )
 
-                    if markerStore.source == .marker, markerStore.showDebugOverlay {
+                    if !settings.demoMode, markerStore.source == .marker, markerStore.showDebugOverlay {
                         BinMarkerDebugOverlay(
                             frame: markerFrame,
                             zones: zoneStore.zones,
@@ -219,7 +220,7 @@ struct LiveCameraView: View {
                         )
                     }
 
-                    if markerStore.source == .aprilTag, aprilTagStore.isEnabled, aprilTagStore.showDebugOverlay {
+                    if !settings.demoMode, markerStore.source == .aprilTag, aprilTagStore.isEnabled, aprilTagStore.showDebugOverlay {
                         AprilTagDebugOverlay(
                             detectedTags: detectedTags,
                             statuses: tagStatuses,

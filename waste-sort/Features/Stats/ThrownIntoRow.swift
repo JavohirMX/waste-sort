@@ -4,43 +4,50 @@ import SwiftUI
 struct ThrownIntoRow: View {
     let bin: BinInfo
     let placement: StatsBinPlacement
-    var isWide: Bool
+    var metrics: StatsLayout.ThrownIntoMetrics
 
     private static let misplacedColor = Color(red: 0.95, green: 0.22, blue: 0.25)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: isWide ? 10 : 8) {
-            HStack(alignment: .center, spacing: isWide ? 12 : 10) {
+        VStack(alignment: .leading, spacing: metrics.labelBarSpacing) {
+            HStack(alignment: .center, spacing: metrics.hStackSpacing) {
                 Image(systemName: bin.symbolName)
-                    .font(.system(size: isWide ? 22 : 18, weight: .bold))
+                    .font(.system(size: metrics.iconSize, weight: .bold))
                     .foregroundStyle(bin.color)
-                    .frame(width: isWide ? 28 : 22)
+                    .frame(width: metrics.iconFrame)
 
                 Text(bin.displayName.capitalized)
-                    .font(.system(size: isWide ? 22 : 15, weight: .medium, design: .default))
+                    .font(.system(size: metrics.nameSize, weight: .medium, design: .default))
                     .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .layoutPriority(1)
 
                 if placement.total > 0 {
                     Text("\(placement.correct) correct · \(placement.misplaced) misplaced")
-                        .font(.system(size: isWide ? 16 : 12, weight: .medium, design: .default).monospacedDigit())
+                        .font(.system(size: metrics.countsSize, weight: .medium, design: .default).monospacedDigit())
                         .foregroundStyle(Color(white: 0.45))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .layoutPriority(0)
                 }
 
                 Spacer(minLength: 8)
 
                 Text("\(placement.accuracyPercent)%")
-                    .font(.system(size: isWide ? 22 : 18, weight: .bold, design: .default).monospacedDigit())
+                    .font(.system(size: metrics.percentSize, weight: .bold, design: .default).monospacedDigit())
                     .foregroundStyle(Color(white: 0.12))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .layoutPriority(1)
             }
 
             if placement.total > 0 {
                 splitBar
             }
         }
-        .padding(.horizontal, isWide ? 20 : 14)
-        .padding(.vertical, isWide ? 12 : 10)
+        .padding(.horizontal, metrics.horizontalPadding)
+        .padding(.vertical, metrics.verticalPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(Color(white: 0.97), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .accessibilityElement(children: .ignore)
@@ -60,7 +67,7 @@ struct ThrownIntoRow: View {
             )
         }
         .frame(maxWidth: .infinity)
-        .frame(height: isWide ? 10 : 8)
+        .frame(height: metrics.barHeight)
         .clipShape(Capsule())
         .accessibilityHidden(true)
     }

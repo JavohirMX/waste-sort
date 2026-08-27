@@ -25,7 +25,10 @@ struct DetectionSettingsPane: View {
                 .foregroundStyle(BinGuide.organic.color)
         } footer: {
             Text(
-                "Uses the printed-photo weights so tabletop cards light the bins. Turns off on-device confirmation. Not for real waste."
+                "Uses the printed-photo weights so tabletop cards light the bins. "
+                    + "Turns off on-device confirmation and lid detection — bins stay open. "
+                    + "Cards that first appear over a bin still count as throws. "
+                    + "Not for real waste."
             )
         }
     }

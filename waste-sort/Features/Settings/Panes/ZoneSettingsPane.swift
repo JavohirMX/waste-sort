@@ -110,6 +110,7 @@ struct ZoneSettingsPane: View {
         } footer: {
             Text(aprilTagFooter)
         }
+        .disabled(settings.demoMode)
     }
 
     @ViewBuilder
@@ -138,7 +139,10 @@ struct ZoneSettingsPane: View {
     }
 
     private var aprilTagFooter: String {
-        """
+        if settings.demoMode {
+            return "Demo mode leaves bins open. Turn it off to use lid detection."
+        }
+        return """
         Uses camera to detect when bins are physically opened via inside-mounted tag16h5 AprilTags. \
         Detection range sets capture resolution and how hard the detector works per frame - raise it if tags near the bins go unseen, \
         lower it if the frame rate drops. Closed delay is how long a tag can stay missing before the bin is marked closed.

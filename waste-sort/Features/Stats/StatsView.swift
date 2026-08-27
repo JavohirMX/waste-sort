@@ -56,21 +56,20 @@ struct StatsView: View {
                     ClearHostingBackground()
                     GeometryReader { geo in
                         let bottomReserve: CGFloat = 76
-                        let contentHeight = max(geo.size.height - bottomReserve, 400)
 
                         VStack(alignment: .leading, spacing: isWide ? 22 : 16) {
                             headerRow
 
                             periodPicker
 
-                            if isWide && geo.size.width > 700 {
-                                landscapeBody(contentHeight: contentHeight)
+                            if StatsLayout.usesSplitLayout(size: geo.size, isRegularWidth: isWide) {
+                                landscapeBody
                             } else {
                                 ScrollView {
                                     VStack(spacing: 18) {
                                         generatedCard
                                             .frame(minHeight: 320)
-                                        thrownIntoCard
+                                        thrownIntoCard()
                                             .frame(minHeight: 300)
                                         timelineCard
                                             .frame(height: 360)
@@ -177,24 +176,25 @@ struct StatsView: View {
         )
     }
 
-    private func landscapeBody(contentHeight: CGFloat) -> some View {
-        let headerBlock: CGFloat = 120
-        let gap: CGFloat = 22
-        let usable = max(contentHeight - headerBlock, 360)
-        let topHeight = usable * 0.46
-        let bottomHeight = usable * 0.50
-
-        return VStack(spacing: gap) {
-            HStack(alignment: .top, spacing: 20) {
-                generatedCard
-                thrownIntoCard
+    private var landscapeBody: some View {
+        GeometryReader { inner in
+            let metrics = StatsLayout.splitBodyMetrics(size: inner.size)
+            VStack(spacing: metrics.gap) {
+                HStack(alignment: .top, spacing: metrics.columnGap) {
+                    generatedCard
+                        .frame(minHeight: 0, maxHeight: .infinity)
+                        .clipped()
+                    thrownIntoCard(compact: metrics.usesCompactChrome)
+                        .frame(minHeight: 0, maxHeight: .infinity)
+                        .clipped()
+                }
+                .frame(height: metrics.topHeight)
+                timelineCard
+                    .frame(height: metrics.bottomHeight)
+                    .clipped()
             }
-            .frame(height: topHeight)
-
-            timelineCard
-                .frame(height: bottomHeight)
         }
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var headerRow: some View {
@@ -213,8 +213,6 @@ struct StatsView: View {
         .accessibilityLabel("Waste Stats, \(binStyle.siteName)")
         .accessibilityHint("Double tap to edit site name")
     }
-
-    /// Left column: title + total + legend; right: wide track bars.
     private var generatedCard: some View {
         StatsCardSurface {
             if snapshot.isEmpty {
@@ -228,12 +226,19 @@ struct StatsView: View {
                     Spacer(minLength: 0)
                 }
             } else {
-                HStack(alignment: .top, spacing: isWide ? 20 : 14) {
-                    generatedSummaryColumn
-                        .frame(width: isWide ? 150 : 120, alignment: .leading)
-
-                    categoryBars
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                GeometryReader { card in
+                    HStack(alignment: .top, spacing: isWide ? 20 : 14) {
+                        generatedSummaryColumn
+                            .frame(
+                                width: StatsLayout.generatedSummaryWidth(
+                                    isWide: isWide,
+                                    cardInnerWidth: card.size.width
+                                ),
+                                alignment: .leading
+                            )
+                        categoryBars
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
             }
         }
@@ -278,45 +283,40 @@ struct StatsView: View {
         }
     }
 
-    /// Equal-height gray tracks with bottom-up colored fills and icons (design crop).
+    /// Equal-height gray tracks with bottom-up colored fills and icons.
     private var categoryBars: some View {
         let peak = snapshot.categoryCounts.map(\.count).max() ?? 0
         let axis = StatsChartScale.axis(peak: peak)
         let yMax = axis.max
-        let ticks = axis.ticks
         let yLabelWidth: CGFloat = axis.max >= 1_000 ? 36 : 28
-
         return GeometryReader { geo in
-            let trackHeight = max(geo.size.height - 4, 160)
-            let barWidth: CGFloat = isWide ? 96 : 68
-            let chartWidth = max(geo.size.width - yLabelWidth, 120)
-
+            let trackHeight = max(geo.size.height - 4, 0)
+            let chartWidth = max(geo.size.width - yLabelWidth, 0)
+            let barWidth = StatsLayout.barWidth(
+                availableWidth: chartWidth, binCount: binStyle.orderedBins.count, isWide: isWide
+            )
             ZStack(alignment: .bottomLeading) {
-                ForEach(ticks, id: \.self) { tick in
+                ForEach(axis.ticks, id: \.self) { tick in
                     let y = trackHeight * (1 - CGFloat(tick) / CGFloat(yMax))
                     Path { path in
                         path.move(to: CGPoint(x: yLabelWidth, y: y))
                         path.addLine(to: CGPoint(x: yLabelWidth + chartWidth, y: y))
                     }
                     .stroke(Color.black.opacity(0.12), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-
                     Text(StatsChartScale.label(tick))
                         .font(.system(size: 13, weight: .medium, design: .default).monospacedDigit())
                         .foregroundStyle(Color(white: 0.4))
                         .position(x: yLabelWidth / 2, y: y)
                 }
-
-                HStack(alignment: .bottom, spacing: isWide ? 24 : 16) {
+                HStack(alignment: .bottom, spacing: StatsLayout.barSpacing(isWide: isWide)) {
                     ForEach(binStyle.orderedBins) { bin in
                         let count = snapshot.categoryCounts.first { $0.binID == bin.id }?.count ?? 0
                         let fillRatio = CGFloat(count) / CGFloat(max(yMax, 1))
                         let fillHeight = max(trackHeight * fillRatio, count > 0 ? 44 : 0)
-
                         ZStack(alignment: .bottom) {
                             RoundedRectangle(cornerRadius: 24, style: .continuous)
                                 .fill(Color.white)
                                 .frame(width: barWidth, height: trackHeight)
-
                             RoundedRectangle(cornerRadius: 24, style: .continuous)
                                 .fill(bin.color)
                                 .frame(width: barWidth, height: fillHeight)
@@ -339,21 +339,21 @@ struct StatsView: View {
         }
     }
 
-    private var thrownIntoCard: some View {
-        StatsCardSurface {
-            VStack(alignment: .leading, spacing: isWide ? 16 : 12) {
+    private func thrownIntoCard(compact: Bool = false) -> some View {
+        let metrics = StatsLayout.thrownIntoMetrics(isWide: isWide, compact: compact)
+        return StatsCardSurface(padding: metrics.cardPadding) {
+            VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
                 Text("Thrown into")
-                    .font(.system(size: isWide ? 19 : 17, weight: .semibold, design: .default))
+                    .font(.system(size: metrics.titleSize, weight: .semibold, design: .default))
                     .foregroundStyle(.gray)
-
-                VStack(spacing: isWide ? 12 : 8) {
+                VStack(spacing: metrics.rowSpacing) {
                     ForEach(binStyle.orderedBins) { bin in
                         let placement = snapshot.placements.first { $0.binID == bin.id }
                             ?? StatsBinPlacement(binID: bin.id, total: 0, correct: 0)
-                        ThrownIntoRow(bin: bin, placement: placement, isWide: isWide)
+                        ThrownIntoRow(bin: bin, placement: placement, metrics: metrics)
                     }
                 }
-                .frame(maxHeight: .infinity)
+                .frame(minHeight: 0, maxHeight: .infinity)
             }
         }
     }

@@ -392,7 +392,8 @@ struct LiveYOLOCamera: UIViewRepresentable {
             depositDetector.requiredDwellFrames = inputs.dwellFrames
             depositDetector.reacquireGrace = inputs.reacquireGrace
             depositDetector.throwFeedbackGrace = inputs.throwFeedbackGrace
-            let usesTags = inputs.aprilTagEnabled && !inputs.openness.usesMarkers
+            depositDetector.treatInZoneSpawnAsOutside = inputs.openness.forceOpen
+            let usesTags = inputs.openness.usesTags(aprilTagEnabled: inputs.aprilTagEnabled)
             var tagFrame = usesTags
                 ? aprilTagBinDetector.update(
                     zones: currentZones,
@@ -655,7 +656,7 @@ struct LiveYOLOCamera: UIViewRepresentable {
                     self.markerPipeline.apply(config: config, dashConfig: dashConfig,
                                               inks: inputs.openness.markerInks)
                     self.markerPipeline.submit(pixelBuffer)
-                } else if inputs.aprilTagEnabled {
+                } else if inputs.openness.usesTags(aprilTagEnabled: inputs.aprilTagEnabled) {
                     self.aprilTagPipeline.submit(pixelBuffer)
                 }
                 if inputs.settings.barcodeAssistEnabled {
@@ -786,6 +787,13 @@ struct BinOpennessInputs: Equatable, Sendable {
     /// Palette with any on-site calibration already folded in.
     var markerInks: [BinMarkerInk] = BinMarkerInk.all
     var markerDebugOverlay: Bool = false
+    /// Demo mode sets this so tabletop pitches skip AprilTag/marker passes and every
+    /// bin reads open. Production lid settings are left alone and resume when it is off.
+    var forceOpen: Bool = false
 
-    var usesMarkers: Bool { source == .marker }
+    var usesMarkers: Bool { !forceOpen && source == .marker }
+
+    func usesTags(aprilTagEnabled: Bool) -> Bool {
+        !forceOpen && aprilTagEnabled && source == .aprilTag
+    }
 }

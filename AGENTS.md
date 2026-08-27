@@ -73,6 +73,7 @@ Rules that are load-bearing:
 | `BinGuide` (names, colors, aliases, normalization) | Overlay video styling (`OverlayBinStyle` derives from it), CSV rows, HUD |
 | `BeliefEngine` (bin verdicts + uncertainty) | Any other confidence-vote/argmax logic; `TrackedDetection.advisedBinID` is the only advice resolver for CTA, HUD, and photo counts |
 | `BinOpennessSnapshot.openState(zones:)` (which lid detector gates deposits) | Any other AprilTag-vs-marker branch; `ZoneDepositDetector` must never learn which one is running |
+| Demo-mode always-open (`BinOpennessInputs.forceOpen`) | A second bypass inside `ZoneDepositDetector`; stash/mutate AprilTag or marker settings. Demo also sets `treatInZoneSpawnAsOutside` so tabletop cards that spawn in a zone stay throwable. |
 | `applyThresholds(_ settings:)` in `LiveYOLOCamera` | Inline `setConfidenceThreshold` triplets anywhere |
 | `RuntimeSettings` snapshot | Reading `AppSettings.shared` off-main |
 | `TimestampFormatters` | Allocating `DateFormatter` on any per-frame path (it cost real fps once) |

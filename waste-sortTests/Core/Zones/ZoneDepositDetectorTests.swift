@@ -516,6 +516,16 @@ struct ZoneDepositDetectorTests {
         #expect(c.waitOutGrace().isEmpty)
     }
 
+    @Test("demo tabletop still counts an item that first appeared inside an open bin")
+    func materialisedInsideAnOpenBinIsThrowableWhenSpawnIsCredited() {
+        let c = clock(binState: StubBinState(open: [BinGuide.organic.id]))
+        c.detector.treatInZoneSpawnAsOutside = true
+        c.tick([track(centerX: 0.2)], times: 4)
+        let deposits = c.waitOutGrace()
+        #expect(deposits.count == 1)
+        #expect(deposits.first?.zoneID == organicZone.id)
+    }
+
     /// A shut lid cannot be where the item came from, so something resting on one arrived
     /// from outside by definition and stays throwable.
     @Test("an item that appeared on a closed bin is still throwable")
